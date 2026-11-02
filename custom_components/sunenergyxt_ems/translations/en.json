@@ -109,7 +109,8 @@
       "duplicate_inverter": "Each inverter can only be assigned once.",
       "invalid_inverter": "Choose one or two inverter limits per battery.",
       "no_battery": "Select at least one battery.",
-      "other_controller": "Disable other inverter controllers first."
+      "other_controller": "Disable other inverter controllers first.",
+      "inverter_stop_failed": "Could not safely lower a previous inverter. Check the device and try again."
     },
     "abort": {
       "already_configured": "SunEnergyXT EMS is already configured."
