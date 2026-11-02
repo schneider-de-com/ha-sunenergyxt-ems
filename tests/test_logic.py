@@ -95,3 +95,22 @@ def test_feed_in_requires_explicit_activation():
     engine.feed_in = True
     assert engine.update(b, 0, 2)["a_inv"] > 0
     assert engine.update((battery(soc=87),), -800, 3)["a_inv"] == 0
+
+
+def test_equal_area_scores_preserve_setup_order():
+    """Do not switch the main BK215 only because its name sorts differently."""
+    engine = Controller()
+    setup_order = (battery("a", 70), battery("z", 70))
+    engine.update(setup_order, 500, 1)
+    assert engine.state.main == "a"
+
+
+def test_near_full_input_can_prefer_charging_battery():
+    """PV input near the top SoC should influence main-area selection."""
+    engine = Controller()
+    batteries = (
+        battery("a", 80, charging=0),
+        battery("b", 80, charging=60),
+    )
+    engine.update(batteries, 500, 1)
+    assert engine.state.main == "b"
