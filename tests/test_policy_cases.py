@@ -150,7 +150,7 @@ def test_implausible_inverter_minimum_must_not_produce_bad_commands(minimum):
 @pytest.mark.parametrize("limit", [-50, nan, inf])
 def test_implausible_battery_output_limit_excludes_it(limit):
     cmd = Controller().update((pack(max_w=limit),), 600, 1)
-    assert cmd == {}  # Must not send a negative or unbounded power command.
+    assert cmd == {"a_inv": 0}  # A bad capacity must still trigger a safe minimum.
 
 
 def test_implausible_backward_clock_does_not_extend_grid_hold():
