@@ -214,3 +214,55 @@ async def test_positive_options_flow_returns_editable_switches(flow, monkeypatch
     })
     assert result["type"] == "create_entry"
     assert result["data"]["enabled"] is False
+
+@pytest.mark.asyncio
+async def test_reconfigure_keeps_existing_batteries_and_preserves_options(flow, monkeypatch):
+    entry = SimpleNamespace(
+        data={
+            "batteries": [{
+                "device_id": "battery-1", "soc": "sensor.soc",
+                "lower": "number.lower", "upper": "number.upper",
+                "inverters": [{"entity_id": "number.inverter", "rated_w": 800}],
+            }],
+            "grid": "sensor.grid",
+            "invert_grid": False,
+        },
+        options={"enabled": False, "feed_in": True},
+    )
+    monkeypatch.setattr(flow, "_get_reconfigure_entry", lambda: entry)
+    result = await flow.async_step_reconfigure()
+    assert result["step_id"] == "reconfigure"
+    result = await flow.async_step_reconfigure({"batteries": ["battery-1"]})
+    assert result["step_id"] == "inverters"
+    result = await flow.async_step_inverters({"inverters_1": ["number.inverter"]})
+    assert result["step_id"] == "grid"
+    monkeypatch.setattr(flow, "async_set_unique_id", AsyncMock())
+    monkeypatch.setattr(flow, "_abort_if_unique_id_mismatch", lambda: None)
+    monkeypatch.setattr(
+        flow, "async_update_reload_and_abort",
+        lambda old, *, data_updates: {"type": "abort", "reason": "reconfigure_successful",
+                                    "data": data_updates},
+    )
+    result = await flow.async_step_grid({"grid": "sensor.grid", "ack": True})
+    assert result["reason"] == "reconfigure_successful"
+    assert result["data"]["batteries"][0]["device_id"] == "battery-1"
+    assert entry.options == {"enabled": False, "feed_in": True}
+
+
+@pytest.mark.asyncio
+async def test_setup_options_allow_simple_grid_target(flow, monkeypatch):
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    monkeypatch.setattr(
+        flow_module.EMSEntryOptionsFlow, "config_entry",
+        property(lambda _: SimpleNamespace(options={
+            "enabled": True, "feed_in": False, "grid_target_w": 20,
+        })),
+    )
+    result = await options.async_step_init()
+    assert "grid_target_w" in [
+        key.schema for key in result["data_schema"].schema
+    ]
+    new = await options.async_step_init({
+        "enabled": True, "feed_in": False, "grid_target_w": 35,
+    })
+    assert new["data"]["grid_target_w"] == 35
