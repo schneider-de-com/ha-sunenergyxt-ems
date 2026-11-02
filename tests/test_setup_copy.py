@@ -38,3 +38,11 @@ def test_german_meter_explanation_defines_sign_and_activation():
     rating = data["config"]["step"]["ratings"]["description"]
     assert "Nennleistung" in rating
     assert "AC" in rating
+
+
+def test_ems_is_a_hub_integration_not_a_helper():
+    """A helper is listed under Helpers, hiding the expected integration UI."""
+    manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["integration_type"] == "hub"
+    assert manifest["config_flow"] is True
+    assert manifest["single_config_entry"] is True
