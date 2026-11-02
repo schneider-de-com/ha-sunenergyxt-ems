@@ -43,3 +43,25 @@ def test_grid_uses_power_not_cumulative_energy():
                   "shelly", "total_active_power", "W"),
     ]
     assert suggest_grid(entities) == "sensor.grid_power"
+
+def test_battery_discovery_survives_temporary_missing_state_units():
+    """The configured BK215 must remain selectable even while disconnected."""
+    entries = [
+        Candidate("sensor.arbitrary_soc", "sensor", "bk_a", "sunEnergyXT", "wifi_soc", None),
+        Candidate("number.arbitrary_limit", "number", "bk_a", "sunEnergyXT",
+                  "wifi_cnfg_disc_soc_min", None),
+    ]
+    assert find_batteries(entries) == {
+        "bk_a": {
+            "soc": "sensor.arbitrary_soc",
+            "lower": "number.arbitrary_limit",
+        }
+    }
+
+
+def test_multiple_grid_meters_are_not_selected_automatically():
+    entries = [
+        Candidate("sensor.one", "sensor", "a", "energy", "net_power", "W"),
+        Candidate("sensor.two", "sensor", "b", "energy", "net_power", "W"),
+    ]
+    assert suggest_grid(entries) is None
