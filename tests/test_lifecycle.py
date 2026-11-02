@@ -9,9 +9,9 @@ import pytest
 
 pytest.importorskip("homeassistant")
 from custom_components.sunenergyxt_ems import (  # noqa: E402
+    _async_options_updated,
     async_setup_entry,
     async_unload_entry,
-    _async_options_updated,
 )
 from custom_components.sunenergyxt_ems import runtime as runtime_module  # noqa: E402
 
