@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .discovery import Candidate, find_batteries, suggest_grid
+from .discovery import Candidate, find_batteries, suggest_grid, suggest_inverter_limit
 
 # These suffixes are from the *registered unique IDs* of the SunEnergyXT
 # integration. They are not entity_id or localized UI-name assumptions.
@@ -98,3 +98,26 @@ def device_rated_w(hass: HomeAssistant, entity_id: str) -> float | None:
     if isinstance(maximum, (float, int)) and 0 < maximum <= 5000:
         return float(maximum)
     return None
+
+
+def inverter_device_suggestions(hass: HomeAssistant) -> dict[str, str]:
+    """Display inverter *devices*, each backed by one verified writable limit.
+
+    Returns a mapping of limit entity IDs to device labels. Unsupported or
+    ambiguous devices can be selected manually on the fallback flow.
+    """
+    candidates = registry_candidates(hass)
+    by_device: dict[str, list[Candidate]] = {}
+    for candidate in candidates:
+        if candidate.device_id and candidate.platform == "number":
+            by_device.setdefault(candidate.device_id, []).append(candidate)
+    found: dict[str, str] = {}
+    for device_id, entries in by_device.items():
+        matches = [
+            entry for entry in entries
+            if suggest_inverter_limit((entry,), device_id) == entry.entity_id
+        ]
+        if len(matches) == 1:
+            entity = matches[0]
+            found[entity.entity_id] = device_label(hass, device_id)
+    return found
