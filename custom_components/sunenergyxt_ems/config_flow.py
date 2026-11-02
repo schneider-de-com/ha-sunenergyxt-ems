@@ -26,7 +26,13 @@ from .const import (
     CONF_UPPER,
     DOMAIN,
 )
-from .registry import battery_suggestions, device_label, device_rated_w, suggested_grid
+from .registry import (
+    battery_suggestions,
+    device_label,
+    device_rated_w,
+    inverter_device_suggestions,
+    suggested_grid,
+)
 
 CONF_ACK = "ack"
 CONF_SELECTED = "selected"
@@ -44,6 +50,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._grid: str | None = None
         self._invert_grid = False
         self._pending_ratings: list[tuple[int, int]] = []
+        self._manual_inverters = False
         self._reconfigure = False
         self._previous: dict[str, Any] = {}
 
@@ -167,10 +174,22 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }),
         )
 
+    async def async_step_inverters_manual(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Use a manual entity selector only for unknown inverter brands."""
+        self._manual_inverters = True
+        return await self.async_step_inverters(user_input)
+
     async def async_step_inverters(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Select one or two independently writable inverter limits per BK215."""
+        suggestions = inverter_device_suggestions(self.hass)
+        if not suggestions and not self._manual_inverters:
+            return await self.async_step_inverters_manual()
+        if user_input is not None and user_input.get("manual_inverters"):
+            return await self.async_step_inverters_manual()
         errors: dict[str, str] = {}
         if user_input is not None:
             seen: set[str] = set()
@@ -218,14 +237,35 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if self._pending_ratings
                     else await self.async_step_grid()
                 )
-        schema = vol.Schema({
-            vol.Required(f"{CONF_INVERTER_PREFIX}{index}"): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="number", multiple=True)
+        fields: dict[Any, Any] = {}
+        for index, battery in enumerate(self._batteries, start=1):
+            old = next((
+                item for item in self._previous.get(CONF_BATTERIES, [])
+                if item[CONF_DEVICE] == battery[CONF_DEVICE]
+            ), {})
+            defaults = [inv["entity_id"] for inv in old.get(CONF_INVERTERS, [])]
+            marker = vol.Required(
+                f"{CONF_INVERTER_PREFIX}{index}",
+                **({"default": defaults} if defaults else {}),
             )
-            for index, _ in enumerate(self._batteries, start=1)
-        })
+            if self._manual_inverters:
+                fields[marker] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="number", multiple=True)
+                )
+            else:
+                options = [
+                    {"value": entity, "label": label}
+                    for entity, label in suggestions.items()
+                ]
+                fields[marker] = selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=options, multiple=True)
+                )
+        if not self._manual_inverters:
+            fields[vol.Optional("manual_inverters", default=False)] = (
+                selector.BooleanSelector()
+            )
         return self.async_show_form(
-            step_id="inverters",
+            step_id="inverters_manual" if self._manual_inverters else "inverters",
             data_schema=schema,
             errors=errors,
         )
