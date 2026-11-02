@@ -6,8 +6,8 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
@@ -44,7 +44,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._invert_grid = False
         self._pending_ratings: list[tuple[int, int]] = []
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Choose registered BK215 devices rather than individual entities."""
         if self._async_current_entries():
             return self.async_abort(reason="already_configured")
@@ -80,7 +80,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_battery_manual(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Allow setup when the upstream BK215 device is not registered."""
         if user_input is not None:
             self._batteries = [{
@@ -107,7 +107,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_inverters(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Select one or two independently writable inverter limits per BK215."""
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -163,7 +163,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_ratings(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Ask inverter watt ratings only when they cannot be inferred."""
         if user_input is not None:
             for battery_index, inverter_index in self._pending_ratings:
@@ -181,7 +181,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }),
         )
 
-    async def async_step_grid(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_grid(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Select a signed real-time grid meter and confirm single-writer control."""
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -228,7 +228,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class EMSEntryOptionsFlow(config_entries.OptionsFlow):
     """Simple toggles without duplicate sensor configuration."""
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
         return self.async_show_form(
