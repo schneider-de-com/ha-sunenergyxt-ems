@@ -9,13 +9,22 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import selector
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import selector
 
 from .const import (
-    CONF_BATTERIES, CONF_DEVICE, CONF_ENABLED, CONF_FEED_IN, CONF_GRID,
-    CONF_GRID_INVERT, CONF_INVERTERS, CONF_LOWER, CONF_RATED_W, CONF_SOC,
-    CONF_UPPER, DOMAIN,
+    CONF_BATTERIES,
+    CONF_DEVICE,
+    CONF_ENABLED,
+    CONF_FEED_IN,
+    CONF_GRID,
+    CONF_GRID_INVERT,
+    CONF_INVERTERS,
+    CONF_LOWER,
+    CONF_RATED_W,
+    CONF_SOC,
+    CONF_UPPER,
+    DOMAIN,
 )
 from .registry import battery_suggestions, device_label, device_rated_w, suggested_grid
 
