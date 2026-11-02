@@ -141,7 +141,8 @@ class EMSRuntime:
         if state is None:
             return None, None
         sample_time = getattr(state, "last_reported", None) or state.last_updated
-        if datetime.now(UTC) - sample_time > MAX_GRID_AGE:
+        age = datetime.now(UTC) - sample_time
+        if age < timedelta(seconds=-5) or age > MAX_GRID_AGE:
             return None, None
         number = self._float(state.state)
         if number is None:
@@ -185,7 +186,9 @@ class EMSRuntime:
             if minimum is None or maximum is None or maximum < minimum:
                 continue
             value = max(minimum, min(maximum, value))
-            value = round(round((value - minimum) / step) * step + minimum, 4)
+            value = min(maximum, max(
+                minimum, round(round((value - minimum) / step) * step + minimum, 4)
+            ))
             previous = self._last_sent.get(entity_id)
             interval = self._minimum_interval(entity_id)
             if previous is not None:
