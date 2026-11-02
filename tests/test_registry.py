@@ -8,7 +8,6 @@ import pytest
 
 pytest.importorskip("homeassistant")
 from custom_components.sunenergyxt_ems import registry as module  # noqa: E402
-from custom_components.sunenergyxt_ems.discovery import Candidate  # noqa: E402
 
 
 def item(entity_id, unique_id, device, platform, domain="sensor"):
