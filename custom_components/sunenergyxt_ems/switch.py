@@ -35,7 +35,8 @@ class EMSToggle(SwitchEntity):
         self._entry = entry
         self._runtime = runtime
         self._key = key
-        self._attr_name = name
+        self._attr_name = None
+        self._attr_translation_key = key
         self._attr_unique_id = f"{entry.entry_id}_{key}"
 
     @property
