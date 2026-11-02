@@ -1,0 +1,59 @@
+{
+  "title": "SunEnergyXT EMS",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select BK215 batteries",
+        "data": {
+          "batteries": "BK215 systems"
+        }
+      },
+      "battery_manual": {
+        "title": "Battery sensors",
+        "data": {
+          "soc": "Battery level",
+          "lower": "Discharge limit",
+          "upper": "Charge limit (optional)"
+        }
+      },
+      "inverters": {
+        "title": "Assign inverters",
+        "data": {}
+      },
+      "grid": {
+        "title": "Select the grid meter",
+        "data": {
+          "grid": "Grid power",
+          "invert_grid": "Reverse grid power sign"
+        }
+      },
+      "confirm": {
+        "title": "Start energy management",
+        "description": "Disable any other automation writing to the same inverter power limits before completing setup.",
+        "data": {
+          "ack": "Other inverter controllers are disabled"
+        }
+      }
+    },
+    "error": {
+      "invalid_setup": "Check the selected sensors and power limits.",
+      "duplicate_inverter": "Each inverter can only be assigned once.",
+      "invalid_inverter": "Choose one or two inverter limits per battery.",
+      "no_battery": "Select at least one battery."
+    },
+    "abort": {
+      "already_configured": "SunEnergyXT EMS is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EMS settings",
+        "data": {
+          "enabled": "Enable EMS",
+          "feed_in": "Feed-in after full charge"
+        }
+      }
+    }
+  }
+}
