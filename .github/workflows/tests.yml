@@ -21,3 +21,27 @@ jobs:
       - run: python -m pip install --upgrade pytest ruff
       - run: python -m pytest -q
       - run: ruff check custom_components tests
+
+  hassfest:
+    name: Home Assistant hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check whether the integration is ready for validation
+        id: integration
+        shell: bash
+        run: |
+          if [[ -f custom_components/sunenergyxt_ems/manifest.json ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Hassfest is skipped until the integration manifest is added."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate Home Assistant integration
+        if: steps.integration.outputs.present == 'true'
+        uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361 # master (no tagged release)
