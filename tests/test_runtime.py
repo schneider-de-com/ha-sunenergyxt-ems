@@ -132,3 +132,28 @@ async def test_negative_failed_write_is_reported():
     await runtime.async_update()
     assert runtime.status == "write_error"
     assert "number.inverter" in (runtime.last_error or "")
+
+
+
+@pytest.mark.asyncio
+async def test_implausible_rounding_cannot_exceed_inverter_maximum():
+    hass, entry = configured(grid=804, inverter_unit="%")
+    state = hass.states.get("number.inverter")
+    state.attributes["max"] = 98
+    state.attributes["step"] = 5
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    value = hass.services.async_call.await_args.args[2]["value"]
+    assert value <= 98
+
+
+@pytest.mark.asyncio
+async def test_implausible_future_meter_timestamp_is_rejected():
+    hass, entry = configured(grid=500)
+    state = hass.states.get("sensor.grid")
+    state.last_reported = datetime.now(UTC) + timedelta(minutes=10)
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    hass.services.async_call.assert_not_awaited()
