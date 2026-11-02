@@ -1,43 +1,64 @@
 # SunEnergyXT EMS for Home Assistant
 
-> **Status: Planning / pre-alpha — not yet installable.**
+> **Pre-alpha. Not production-ready. No stable release yet.**
 >
-> This is an independent community project and is not affiliated with or endorsed by SunEnergyXT or the Home Assistant project.
+> Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
-**SunEnergyXT EMS** is a planned Home Assistant custom integration for coordinating SunEnergyXT BK215 battery storage systems and controllable microinverters. Its primary goal is to reduce electricity costs through efficient solar self-consumption, while avoiding unnecessary grid feed-in and battery cycling.
+SunEnergyXT EMS controls existing inverter power-limit entities to follow household demand.
+It does **not** speak directly to batteries or inverters.
 
-## Planned first release (MVP)
+## MVP features
 
-- **Home Assistant configuration flow** with suggested entity selections from the existing Energy Dashboard where feasible, plus manual correction and selection.
-- **Multiple BK215 systems**, with **one or two individually controllable microinverters per BK215**; the two inverters may use different manufacturers or integrations.
-- **Vendor-independent inverter control through Home Assistant entities**, supporting power limits expressed in **watts or percent** and respecting device-specific output limits.
-- **Load-following power regulation** using grid measurements, battery state of charge (SoC), and suitable protection logic.
-- **Optional feed-in after the battery reaches its configured full-charge threshold**.
-- **Capability-aware inverter handling**, including device-dependent command intervals, availability and feedback, rather than assuming all integrations behave alike.
+- Guided setup: **BK215 batteries → inverters → grid power meter**.
+- Auto-detect the existing [SunEnergyXT BK integration](https://github.com/SunEnergyXT/SunEnergyXT-BK) and suggest its SoC and charge/discharge limits. Manual corrections are possible.
+- One or two independently controllable microinverters per BK215, in watts or percent.
+- One grid meter for all batteries and SoC-based main/support coordination.
+- Battery reserve protection, grid-meter failure fallback, and safe manual disable.
+- Optional feed-in after full charge, **off by default**.
 
-The planned integration will use existing Home Assistant integrations and entities wherever possible rather than implement separate communication protocols for each inverter manufacturer.
+## Requirements
 
-## Longer-term goals
+- A current Home Assistant version using Python 3.14.
+- At least one configured SunEnergyXT BK215 battery and a readable SoC sensor.
+- A *writable* Home Assistant `number` power limit for every inverter.
+- A **signed, real-time grid-power sensor** in W or kW. Positive must mean import; negative means export. Reverse the sign in setup if needed.
+- Only one controller may write a given inverter power-limit entity.
 
-After the first stable release, potential enhancements include:
+## Install with Home Assistant Marketplace or HACS (experimental)
 
-- Self-learning household consumption forecasts that give more weight to recent usage.
-- Solar production and electricity price forecasts.
-- Cost-aware energy scheduling for both fixed-price and dynamic electricity tariffs.
-- More sophisticated seasonal storage strategies and grid-friendly operation.
+> **Pre-alpha test build.** Take a Proxmox snapshot or Home Assistant backup first.
+> This is a custom repository, not a default Marketplace catalog entry.
 
-These are **roadmap goals**, not features that are currently implemented.
+1. On **Home Assistant 2026.11 or later**, go to **Settings → Marketplace**. Earlier versions (including 2026.10.4) use **HACS**.
+2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). The Marketplace requires a GitHub account connection for custom repositories.
+3. Install **SunEnergyXT EMS** from the Marketplace or HACS. Restart Home Assistant if requested. Adding files does not start inverter control.
+4. Ensure your inverter controls and grid meter are ready before setup.
+5. For a live setup: **turn off all existing automations writing to the selected inverter power-limit entities before completing the EMS config flow.** Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
+6. Choose your BK215 devices, detected inverter controls and signed grid power meter. If nominal inverter watts cannot be read reliably, enter them once.
 
-## Development status
+**Important:** Completing the config flow starts the EMS automatically when current, valid measurements exist. There is no read-only simulation mode in the MVP. **Do not complete the flow while another controller is active.** Only one controller may write any inverter's power limit.
 
-The repository is being initialized. **There is no functional integration, installation package, or released version yet.** Please do not treat the repository as ready for use in a production energy system.
+The integration exposes a global EMS switch, optional feed-in switch, global status sensor and individual BK215 status devices. Use **Configure** to change operating settings and **Reconfigure** to change assigned batteries, inverters and grid meter.
 
-During development, device safety and reliable behavior take precedence over aggressive regulation. Inverter control will only be considered suitable after its supported capabilities and failure modes have been verified. The integration must not operate in parallel with another controller writing to the same inverter power-limit entity.
+The new Marketplace uses the same `hacs.json` and GitHub release layout as HACS. The integration is **not yet published to the default catalog**.
 
-## Contributing
+## Safety and limitations
 
-Ideas, compatibility reports, and technical findings are welcome through GitHub Issues. Implementation instructions, development conventions, and a contribution guide will be added as the project progresses.
+- Home Assistant service-call success does not prove that a disconnected inverter changed its physical output.
+- Disabling the EMS sends one minimum-safe limit to reachable inverters. Unreachable inverters cannot be stopped reliably.
+- If the grid sensor fails, the controller briefly holds and then reduces reachable inverters. It resumes after several fresh samples.
+- A bad SoC reading disables only the affected battery; healthy batteries can continue.
+- Some Deye inverters report a known nonfatal diagnostic fault at 0% limit.
+- Feed-in after full charge may export stored battery energy. Use it knowingly.
+- A physically failed controller or Home Assistant shutdown cannot issue a final safety command.
+- Current automated tests are not a replacement for real inverter and BK215 hardware validation.
+
+## Development
+
+The [six MVP issues](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues)
+define the scope. See the [Definition of Done](CONTRIBUTING.md#definition-of-done).
+Every commit should reference its relevant issue.
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+[Apache License 2.0](LICENSE).

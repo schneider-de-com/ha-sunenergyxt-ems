@@ -1,0 +1,71 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --upgrade pytest ruff mypy bandit
+      - run: python -m pytest -q
+      - run: ruff check custom_components tests
+      - name: PEP 8 formatting audit
+        run: ruff format --check custom_components tests
+        continue-on-error: true
+      - name: Security audit (Bandit)
+        run: python -m bandit -q -r custom_components/sunenergyxt_ems
+      - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/logic.py custom_components/sunenergyxt_ems/discovery.py
+
+  hassfest:
+    name: Home Assistant hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check whether the integration is ready for validation
+        id: integration
+        shell: bash
+        run: |
+          if [[ -f custom_components/sunenergyxt_ems/manifest.json ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Hassfest is skipped until the integration manifest is added."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate Home Assistant integration
+        if: steps.integration.outputs.present == 'true'
+        uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361 # master (no tagged release)
+
+  homeassistant:
+    name: Home Assistant runtime tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - run: python -m pip install 'homeassistant==2026.10.4' pytest pytest-asyncio pytest-cov
+      - run: python -m pytest -q tests --cov=custom_components.sunenergyxt_ems --cov-report=term-missing
