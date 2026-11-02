@@ -198,10 +198,14 @@ async def test_negative_wrong_grid_meter_unit_rejected(flow):
 
 
 @pytest.mark.asyncio
-async def test_positive_options_flow_returns_editable_switches(flow):
+async def test_positive_options_flow_returns_editable_switches(flow, monkeypatch):
     options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
-    options.config_entry = SimpleNamespace(
-        options={"enabled": True, "feed_in": False}
+    monkeypatch.setattr(
+        flow_module.EMSEntryOptionsFlow,
+        "config_entry",
+        property(lambda _: SimpleNamespace(
+            options={"enabled": True, "feed_in": False}
+        )),
     )
     result = await options.async_step_init()
     assert result["step_id"] == "init"
