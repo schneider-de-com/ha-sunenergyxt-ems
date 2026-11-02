@@ -107,7 +107,9 @@ class Controller:
         return eligible
 
     def _rank(self, batteries: list[Battery]) -> list[Battery]:
-        def score(battery: Battery) -> tuple[int, float, str]:
+        original_order = {battery.key: index for index, battery in enumerate(batteries)}
+
+        def score(battery: Battery) -> tuple[int, int, float, int]:
             assert battery.soc is not None and battery.lower_soc is not None
             delta = battery.soc - battery.lower_soc
             points = min(20, ceil(delta / 5))
@@ -129,8 +131,10 @@ class Controller:
                 points += 2
             return (
                 points,
+                2 if battery.key == self.state.main else
+                1 if battery.key == self.state.support else 0,
                 sum(inv.rated_w for inv in battery.inverters if inv.online),
-                battery.key,
+                -original_order[battery.key],
             )
 
         ranked = sorted(batteries, key=score, reverse=True)
