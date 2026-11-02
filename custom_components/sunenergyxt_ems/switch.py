@@ -7,6 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import CONF_ENABLED, CONF_FEED_IN, DOMAIN
 from .runtime import EMSRuntime
@@ -38,6 +39,12 @@ class EMSToggle(SwitchEntity):
         self._attr_name = None
         self._attr_translation_key = key
         self._attr_unique_id = f"{entry.entry_id}_{key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "controller")},
+            name="SunEnergyXT EMS",
+            manufacturer="Community",
+            model="Energy management",
+        )
 
     @property
     def is_on(self) -> bool:
