@@ -84,8 +84,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     for device_id in selected
                 ]
                 if user_input.get("correct_values") or any(
-                    CONF_LOWER not in battery or CONF_UPPER not in battery
-                    for battery in self._batteries
+                    CONF_LOWER not in battery for battery in self._batteries
                 ):
                     return await self.async_step_correct()
                 return await self.async_step_inverters()
@@ -132,16 +131,21 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
             )
             lower_kwargs = {"default": battery[CONF_LOWER]} if battery.get(CONF_LOWER) else {}
-            fields[vol.Required(f"lower_{index}", **lower_kwargs)] = (
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
-            )
+            if battery.get(CONF_LOWER):
+                fields[vol.Required(f"lower_{index}", **lower_kwargs)] = (
+                    selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
+                )
+            else:
+                fields[vol.Required(f"lower_{index}", default=10)] = (
+                    vol.All(vol.Coerce(float), vol.Range(min=0, max=90))
+                )
             if battery.get(CONF_UPPER):
                 fields[vol.Required(f"upper_{index}", default=battery[CONF_UPPER])] = (
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
                 )
             else:
-                fields[vol.Required(f"upper_{index}")] = (
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
+                fields[vol.Optional(f"upper_{index}")] = (
+                    vol.All(vol.Coerce(float), vol.Range(min=70, max=100))
                 )
         return self.async_show_form(
             step_id="correct",
