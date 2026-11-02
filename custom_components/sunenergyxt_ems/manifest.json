@@ -1,13 +1,18 @@
 {
-  "domain": "sunenergyxt_ems",
-  "name": "SunEnergyXT EMS",
-  "codeowners": ["@schneider-de-com"],
+  "categories": [
+    "energy.solar_batteries"
+  ],
+  "codeowners": [
+    "@schneider-de-com"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/schneider-de-com/ha-sunenergyxt-ems",
+  "domain": "sunenergyxt_ems",
   "integration_type": "helper",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues",
+  "name": "SunEnergyXT EMS",
   "requirements": [],
   "single_config_entry": true,
   "version": "0.1.0b0"
