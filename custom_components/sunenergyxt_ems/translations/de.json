@@ -123,9 +123,17 @@
         "data": {
           "enabled": "EMS aktivieren",
           "feed_in": "Einspeisung nach Vollladung",
-          "grid_target_w": "Netzbezug-Zielwert (W)"
+          "grid_target_w": "Netzbezug-Zielwert (W)",
+          "upper_1": "Speicher 1: Ladegrenze (nur für Vollladungseinspeisung)",
+          "upper_2": "Speicher 2: Ladegrenze (nur für Vollladungseinspeisung)",
+          "upper_3": "Speicher 3: Ladegrenze (nur für Vollladungseinspeisung)",
+          "upper_4": "Speicher 4: Ladegrenze (nur für Vollladungseinspeisung)",
+          "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)"
         }
       }
+    },
+    "error": {
+      "missing_upper": "Bitte die obere SoC-Grenze für alle Speicher ohne entsprechende Entität eintragen."
     }
   },
   "entity": {
