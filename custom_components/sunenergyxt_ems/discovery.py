@@ -30,7 +30,9 @@ def find_batteries(entities: Iterable[Candidate]) -> dict[str, dict[str, str]]:
         if item.source_domain.lower() != "sunenergyxt" or not item.device_id:
             continue
         role = _BK_ROLES.get(item.translation_key or "")
-        if role:
+        if role and item.unit == "%" and item.platform == (
+            "sensor" if role == "soc" else "number"
+        ):
             devices.setdefault(item.device_id, {})[role] = item.entity_id
     return {
         device_id: roles for device_id, roles in devices.items() if "soc" in roles
@@ -59,7 +61,14 @@ def suggest_grid(entities: Iterable[Candidate]) -> str | None:
     valid = (
         item
         for item in entities
-        if item.platform == "sensor" and item.unit in ("W", "kW")
+        if item.platform == "sensor"
+        and item.unit in ("W", "kW")
+        and (item.translation_key or "").lower() in (
+            "total_active_power",
+            "grid_power",
+            "net_power",
+            "active_power_total",
+        )
     )
     ranked = sorted(
         valid,
