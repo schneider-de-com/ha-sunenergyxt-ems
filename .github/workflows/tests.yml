@@ -22,9 +22,14 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
-      - run: python -m pip install --upgrade pytest ruff mypy
+      - run: python -m pip install --upgrade pytest ruff mypy bandit
       - run: python -m pytest -q
       - run: ruff check custom_components tests
+      - name: PEP 8 formatting audit
+        run: ruff format --check custom_components tests
+        continue-on-error: true
+      - name: Security audit (Bandit)
+        run: python -m bandit -q -r custom_components/sunenergyxt_ems
       - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/logic.py custom_components/sunenergyxt_ems/discovery.py
 
   hassfest:
