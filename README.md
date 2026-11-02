@@ -24,21 +24,23 @@ It does **not** speak directly to batteries or inverters.
 - A **signed, real-time grid-power sensor** in W or kW. Positive must mean import; negative means export. Reverse the sign in setup if needed.
 - Only one controller may write a given inverter power-limit entity.
 
-## Install with HACS (experimental)
+## Install with Home Assistant Marketplace or HACS (experimental)
 
 > **Pre-alpha test build.** Take a Proxmox snapshot or Home Assistant backup first.
-> This is a custom HACS repository, not a default HACS catalog entry.
+> This is a custom repository, not a default Marketplace catalog entry.
 
-1. Open **HACS → ⋮ → Custom repositories**.
-2. Add `https://github.com/schneider-de-com/ha-sunenergyxt-ems` with type **Integration**.
-3. Find **SunEnergyXT EMS** in HACS and choose **Download**.
-4. Restart Home Assistant after the download. Adding files does not start inverter control.
+1. On **Home Assistant 2026.11 or later**, go to **Settings → Marketplace**. Earlier versions (including 2026.10.4) use **HACS**.
+2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). The Marketplace requires a GitHub account connection for custom repositories.
+3. Install **SunEnergyXT EMS** from the Marketplace or HACS. Restart Home Assistant if requested. Adding files does not start inverter control.
+4. Ensure your inverter controls and grid meter are ready before setup.
 5. For a live setup: **turn off all existing automations writing to the selected inverter power-limit entities before completing the EMS config flow.** Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
 6. Choose your BK215 devices, detected inverter controls and signed grid power meter. If nominal inverter watts cannot be read reliably, enter them once.
 
 **Important:** Completing the config flow starts the EMS automatically when current, valid measurements exist. There is no read-only simulation mode in the MVP. **Do not complete the flow while another controller is active.** Only one controller may write any inverter's power limit.
 
 The integration exposes a global EMS switch, optional feed-in switch, global status sensor and individual BK215 status devices. Use **Configure** to change operating settings and **Reconfigure** to change assigned batteries, inverters and grid meter.
+
+The new Marketplace uses the same `hacs.json` and GitHub release layout as HACS. The integration is **not yet published to the default catalog**.
 
 ## Safety and limitations
 
