@@ -347,3 +347,34 @@ async def test_reject_number_entities_that_are_not_power_limits(flow):
         "inverters_1": ["number.inverter"]
     })
     assert result["errors"]["base"] == "invalid_inverter"
+
+
+@pytest.mark.asyncio
+async def test_feed_in_enabling_asks_for_missing_upper_limit(flow, monkeypatch):
+    entry = SimpleNamespace(
+        data={"batteries": [{"device_id": "bk1", "soc": "sensor.soc",
+                              "lower": "number.lower", "inverters": []}]},
+        options={"enabled": True, "feed_in": False},
+    )
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    monkeypatch.setattr(
+        flow_module.EMSEntryOptionsFlow, "config_entry",
+        property(lambda _: entry),
+    )
+    updates = []
+    options.hass = SimpleNamespace(
+        config_entries=SimpleNamespace(
+            async_update_entry=lambda cfg, *, data: updates.append(data)
+        )
+    )
+    result = await options.async_step_init(
+        {"enabled": True, "feed_in": True, "grid_target_w": 20}
+    )
+    assert result["errors"]["base"] == "missing_upper"
+    assert not updates
+    result = await options.async_step_init(
+        {"enabled": True, "feed_in": True, "grid_target_w": 20, "upper_1": 90}
+    )
+    assert result["type"] == "create_entry"
+    assert updates[0]["batteries"][0]["upper"] == 90
+    assert "upper_1" not in result["data"]
