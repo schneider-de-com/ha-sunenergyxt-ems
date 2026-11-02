@@ -6,7 +6,8 @@
         "title": "BK215-Speicher auswählen",
         "data": {
           "batteries": "BK215-Systeme"
-        }
+        },
+        "description": "Wähle deine BK215-Systeme. Zugehörige Sensoren werden automatisch zugeordnet."
       },
       "battery_manual": {
         "title": "Speichersensoren",
@@ -14,18 +15,21 @@
           "soc": "Ladezustand",
           "lower": "Entladegrenze",
           "upper": "Ladegrenze (optional)"
-        }
+        },
+        "description": "Wenn kein unterstütztes Gerät gefunden wurde, wähle den Ladezustand und die Grenzwerte."
       },
       "inverters": {
         "title": "Wechselrichter zuordnen",
-        "data": {}
+        "data": {},
+        "description": "Wähle ein oder zwei schreibbare Leistungslimits je BK215."
       },
       "grid": {
         "title": "Netzzähler auswählen",
         "data": {
           "grid": "Netzleistung",
           "invert_grid": "Vorzeichen umkehren"
-        }
+        },
+        "description": "Wähle den saldierten Netzleistungssensor. Positive Werte müssen Netzbezug bedeuten."
       },
       "confirm": {
         "title": "Energiemanagement starten",
