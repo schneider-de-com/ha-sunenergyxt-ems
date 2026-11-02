@@ -250,8 +250,20 @@ class EMSRuntime:
         """One-shot safe command when the user deliberately disables EMS."""
         async with self._lock:
             self.controller.enabled = False
+            self.last_error = None
             commands = self.controller.disable(self._batteries())
+            configured = {
+                inverter["entity_id"]
+                for battery in self.entry.data[CONF_BATTERIES]
+                for inverter in battery[CONF_INVERTERS]
+            }
+            unreachable = sorted(configured - commands.keys())
             await self._apply(commands, monotonic())
+            if unreachable:
+                self.last_error = (
+                    (self.last_error + "; " if self.last_error else "")
+                    + "Cannot stop unavailable inverters: " + ", ".join(unreachable)
+                )
             self.status = "disabled" if self.last_error is None else "write_error"
             self._publish()
 
