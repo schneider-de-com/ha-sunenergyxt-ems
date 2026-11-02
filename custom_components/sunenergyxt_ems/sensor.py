@@ -32,7 +32,6 @@ async def async_setup_entry(
 class EMSStatus(SensorEntity):
     """Report whether the controller can currently regulate."""
 
-    _attr_name = None
     _attr_translation_key = "status"
     _attr_has_entity_name = True
     _attr_should_poll = False
@@ -70,7 +69,6 @@ class EMSStatus(SensorEntity):
 class BatteryStatus(SensorEntity):
     """Expose one device with a status and diagnostics per configured BK215."""
 
-    _attr_name = None
     _attr_translation_key = "battery_status"
     _attr_has_entity_name = True
     _attr_should_poll = False

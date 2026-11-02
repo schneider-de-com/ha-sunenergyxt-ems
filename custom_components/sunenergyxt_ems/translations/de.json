@@ -8,7 +8,7 @@
           "batteries": "BK215-Systeme",
           "correct_values": "Erkannte Entitäten korrigieren"
         },
-        "description": "Wähle deine BK215-Systeme. Zugehörige Sensoren werden automatisch zugeordnet."
+        "description": "Wähle die **BK215-Speichersysteme**, die dieses EMS regeln soll. Ein Eintrag entspricht einem BK215 einschließlich angeschlossener B215-Erweiterungen. Ladezustand, Lade-/Entladegrenzen und PV-Eingangsleistung werden aus der vorhandenen SunEnergyXT-Integration erkannt. **Erkannte Entitäten korrigieren** ist nur bei falschen Vorschlägen nötig. Vor Abschluss der Einrichtung werden keine Ausgangssollwerte geschrieben."
       },
       "battery_manual": {
         "title": "Speichersensoren",
@@ -17,7 +17,7 @@
           "lower": "Entladegrenze",
           "upper": "Ladegrenze (optional)"
         },
-        "description": "Wenn kein unterstütztes Gerät gefunden wurde, wähle den Ladezustand und die Grenzwerte."
+        "description": "Kein passendes BK215-Gerät erkannt. Wähle einen **SoC-Sensor in %**, eine **untere Entladegrenze** und optional eine obere Ladegrenze. Keine fachfremden Sensoren verwenden. Im nächsten Schritt wird mindestens ein einzeln steuerbarer Wechselrichter benötigt."
       },
       "inverters": {
         "title": "Wechselrichter zuordnen",
@@ -29,7 +29,7 @@
           "inverters_5": "Speicher 5: Wechselrichter",
           "manual_inverters": "Leistungsentitäten manuell auswählen"
         },
-        "description": "Wähle ein oder zwei erkannte Wechselrichtergeräte je BK215. Unbekannte Geräte können manuell zugeordnet werden."
+        "description": "Ordne jedem BK215 **ein oder zwei einzeln steuerbare Wechselrichter** zu. Entscheidend ist, welcher Wechselrichter physisch mit welchem Speicher verbunden ist. Derselbe Wechselrichter darf nicht zweimal zugeordnet werden. Das EMS steuert ausschließlich die **Leistungsgrenze über Home Assistant**, nicht das Herstellerprotokoll. Fehlt ein Gerät, nutze die manuelle Auswahl. Bitte prüfe die reale Verkabelung."
       },
       "grid": {
         "title": "Netzzähler auswählen",
@@ -38,18 +38,18 @@
           "invert_grid": "Vorzeichen umkehren",
           "ack": "Andere Leistungssteuerungen sind deaktiviert"
         },
-        "description": "Wähle den saldierten Netzleistungssensor. Positive Werte müssen Netzbezug bedeuten."
+        "description": "Wähle die **aktuelle saldierte Netzleistung**, keine Energiezählerstände in kWh und keinen einzelnen Außenleiter. **Positiv = Netzbezug, negativ = Netzeinspeisung.** Prüfe das Vorzeichen anhand des aktuellen Sensorwerts; nur bei umgekehrter Darstellung den Schalter aktivieren. Ein gemeinsamer Netzzähler regelt alle Speicher. **Vor Abschluss müssen andere Automationen mit Schreibzugriff auf dieselben Wechselrichter deaktiviert sein. Danach startet der neue Regler automatisch**, sobald gültige Messwerte vorliegen."
       },
       "confirm": {
         "title": "Energiemanagement starten",
-        "description": "Deaktiviere alle anderen Automationen, die dieselben Wechselrichter-Leistungsgrenzen verändern.",
+        "description": "**Nach Abschluss beginnt die aktive Regelung**, sobald aktuelle und gültige Messwerte vorliegen. Es darf keinen zweiten Regler für die gleichen Wechselrichter geben. Spätere Geräteänderungen unter **Neu konfigurieren**, Betriebseinstellungen unter **Konfigurieren**.",
         "data": {
           "ack": "Andere Wechselrichter-Steuerungen sind deaktiviert"
         }
       },
       "correct": {
         "title": "Speicherzuordnung prüfen",
-        "description": "Nur ändern, wenn die automatisch erkannten Sensoren oder Grenzwerte falsch sind.",
+        "description": "Prüfe die Sensorzuordnung pro BK215. **Ladezustand** ist der SoC in %, **Entladegrenze** der minimale zulässige SoC und **Ladegrenze** die obere SoC-Grenze. Korrekt erkannte Entitäten beibehalten: Das EMS liest ihre aktuellen Werte und übernimmt spätere Änderungen. Für die normale Hauslastregelung ist die obere Grenze optional.",
         "data": {
           "soc_1": "Speicher 1: Ladezustand",
           "lower_1": "Speicher 1: Entladegrenze",
@@ -70,7 +70,7 @@
       },
       "ratings": {
         "title": "Wechselrichter-Nennleistung",
-        "description": "Wird nur benötigt, wenn die Nennleistung nicht automatisch erkannt wird.",
+        "description": "Bei einem Wechselrichter mit **Prozent-Leistungsgrenze** benötigt das EMS die **AC-Nennleistung in Watt** zur Umrechnung. Beispiel: 10 % von 2.000 W entsprechen etwa 200 W. Trage die echte AC-Nennleistung des Wechselrichters ein, **nicht** die PV-Modulleistung in Wp oder die Speicherkapazität. Es handelt sich nicht um einen gewünschten Einspeisewert.",
         "data": {
           "rating_0_0": "Speicher 1, Wechselrichter 1: W",
           "rating_0_1": "Speicher 1, Wechselrichter 2: W",
@@ -90,11 +90,11 @@
           "batteries": "BK215-Systeme",
           "correct_values": "Erkannte Entitäten korrigieren"
         },
-        "description": "BK215 wählen, anschließend Wechselrichter und Zähler prüfen. Die Einstellungen bleiben erhalten."
+        "description": "Wähle die BK215, die erhalten bleiben oder hinzukommen. Prüfe anschließend Wechselrichter und gemeinsamen Netzzähler. Die Betriebseinstellungen bleiben bestehen. Vor dem Wechsel versucht das EMS, die bisherige Wechselrichtersteuerung sicher zu beenden."
       },
       "inverters_manual": {
         "title": "Wechselrichter manuell zuordnen",
-        "description": "Nur schreibbare Leistungsbegrenzungen (%) oder (W) wählen.",
+        "description": "Wähle pro BK215 ein oder zwei Home-Assistant-**number-Entitäten**, die wirklich eine **AC-Wirkleistungsgrenze in W oder %** darstellen. Keine Netzspannungs-, Frequenz-, Leistungsfaktor- oder Akkulade-Einstellungen auswählen. Prüfe die physische Zuordnung.",
         "data": {
           "inverters_1": "Speicher 1: Wechselrichter",
           "inverters_2": "Speicher 2: Wechselrichter",
@@ -129,7 +129,8 @@
           "upper_3": "Speicher 3: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_4": "Speicher 4: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)"
-        }
+        },
+        "description": "**EMS aktivieren** schaltet die aktive Hauslastregelung ein oder aus. Der **Netzbezug-Zielwert** ist ein kleiner positiver Sicherheitspuffer in Watt (z. B. 20 W), keine Kaufstrategie. **Einspeisung nach Vollladung** ist optional und kann gespeicherte Akkuenergie ins Netz abgeben; bis zur Klärung des gewünschten Verhaltens deaktiviert lassen."
       }
     },
     "error": {

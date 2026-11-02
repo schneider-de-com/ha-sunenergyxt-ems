@@ -70,9 +70,13 @@ class EMSRuntime:
         self._running = True
         self._unsubscribe = async_track_time_interval(
             self.hass,
-            lambda _: self.hass.async_create_task(self.async_update()),
+            self._async_on_interval,
             UPDATE_PERIOD,
         )
+        await self.async_update()
+
+    async def _async_on_interval(self, _now: datetime) -> None:
+        """Run scheduled updates in Home Assistant's event loop, never its executor."""
         await self.async_update()
 
     async def async_stop(self) -> None:

@@ -196,17 +196,36 @@ async def test_positive_emergency_reduction_bypasses_rate_limit(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_positive_start_and_stop_registers_one_scheduler(monkeypatch):
+async def test_timer_runs_updates_on_event_loop_without_thread_unsafe_task(monkeypatch):
+    """HA timer must receive a coroutine, not a synchronous executor callback."""
+    from inspect import iscoroutinefunction
     from unittest.mock import Mock
 
     hass, entry = configured()
     cancel = Mock()
-    callback = Mock()
-    monkeypatch.setattr(module, "async_track_time_interval", lambda *args: (callback(), cancel)[1])
+    captured = []
+
+    def register(hass_instance, handler, interval):
+        assert hass_instance is hass
+        assert interval == module.UPDATE_PERIOD
+        assert iscoroutinefunction(handler), "Sync handlers run in HA executor threads"
+        captured.append(handler)
+        return cancel
+
+    monkeypatch.setattr(module, "async_track_time_interval", register)
     runtime = EMSRuntime(hass, entry)
+    real_update = runtime.async_update
+    wrapped = AsyncMock(wraps=real_update)
+    monkeypatch.setattr(runtime, "async_update", wrapped)
+
     await runtime.async_start()
     assert runtime._running
-    callback.assert_called_once()
+    assert wrapped.await_count == 1
+
+    await captured[0](datetime.now(UTC))
+    await captured[0](datetime.now(UTC))
+    assert wrapped.await_count == 3
+
     await runtime.async_stop()
     cancel.assert_called_once()
     assert not runtime._running
