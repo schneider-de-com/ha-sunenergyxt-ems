@@ -84,13 +84,18 @@ class EMSRuntime:
         if isinstance(source, (int, float)):
             number = float(source)
         elif isinstance(source, str):
-            state = self.hass.states.get(source)
-            if state is None or state.state in ("unknown", "unavailable"):
-                return None
+            # An entity ID and an HA state string are both strings.
+            # First accept numeric states; then resolve entity IDs.
             try:
-                number = float(state.state)
-            except (TypeError, ValueError):
-                return None
+                number = float(source)
+            except ValueError:
+                state = self.hass.states.get(source)
+                if state is None or state.state in ("unknown", "unavailable"):
+                    return None
+                try:
+                    number = float(state.state)
+                except (TypeError, ValueError):
+                    return None
         else:
             return None
         return number if isfinite(number) else None
