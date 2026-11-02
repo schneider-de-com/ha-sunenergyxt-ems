@@ -58,8 +58,8 @@ def suggest_inverter_limit(entities: Iterable[Candidate], device_id: str) -> str
 
 
 def suggest_grid(entities: Iterable[Candidate]) -> str | None:
-    """Pick instantaneous grid power, never a cumulative energy meter."""
-    valid = (
+    """Prefer Home Assistant Energy's combined grid power; never a phase or kWh."""
+    valid = [
         item
         for item in entities
         if item.platform == "sensor"
@@ -70,13 +70,12 @@ def suggest_grid(entities: Iterable[Candidate]) -> str | None:
             "net_power",
             "active_power_total",
         )
-    )
-    ranked = sorted(
-        valid,
-        key=lambda item: (
-            0 if item.translation_key and "total_active_power" in item.translation_key else 1,
-            0 if item.source_domain.lower() in ("shelly", "dsmr", "homewizard") else 1,
-            item.entity_id,
-        ),
-    )
-    return ranked[0].entity_id if ranked else None
+    ]
+    # The HA Energy integration marks a *signed* combined meter with a
+    # dedicated unique ID. Its entity ID may be arbitrarily renamed.
+    energy = [item for item in valid if item.source_domain.lower() == "energy"]
+    if len(energy) == 1:
+        return energy[0].entity_id
+    if energy:
+        return None  # Multiple combined meters: ask the user.
+    return valid[0].entity_id if len(valid) == 1 else None
