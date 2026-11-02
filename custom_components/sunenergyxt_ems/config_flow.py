@@ -206,7 +206,13 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     break
                 for entity in entities:
                     registration = registry.async_get(entity)
-                    if not registration or registration.domain != "number":
+                    state = self.hass.states.get(entity)
+                    if (
+                        not registration
+                        or registration.domain != "number"
+                        or state is None
+                        or state.attributes.get("unit_of_measurement") not in ("W", "%")
+                    ):
                         errors["base"] = "invalid_inverter"
                         break
                 if errors:
