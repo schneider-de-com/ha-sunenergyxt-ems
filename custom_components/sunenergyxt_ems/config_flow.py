@@ -58,6 +58,10 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     {CONF_DEVICE: device_id, **suggestions[device_id], CONF_INVERTERS: []}
                     for device_id in selected
                 ]
+                if user_input.get("correct_values") or any(
+                    CONF_LOWER not in battery for battery in self._batteries
+                ):
+                    return await self.async_step_correct()
                 return await self.async_step_inverters()
             errors = {"base": "no_battery"}
         else:
@@ -72,10 +76,46 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_BATTERIES, default=list(suggestions)): selector.SelectSelector(
                         selector.SelectSelectorConfig(options=options, multiple=True)
-                    )
+                    ),
+                    vol.Optional("correct_values", default=False):
+                        selector.BooleanSelector(),
                 }
             ),
             errors=errors,
+        )
+
+    async def async_step_correct(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Offer a short optional correction page for detected device entities."""
+        if user_input is not None:
+            for index, battery in enumerate(self._batteries, start=1):
+                battery[CONF_SOC] = user_input[f"soc_{index}"]
+                battery[CONF_LOWER] = user_input[f"lower_{index}"]
+                upper = user_input.get(f"upper_{index}")
+                if upper:
+                    battery[CONF_UPPER] = upper
+            return await self.async_step_inverters()
+        fields: dict[Any, Any] = {}
+        for index, battery in enumerate(self._batteries, start=1):
+            fields[vol.Required(f"soc_{index}", default=battery.get(CONF_SOC))] = (
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+            )
+            lower_kwargs = {"default": battery[CONF_LOWER]} if battery.get(CONF_LOWER) else {}
+            fields[vol.Required(f"lower_{index}", **lower_kwargs)] = (
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
+            )
+            if battery.get(CONF_UPPER):
+                fields[vol.Optional(f"upper_{index}", default=battery[CONF_UPPER])] = (
+                    selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
+                )
+            else:
+                fields[vol.Optional(f"upper_{index}")] = (
+                    selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
+                )
+        return self.async_show_form(
+            step_id="correct",
+            data_schema=vol.Schema(fields),
         )
 
     async def async_step_battery_manual(
