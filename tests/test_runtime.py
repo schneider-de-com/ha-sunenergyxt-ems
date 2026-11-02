@@ -157,3 +157,15 @@ async def test_implausible_future_meter_timestamp_is_rejected():
     runtime._running = True
     await runtime.async_update()
     hass.services.async_call.assert_not_awaited()
+
+
+
+@pytest.mark.asyncio
+async def test_negative_offline_inverter_is_reported_during_manual_stop():
+    hass, entry = configured()
+    hass.states.get("number.inverter").state = "unavailable"
+    runtime = EMSRuntime(hass, entry)
+    await runtime.async_disable()
+    hass.services.async_call.assert_not_awaited()
+    assert runtime.status == "write_error"
+    assert "number.inverter" in (runtime.last_error or "")
