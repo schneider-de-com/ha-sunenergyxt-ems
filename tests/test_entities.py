@@ -15,6 +15,7 @@ from custom_components.sunenergyxt_ems import switch as switches  # noqa: E402
 def objects():
     entry = SimpleNamespace(
         entry_id="ems-entry",
+        data={"batteries": []},
         options={"enabled": True, "feed_in": False},
     )
     runtime = SimpleNamespace(
