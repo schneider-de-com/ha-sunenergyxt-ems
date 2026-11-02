@@ -374,22 +374,58 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
     """Simple toggles without duplicate sensor configuration."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Keep operating settings editable without reinstalling the integration."""
+        existing = list(getattr(self.config_entry, "data", {}).get(CONF_BATTERIES, []))
+        missing = [
+            (index, battery)
+            for index, battery in enumerate(existing, start=1)
+            if not battery.get(CONF_UPPER)
+        ]
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            requested = dict(user_input)
+            if requested.get(CONF_FEED_IN) and missing:
+                if any(f"upper_{index}" not in requested for index, _ in missing):
+                    errors["base"] = "missing_upper"
+                else:
+                    updated = dict(self.config_entry.data)
+                    records = [dict(battery) for battery in existing]
+                    for index, _ in missing:
+                        records[index - 1][CONF_UPPER] = float(
+                            requested.pop(f"upper_{index}")
+                        )
+                    updated[CONF_BATTERIES] = records
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry, data=updated
+                    )
+            if not errors:
+                settings = {
+                    key: value for key, value in requested.items()
+                    if key in (CONF_ENABLED, CONF_FEED_IN, "grid_target_w")
+                }
+                return self.async_create_entry(title="", data=settings)
+        fields: dict[Any, Any] = {
+            vol.Required(
+                CONF_ENABLED,
+                default=self.config_entry.options.get(CONF_ENABLED, True),
+            ): selector.BooleanSelector(),
+            vol.Required(
+                CONF_FEED_IN,
+                default=self.config_entry.options.get(CONF_FEED_IN, False),
+            ): selector.BooleanSelector(),
+            vol.Required(
+                "grid_target_w",
+                default=self.config_entry.options.get(
+                    "grid_target_w", DEFAULT_GRID_TARGET_W
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
+        }
+        for index, _ in missing:
+            fields[vol.Optional(f"upper_{index}")] = vol.All(
+                vol.Coerce(float), vol.Range(min=70, max=100)
+            )
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema({
-                vol.Required(
-                    CONF_ENABLED, default=self.config_entry.options.get(CONF_ENABLED, True)
-                ): selector.BooleanSelector(),
-                vol.Required(
-                    CONF_FEED_IN, default=self.config_entry.options.get(CONF_FEED_IN, False)
-                ): selector.BooleanSelector(),
-                vol.Required(
-                    "grid_target_w",
-                    default=self.config_entry.options.get(
-                        "grid_target_w", DEFAULT_GRID_TARGET_W
-                    ),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
-            }),
+            data_schema=vol.Schema(fields),
+            errors=errors,
         )
