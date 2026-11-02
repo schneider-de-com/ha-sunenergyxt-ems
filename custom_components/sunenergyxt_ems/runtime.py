@@ -248,7 +248,11 @@ class EMSRuntime:
             )
             self.last_error = None
             self.status = "running" if grid is not None else "grid_unavailable"
-            await self._apply(outputs, now, emergency=grid is None)
+            await self._apply(
+                outputs,
+                now,
+                emergency=grid is None or bool(self.controller.state.blocked),
+            )
             self._publish()
 
     async def async_disable(self) -> None:
