@@ -19,3 +19,16 @@ Every MVP feature must:
 - Pass CI. Obtain real hardware evidence before claiming a device/firmware combination is hardware-validated.
 
 Do not merge incomplete or untested control code into a production-ready release.
+
+## Commit messages
+
+Use a short Conventional Commit message that names the related user story:
+
+```
+feat(config): suggest BK215 devices (Refs #1)
+test(control): cover invalid grid measurements (Refs #4)
+```
+
+Every project commit must reference its related GitHub issue with `Refs #<number>`.
+Use `Fixes #<number>` only when the issue is fully complete.
+Keep infrastructure and test work inside the existing MVP feature issues; do not open separate engineering-only tickets.
