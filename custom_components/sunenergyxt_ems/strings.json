@@ -1,0 +1,63 @@
+{
+  "title": "SunEnergyXT EMS",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select BK215 batteries",
+        "description": "Choose the batteries detected from SunEnergyXT. Related sensors and limits will be filled in automatically.",
+        "data": {
+          "batteries": "BK215 systems"
+        }
+      },
+      "battery_manual": {
+        "title": "Battery sensors",
+        "description": "No compatible BK215 device was found. Choose the system's SoC and limits manually.",
+        "data": {
+          "soc": "Battery level",
+          "lower": "Discharge limit",
+          "upper": "Charge limit (optional)"
+        }
+      },
+      "inverters": {
+        "title": "Assign inverters",
+        "description": "Choose one or two controllable inverter power-limit entities for each battery.",
+        "data": {}
+      },
+      "grid": {
+        "title": "Select the grid meter",
+        "description": "Use a signed instantaneous grid power sensor (positive = import, negative = export).",
+        "data": {
+          "grid": "Grid power",
+          "invert_grid": "Reverse grid power sign"
+        }
+      },
+      "confirm": {
+        "title": "Start energy management",
+        "description": "Disable any other automation writing to the same inverter power limits before completing setup. EMS starts automatically when measurements are valid.",
+        "data": {
+          "ack": "I have disabled other inverter controllers"
+        }
+      }
+    },
+    "error": {
+      "invalid_setup": "Check the selected sensors and power limits.",
+      "duplicate_inverter": "Each inverter can only be assigned once.",
+      "invalid_inverter": "Choose one or two inverter limits per battery.",
+      "no_battery": "Select at least one battery."
+    },
+    "abort": {
+      "already_configured": "SunEnergyXT EMS is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EMS settings",
+        "data": {
+          "enabled": "Enable EMS",
+          "feed_in": "Feed-in after full charge"
+        }
+      }
+    }
+  }
+}
