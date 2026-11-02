@@ -79,7 +79,8 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             selected = user_input.get(CONF_BATTERIES, [])
             if selected and all(device in suggestions for device in selected):
                 self._batteries = [
-                    {CONF_DEVICE: device_id, **suggestions[device_id], CONF_INVERTERS: []}
+                    {CONF_DEVICE: device_id, "label": device_label(self.hass, device_id),
+                     **suggestions[device_id], CONF_INVERTERS: []}
                     for device_id in selected
                 ]
                 if user_input.get("correct_values") or any(
