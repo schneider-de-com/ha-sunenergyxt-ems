@@ -136,3 +136,77 @@ async def test_positive_manual_battery_fallback_when_upstream_not_found(flow, mo
     })
     assert result["step_id"] == "inverters"
     assert flow._batteries[0]["lower"] == 10
+
+
+
+@pytest.mark.asyncio
+async def test_negative_second_ems_config_entry_is_rejected(flow, monkeypatch):
+    monkeypatch.setattr(flow, "_async_current_entries", lambda: [object()])
+    result = await flow.async_step_user()
+    assert result["type"] == "abort"
+    assert result["reason"] == "already_configured"
+
+
+@pytest.mark.asyncio
+async def test_negative_empty_battery_selection_is_rejected(flow):
+    result = await flow.async_step_user({"batteries": []})
+    assert result["errors"]["base"] == "no_battery"
+
+
+@pytest.mark.asyncio
+async def test_negative_missing_inverter_rejected(flow):
+    flow._batteries = [{"device_id": "a", "inverters": []}]
+    result = await flow.async_step_inverters({"inverters_1": []})
+    assert result["errors"]["base"] == "invalid_inverter"
+
+
+@pytest.mark.asyncio
+async def test_negative_non_number_entity_rejected(flow, monkeypatch):
+    flow._batteries = [{"device_id": "a", "inverters": []}]
+    monkeypatch.setattr(
+        flow_module.er, "async_get",
+        lambda hass: SimpleNamespace(async_get=lambda entity: SimpleNamespace(domain="sensor")),
+    )
+    result = await flow.async_step_inverters({
+        "inverters_1": ["sensor.unsupported"]
+    })
+    assert result["errors"]["base"] == "invalid_inverter"
+
+
+@pytest.mark.asyncio
+async def test_positive_unknown_inverter_rating_uses_manual_rating_page(flow, monkeypatch):
+    flow._batteries = [{"device_id": "a", "inverters": []}]
+    monkeypatch.setattr(flow_module, "device_rated_w", lambda hass, entity: None)
+    result = await flow.async_step_inverters({
+        "inverters_1": ["number.inverter"]
+    })
+    assert result["step_id"] == "ratings"
+    result = await flow.async_step_ratings({"rating_0_0": 500})
+    assert result["step_id"] == "grid"
+    assert flow._batteries[0]["inverters"][0]["rated_w"] == 500
+
+
+@pytest.mark.asyncio
+async def test_negative_wrong_grid_meter_unit_rejected(flow):
+    flow.hass.states.get = lambda _: SimpleNamespace(
+        attributes={"unit_of_measurement": "kWh"}
+    )
+    result = await flow.async_step_grid({
+        "grid": "sensor.energy", "ack": True
+    })
+    assert result["errors"]["base"] == "invalid_setup"
+
+
+@pytest.mark.asyncio
+async def test_positive_options_flow_returns_editable_switches(flow):
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    options.config_entry = SimpleNamespace(
+        options={"enabled": True, "feed_in": False}
+    )
+    result = await options.async_step_init()
+    assert result["step_id"] == "init"
+    result = await options.async_step_init({
+        "enabled": False, "feed_in": True
+    })
+    assert result["type"] == "create_entry"
+    assert result["data"]["enabled"] is False
