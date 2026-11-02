@@ -172,3 +172,19 @@ def test_implausible_soc_in_wrong_sensor_unit_is_not_detected_as_bk215():
 def test_implausible_unrelated_power_sensor_is_not_selected_as_grid_meter():
     items = [Candidate("sensor.heater", "sensor", "heater", "shelly", "power", "W")]
     assert suggest_grid(items) is None
+
+def test_negative_missing_soc_during_grid_grace_is_not_held_at_old_power():
+    """Battery safety wins over the short grid-meter grace period."""
+    engine = Controller()
+    assert engine.update((pack(),), 600, 1)["a_inv"] > 0
+    assert engine.update((pack(soc=None),), None, 3)["a_inv"] == 0
+
+
+def test_positive_larger_configured_limit_still_respects_bk215_hardware_cap():
+    battery = Battery(
+        "a", 70, 10, 90,
+        (Inverter("inv1", 1500), Inverter("inv2", 1500)),
+        output_limit_w=4000,
+    )
+    outputs = Controller().update((battery,), 5000, 1)
+    assert sum(outputs.values()) == 1920
