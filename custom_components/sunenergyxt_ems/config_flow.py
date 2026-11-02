@@ -59,7 +59,8 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     for device_id in selected
                 ]
                 if user_input.get("correct_values") or any(
-                    CONF_LOWER not in battery for battery in self._batteries
+                    CONF_LOWER not in battery or CONF_UPPER not in battery
+                    for battery in self._batteries
                 ):
                     return await self.async_step_correct()
                 return await self.async_step_inverters()
@@ -106,11 +107,11 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
             )
             if battery.get(CONF_UPPER):
-                fields[vol.Optional(f"upper_{index}", default=battery[CONF_UPPER])] = (
+                fields[vol.Required(f"upper_{index}", default=battery[CONF_UPPER])] = (
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
                 )
             else:
-                fields[vol.Optional(f"upper_{index}")] = (
+                fields[vol.Required(f"upper_{index}")] = (
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
                 )
         return self.async_show_form(
