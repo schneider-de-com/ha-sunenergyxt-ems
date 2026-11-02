@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Select BK215 batteries",
-        "description": "Choose the batteries detected from SunEnergyXT. Related sensors and limits will be filled in automatically.",
+        "description": "Select the **BK215 systems** this EMS should control. One entry represents one BK215 (including any attached B215 expansion batteries). SoC, charging/discharging limits and PV input sensors are detected from the existing SunEnergyXT integration. Use **Correct detected entities** only if a suggestion is wrong. No output command is sent until setup is completed.",
         "data": {
           "batteries": "BK215 systems",
           "correct_values": "Correct detected entities"
@@ -12,7 +12,7 @@
       },
       "battery_manual": {
         "title": "Battery sensors",
-        "description": "No compatible BK215 device was found. Choose the system's SoC and limits manually.",
+        "description": "No matching BK215 device was found. Choose a **SoC sensor in %**, a **minimum discharge limit**, and optionally an upper SoC limit. Do not select an unrelated sensor. At least one individually writable inverter is required on the next page.",
         "data": {
           "soc": "Battery level",
           "lower": "Discharge limit",
@@ -21,7 +21,7 @@
       },
       "inverters": {
         "title": "Assign inverters",
-        "description": "Choose one or two detected inverter devices per BK215. Unknown devices can be assigned manually.",
+        "description": "Assign **one or two independently controllable inverters to each BK215**. Select the device physically connected to that battery; a single inverter cannot be assigned twice. The EMS writes only to that inverter's Home Assistant **power-limit entity**, not its raw communications protocol. Choose manual selection if the device is not offered. Check the physical wiring before continuing.",
         "data": {
           "inverters_1": "Battery 1: inverters",
           "inverters_2": "Battery 2: inverters",
@@ -33,7 +33,7 @@
       },
       "grid": {
         "title": "Select the grid meter",
-        "description": "Use a signed instantaneous grid power sensor (positive = import, negative = export).",
+        "description": "Select a **current signed grid power sensor**, not a cumulative energy (kWh) or individual phase sensor. **Positive = buying from the grid; negative = exporting**. Verify this sign with the live value; reverse it only if the sensor reports the opposite. The EMS uses a single meter for all batteries. **Before completing this page, disable every other automation that writes the same inverter power limits. Finishing setup enables the new live controller automatically** when valid measurements are available.",
         "data": {
           "grid": "Grid power",
           "invert_grid": "Reverse grid power sign",
@@ -42,14 +42,14 @@
       },
       "confirm": {
         "title": "Start energy management",
-        "description": "Disable any other automation writing to the same inverter power limits before completing setup. EMS starts automatically when measurements are valid.",
+        "description": "**Live control starts after you finish setup** and current readings are valid. Do not leave another writer controlling any selected inverter limit. To review assignments later, use **Reconfigure**; to stop or change the operating mode, use **Configure**.",
         "data": {
           "ack": "I have disabled other inverter controllers"
         }
       },
       "correct": {
         "title": "Review battery mapping",
-        "description": "Change only if the suggested battery sensors or limits are wrong.",
+        "description": "Review the detected sensor mapping for each BK215. **State of charge** is in %, **discharge limit** is the minimum battery SoC allowed by SunEnergyXT, and **charge limit** is the upper SoC target. Leave valid existing entities selected: the EMS reads their current values and follows future changes. An upper limit is optional for normal household-load control.",
         "data": {
           "soc_1": "Battery 1: SoC",
           "lower_1": "Battery 1: discharge limit",
@@ -70,7 +70,7 @@
       },
       "ratings": {
         "title": "Inverter rated power",
-        "description": "Only needed when the inverter rating cannot be detected.",
+        "description": "Your inverter's Home Assistant power limit is given in **%**, so the EMS needs the **inverter's rated AC output in watts** to convert requested watts into percentages. Example: a 2,000 W inverter at 10% is limited to about 200 W. Enter the manufacturer's actual AC rating, **not** the PV panel watt-peak rating or BK215 battery capacity. This is not a target to export.",
         "data": {
           "rating_0_0": "Battery 1, inverter 1: watts",
           "rating_0_1": "Battery 1, inverter 2: watts",
@@ -86,7 +86,7 @@
       },
       "reconfigure": {
         "title": "Change EMS devices",
-        "description": "Select BK215 systems, then review inverters and the meter. Operating settings are kept.",
+        "description": "Select the BK215 systems to keep or add. Review inverter assignments and the shared meter on the next pages. Operating settings are preserved. Reconfiguration safely stops previous inverter control before switching.",
         "data": {
           "batteries": "BK215 systems",
           "correct_values": "Correct detected entities"
@@ -94,7 +94,7 @@
       },
       "inverters_manual": {
         "title": "Select inverter power limits manually",
-        "description": "Choose only writable power limits in % or W.",
+        "description": "Choose one or two Home Assistant **number** entities per BK215 that represent an **inverter AC active-power limit** in W or %. Do not select voltage, frequency, power-factor or battery charging controls. Verify which physical inverter belongs to each battery.",
         "data": {
           "inverters_1": "Battery 1: inverters",
           "inverters_2": "Battery 2: inverters",
@@ -129,7 +129,8 @@
           "upper_3": "Battery 3: upper SoC limit (feed-in only)",
           "upper_4": "Battery 4: upper SoC limit (feed-in only)",
           "upper_5": "Battery 5: upper SoC limit (feed-in only)"
-        }
+        },
+        "description": "**EMS control** turns the live household-load regulator on or off. **Grid import target** is a small positive buffer in watts (for example 20 W), not a grid-purchase schedule. **Feed-in after full charge** is optional and may export stored battery energy; keep it disabled until the desired behavior is understood."
       }
     },
     "error": {
