@@ -169,3 +169,26 @@ async def test_negative_offline_inverter_is_reported_during_manual_stop():
     hass.services.async_call.assert_not_awaited()
     assert runtime.status == "write_error"
     assert "number.inverter" in (runtime.last_error or "")
+
+
+
+@pytest.mark.asyncio
+async def test_negative_rate_limited_inverter_skips_normal_fast_changes(monkeypatch):
+    hass, entry = configured()
+    runtime = EMSRuntime(hass, entry)
+    monkeypatch.setattr(runtime, "_minimum_interval", lambda entity: 300.0)
+    runtime._last_sent["number.inverter"] = 500
+    runtime._sent_at["number.inverter"] = 1
+    await runtime._apply({"number.inverter": 100}, now=11)
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_positive_emergency_reduction_bypasses_rate_limit(monkeypatch):
+    hass, entry = configured()
+    runtime = EMSRuntime(hass, entry)
+    monkeypatch.setattr(runtime, "_minimum_interval", lambda entity: 300.0)
+    runtime._last_sent["number.inverter"] = 500
+    runtime._sent_at["number.inverter"] = 1
+    await runtime._apply({"number.inverter": 0}, now=11, emergency=True)
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
