@@ -5,7 +5,8 @@
       "user": {
         "title": "BK215-Speicher auswählen",
         "data": {
-          "batteries": "BK215-Systeme"
+          "batteries": "BK215-Systeme",
+          "correct_values": "Erkannte Entitäten korrigieren"
         },
         "description": "Wähle deine BK215-Systeme. Zugehörige Sensoren werden automatisch zugeordnet."
       },
@@ -20,14 +21,21 @@
       },
       "inverters": {
         "title": "Wechselrichter zuordnen",
-        "data": {},
+        "data": {
+          "inverters_1": "Speicher 1: Wechselrichter",
+          "inverters_2": "Speicher 2: Wechselrichter",
+          "inverters_3": "Speicher 3: Wechselrichter",
+          "inverters_4": "Speicher 4: Wechselrichter",
+          "inverters_5": "Speicher 5: Wechselrichter"
+        },
         "description": "Wähle ein oder zwei schreibbare Leistungslimits je BK215."
       },
       "grid": {
         "title": "Netzzähler auswählen",
         "data": {
           "grid": "Netzleistung",
-          "invert_grid": "Vorzeichen umkehren"
+          "invert_grid": "Vorzeichen umkehren",
+          "ack": "Andere Leistungssteuerungen sind deaktiviert"
         },
         "description": "Wähle den saldierten Netzleistungssensor. Positive Werte müssen Netzbezug bedeuten."
       },
@@ -37,13 +45,51 @@
         "data": {
           "ack": "Andere Wechselrichter-Steuerungen sind deaktiviert"
         }
+      },
+      "correct": {
+        "title": "Speicherzuordnung prüfen",
+        "description": "Nur ändern, wenn die automatisch erkannten Sensoren oder Grenzwerte falsch sind.",
+        "data": {
+          "soc_1": "Speicher 1: Ladezustand",
+          "lower_1": "Speicher 1: Entladegrenze",
+          "upper_1": "Speicher 1: obere Grenze",
+          "soc_2": "Speicher 2: Ladezustand",
+          "lower_2": "Speicher 2: Entladegrenze",
+          "upper_2": "Speicher 2: obere Grenze",
+          "soc_3": "Speicher 3: Ladezustand",
+          "lower_3": "Speicher 3: Entladegrenze",
+          "upper_3": "Speicher 3: obere Grenze",
+          "soc_4": "Speicher 4: Ladezustand",
+          "lower_4": "Speicher 4: Entladegrenze",
+          "upper_4": "Speicher 4: obere Grenze",
+          "soc_5": "Speicher 5: Ladezustand",
+          "lower_5": "Speicher 5: Entladegrenze",
+          "upper_5": "Speicher 5: obere Grenze"
+        }
+      },
+      "ratings": {
+        "title": "Wechselrichter-Nennleistung",
+        "description": "Wird nur benötigt, wenn die Nennleistung nicht automatisch erkannt wird.",
+        "data": {
+          "rating_0_0": "Speicher 1, Wechselrichter 1: W",
+          "rating_0_1": "Speicher 1, Wechselrichter 2: W",
+          "rating_1_0": "Speicher 2, Wechselrichter 1: W",
+          "rating_1_1": "Speicher 2, Wechselrichter 2: W",
+          "rating_2_0": "Speicher 3, Wechselrichter 1: W",
+          "rating_2_1": "Speicher 3, Wechselrichter 2: W",
+          "rating_3_0": "Speicher 4, Wechselrichter 1: W",
+          "rating_3_1": "Speicher 4, Wechselrichter 2: W",
+          "rating_4_0": "Speicher 5, Wechselrichter 1: W",
+          "rating_4_1": "Speicher 5, Wechselrichter 2: W"
+        }
       }
     },
     "error": {
       "invalid_setup": "Prüfe die gewählten Sensoren und Leistungsgrenzen.",
       "duplicate_inverter": "Ein Wechselrichter darf nur einmal zugeordnet werden.",
       "invalid_inverter": "Wähle je Speicher einen oder zwei Wechselrichter.",
-      "no_battery": "Wähle mindestens einen Speicher."
+      "no_battery": "Wähle mindestens einen Speicher.",
+      "other_controller": "Bitte zuerst andere Wechselrichtersteuerungen deaktivieren."
     },
     "abort": {
       "already_configured": "SunEnergyXT EMS ist bereits eingerichtet."
@@ -57,6 +103,21 @@
           "enabled": "EMS aktivieren",
           "feed_in": "Einspeisung nach Vollladung"
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "EMS-Status"
+      }
+    },
+    "switch": {
+      "enabled": {
+        "name": "EMS-Regelung"
+      },
+      "feed_in": {
+        "name": "Einspeisung nach Vollladung"
       }
     }
   }
