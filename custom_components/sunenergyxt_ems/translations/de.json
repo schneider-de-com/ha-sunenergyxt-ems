@@ -26,9 +26,10 @@
           "inverters_2": "Speicher 2: Wechselrichter",
           "inverters_3": "Speicher 3: Wechselrichter",
           "inverters_4": "Speicher 4: Wechselrichter",
-          "inverters_5": "Speicher 5: Wechselrichter"
+          "inverters_5": "Speicher 5: Wechselrichter",
+          "manual_inverters": "Leistungsentitäten manuell auswählen"
         },
-        "description": "Wähle ein oder zwei schreibbare Leistungslimits je BK215."
+        "description": "Wähle ein oder zwei erkannte Wechselrichtergeräte je BK215. Unbekannte Geräte können manuell zugeordnet werden."
       },
       "grid": {
         "title": "Netzzähler auswählen",
@@ -82,6 +83,25 @@
           "rating_4_0": "Speicher 5, Wechselrichter 1: W",
           "rating_4_1": "Speicher 5, Wechselrichter 2: W"
         }
+      },
+      "reconfigure": {
+        "title": "EMS-Geräte neu zuordnen",
+        "data": {
+          "batteries": "BK215-Systeme",
+          "correct_values": "Erkannte Entitäten korrigieren"
+        },
+        "description": "BK215 wählen, anschließend Wechselrichter und Zähler prüfen. Die Einstellungen bleiben erhalten."
+      },
+      "inverters_manual": {
+        "title": "Wechselrichter manuell zuordnen",
+        "description": "Nur schreibbare Leistungsbegrenzungen (%) oder (W) wählen.",
+        "data": {
+          "inverters_1": "Speicher 1: Wechselrichter",
+          "inverters_2": "Speicher 2: Wechselrichter",
+          "inverters_3": "Speicher 3: Wechselrichter",
+          "inverters_4": "Speicher 4: Wechselrichter",
+          "inverters_5": "Speicher 5: Wechselrichter"
+        }
       }
     },
     "error": {
@@ -101,7 +121,8 @@
         "title": "EMS-Einstellungen",
         "data": {
           "enabled": "EMS aktivieren",
-          "feed_in": "Einspeisung nach Vollladung"
+          "feed_in": "Einspeisung nach Vollladung",
+          "grid_target_w": "Netzbezug-Zielwert (W)"
         }
       }
     }
@@ -110,6 +131,9 @@
     "sensor": {
       "status": {
         "name": "EMS-Status"
+      },
+      "battery_status": {
+        "name": "Speicherstatus"
       }
     },
     "switch": {
