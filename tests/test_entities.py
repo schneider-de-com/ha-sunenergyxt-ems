@@ -100,3 +100,42 @@ async def test_positive_sensor_setup_creates_status(objects):
     await sensors.async_setup_entry(hass, entry, created.extend)
     assert len(created) == 1
     assert created[0].unique_id == "ems-entry_status"
+
+
+
+@pytest.mark.asyncio
+async def test_positive_switch_receives_runtime_update_signals(objects, monkeypatch):
+    entry, runtime, _ = objects
+    entity = switches.EMSToggle(entry, runtime, "enabled", "EMS control")
+    entity.hass = SimpleNamespace()
+    added = []
+    writes = []
+    cancel = lambda: None
+    monkeypatch.setattr(
+        switches, "async_dispatcher_connect", lambda *args: cancel
+    )
+    monkeypatch.setattr(entity, "async_on_remove", added.append)
+    monkeypatch.setattr(entity, "async_write_ha_state", lambda: writes.append(1))
+    await entity.async_added_to_hass()
+    entity._refresh()
+    assert added == [cancel]
+    assert writes == [1]
+
+
+@pytest.mark.asyncio
+async def test_positive_status_sensor_receives_runtime_update_signals(objects, monkeypatch):
+    entry, runtime, _ = objects
+    entity = sensors.EMSStatus(entry, runtime)
+    entity.hass = SimpleNamespace()
+    added = []
+    writes = []
+    cancel = lambda: None
+    monkeypatch.setattr(
+        sensors, "async_dispatcher_connect", lambda *args: cancel
+    )
+    monkeypatch.setattr(entity, "async_on_remove", added.append)
+    monkeypatch.setattr(entity, "async_write_ha_state", lambda: writes.append(1))
+    await entity.async_added_to_hass()
+    entity._refresh()
+    assert added == [cancel]
+    assert writes == [1]
