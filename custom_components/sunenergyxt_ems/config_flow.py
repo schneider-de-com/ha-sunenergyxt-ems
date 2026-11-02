@@ -16,6 +16,7 @@ from .const import (
     CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
+    DEFAULT_GRID_TARGET_W,
     CONF_GRID,
     CONF_GRID_INVERT,
     CONF_INVERTERS,
@@ -43,12 +44,28 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._grid: str | None = None
         self._invert_grid = False
         self._pending_ratings: list[tuple[int, int]] = []
+        self._reconfigure = False
+        self._previous: dict[str, Any] = {}
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Update batteries, inverters and grid meter without deleting the integration."""
+        self._reconfigure = True
+        self._previous = dict(self._get_reconfigure_entry().data)
+        return await self.async_step_user(user_input)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Choose registered BK215 devices rather than individual entities."""
-        if self._async_current_entries():
+        if not self._reconfigure and self._async_current_entries():
             return self.async_abort(reason="already_configured")
         suggestions = battery_suggestions(self.hass)
+        if self._reconfigure:
+            for battery in self._previous.get(CONF_BATTERIES, []):
+                suggestions.setdefault(battery[CONF_DEVICE], {
+                    key: value for key, value in battery.items()
+                    if key in (CONF_SOC, CONF_LOWER, CONF_UPPER, "charging")
+                })
         if not suggestions:
             return await self.async_step_battery_manual()
         if user_input is not None:
@@ -72,10 +89,14 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             for device_id in suggestions
         ]
         return self.async_show_form(
-            step_id="user",
+            step_id="reconfigure" if self._reconfigure else "user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_BATTERIES, default=list(suggestions)): selector.SelectSelector(
+                    vol.Required(
+                        CONF_BATTERIES,
+                        default=[b[CONF_DEVICE] for b in self._previous.get(CONF_BATTERIES, [])]
+                        if self._reconfigure else list(suggestions),
+                    ): selector.SelectSelector(
                         selector.SelectSelectorConfig(options=options, multiple=True)
                     ),
                     vol.Optional("correct_values", default=False):
@@ -178,6 +199,13 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     battery_inverters = []
                     for inverter_index, entity in enumerate(entities):
                         rating = device_rated_w(self.hass, entity)
+                        if rating is None and self._reconfigure:
+                            rating = next((
+                                previous[CONF_RATED_W]
+                                for stored in self._previous.get(CONF_BATTERIES, [])
+                                for previous in stored.get(CONF_INVERTERS, [])
+                                if previous["entity_id"] == entity
+                            ), None)
                         battery_inverters.append({
                             "entity_id": entity,
                             CONF_RATED_W: rating,
@@ -234,17 +262,23 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "other_controller"
             else:
                 await self.async_set_unique_id("household")
+                data = {
+                    CONF_BATTERIES: self._batteries,
+                    CONF_GRID: grid,
+                    CONF_GRID_INVERT: user_input.get(CONF_GRID_INVERT, False),
+                }
+                if self._reconfigure:
+                    self._abort_if_unique_id_mismatch()
+                    return self.async_update_reload_and_abort(
+                        self._get_reconfigure_entry(), data_updates=data
+                    )
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
-                    title="SunEnergyXT EMS",
-                    data={
-                        CONF_BATTERIES: self._batteries,
-                        CONF_GRID: grid,
-                        CONF_GRID_INVERT: user_input.get(CONF_GRID_INVERT, False),
-                    },
-                    options={CONF_ENABLED: True, CONF_FEED_IN: False},
+                    title="SunEnergyXT EMS", data=data,
+                    options={CONF_ENABLED: True, CONF_FEED_IN: False,
+                             "grid_target_w": DEFAULT_GRID_TARGET_W},
                 )
-        suggestion = suggested_grid(self.hass)
+        suggestion = self._previous.get(CONF_GRID) or suggested_grid(self.hass)
         return self.async_show_form(
             step_id="grid",
             data_schema=vol.Schema({
@@ -253,7 +287,10 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Optional(CONF_GRID_INVERT, default=False): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_GRID_INVERT,
+                    default=self._previous.get(CONF_GRID_INVERT, False)
+                ): selector.BooleanSelector(),
                 vol.Required(CONF_ACK, default=False): selector.BooleanSelector(),
             }),
             errors=errors,
@@ -281,5 +318,11 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_FEED_IN, default=self.config_entry.options.get(CONF_FEED_IN, False)
                 ): selector.BooleanSelector(),
+                vol.Required(
+                    "grid_target_w",
+                    default=self.config_entry.options.get(
+                        "grid_target_w", DEFAULT_GRID_TARGET_W
+                    ),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
             }),
         )
