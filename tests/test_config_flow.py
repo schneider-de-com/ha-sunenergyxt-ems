@@ -335,3 +335,15 @@ async def test_reconfigure_refuses_to_switch_if_old_inverter_cannot_stop(
     monkeypatch.setattr(flow, "_abort_if_unique_id_mismatch", lambda: None)
     result = await flow.async_step_grid({"grid": "sensor.grid", "ack": True})
     assert result["errors"]["base"] == "inverter_stop_failed"
+
+
+@pytest.mark.asyncio
+async def test_reject_number_entities_that_are_not_power_limits(flow):
+    flow._batteries = [{"device_id": "battery-1", "inverters": []}]
+    flow.hass.states.get = lambda _: SimpleNamespace(
+        attributes={"unit_of_measurement": "Hz"}
+    )
+    result = await flow.async_step_inverters({
+        "inverters_1": ["number.inverter"]
+    })
+    assert result["errors"]["base"] == "invalid_inverter"
