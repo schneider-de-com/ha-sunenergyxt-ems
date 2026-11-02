@@ -337,3 +337,26 @@ async def test_positive_reenabling_through_options_resumes_if_data_valid():
     await runtime.async_change_options()
     assert runtime.controller.enabled
     assert runtime.status == "running"
+
+@pytest.mark.asyncio
+async def test_stale_soc_while_grid_is_fresh_stops_discharge():
+    hass, entry = configured()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    hass.services.async_call.reset_mock()
+    stale = hass.states.get("sensor.soc")
+    stale.last_reported = datetime.now(UTC) - timedelta(minutes=2)
+    await runtime.async_update()
+    assert runtime.controller.state.blocked == {"battery-1"}
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_advanced_grid_target_option_changes_output():
+    hass, entry = configured(grid=420)
+    entry.options["grid_target_w"] = 40
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] == 380
