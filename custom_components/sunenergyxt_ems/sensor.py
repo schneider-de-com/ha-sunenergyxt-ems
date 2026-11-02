@@ -22,7 +22,8 @@ async def async_setup_entry(
 class EMSStatus(SensorEntity):
     """Report whether the controller can currently regulate."""
 
-    _attr_name = "EMS status"
+    _attr_name = None
+    _attr_translation_key = "status"
     _attr_has_entity_name = True
     _attr_should_poll = False
 
