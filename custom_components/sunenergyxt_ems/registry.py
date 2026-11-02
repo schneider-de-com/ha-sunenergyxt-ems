@@ -25,7 +25,18 @@ def registry_candidates(hass: HomeAssistant) -> list[Candidate]:
         if key is None:
             key = getattr(entry, "translation_key", None)
         if key is None:
-            key = unique_id.rsplit("_", 1)[-1]
+            key = next(
+                (
+                    suffix for suffix in (
+                        "total_active_power",
+                        "active_power_total",
+                        "grid_power",
+                        "net_power",
+                    )
+                    if unique_id.lower().endswith(suffix)
+                ),
+                None,
+            )
         candidates.append(
             Candidate(
                 entity_id=entry.entity_id,
