@@ -17,8 +17,18 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
-    CONF_BATTERIES, CONF_ENABLED, CONF_FEED_IN, CONF_GRID, CONF_GRID_INVERT,
-    CONF_INVERTERS, CONF_LOWER, CONF_RATED_W, CONF_SOC, CONF_UPPER, DOMAIN,
+    CONF_BATTERIES,
+    CONF_DEVICE,
+    CONF_ENABLED,
+    CONF_FEED_IN,
+    CONF_GRID,
+    CONF_GRID_INVERT,
+    CONF_INVERTERS,
+    CONF_LOWER,
+    CONF_RATED_W,
+    CONF_SOC,
+    CONF_UPPER,
+    DOMAIN,
 )
 from .logic import Battery, Controller, Inverter
 
