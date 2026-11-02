@@ -110,7 +110,8 @@ async def test_positive_switch_receives_runtime_update_signals(objects, monkeypa
     entity.hass = SimpleNamespace()
     added = []
     writes = []
-    cancel = lambda: None
+    def cancel():
+        return None
     monkeypatch.setattr(
         switches, "async_dispatcher_connect", lambda *args: cancel
     )
@@ -129,7 +130,8 @@ async def test_positive_status_sensor_receives_runtime_update_signals(objects, m
     entity.hass = SimpleNamespace()
     added = []
     writes = []
-    cancel = lambda: None
+    def cancel():
+        return None
     monkeypatch.setattr(
         sensors, "async_dispatcher_connect", lambda *args: cancel
     )
