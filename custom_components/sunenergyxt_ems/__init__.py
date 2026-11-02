@@ -1,40 +1,49 @@
-"""SunEnergyXT EMS: control existing Home Assistant battery and inverter entities."""
+"""SunEnergyXT EMS: orchestrate the existing Home Assistant integrations."""
 
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from typing import TYPE_CHECKING
 
 from .const import DOMAIN
-from .runtime import EMSRuntime
 
-PLATFORMS = (Platform.SENSOR, Platform.SWITCH)
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the single household EMS controller."""
+    """Start one household controller only after valid sensor data is available."""
+    from homeassistant.const import Platform
+
+    from .runtime import EMSRuntime
+
     runtime = EMSRuntime(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(
+        entry, (Platform.SENSOR, Platform.SWITCH)
+    )
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await runtime.async_start()
     return True
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply user switches without resetting the controller history."""
-    runtime: EMSRuntime | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    """Use the persisted options to update switches without resetting the controller."""
+    runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if runtime is not None:
         await runtime.async_change_options()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unregister scheduled work and Home Assistant entities."""
-    runtime: EMSRuntime | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    """Remove callbacks and sensor/switch platforms."""
+    from homeassistant.const import Platform
+
+    runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if runtime is not None:
         await runtime.async_stop()
-    ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if ok:
+    result = await hass.config_entries.async_unload_platforms(
+        entry, (Platform.SENSOR, Platform.SWITCH)
+    )
+    if result:
         hass.data[DOMAIN].pop(entry.entry_id, None)
-    return ok
+    return result
