@@ -20,8 +20,11 @@ async def async_setup_entry(
     runtime: EMSRuntime = hass.data[DOMAIN][entry.entry_id]
     entities: list[SensorEntity] = [EMSStatus(entry, runtime)]
     entities.extend(
-        BatteryStatus(entry, runtime, record["device_id"])
-        for record in entry.data["batteries"]
+        BatteryStatus(
+            entry, runtime, record["device_id"],
+            record.get("label", f"BK215 {index}"),
+        )
+        for index, record in enumerate(entry.data["batteries"], start=1)
     )
     async_add_entities(entities)
 
@@ -72,14 +75,17 @@ class BatteryStatus(SensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
 
-    def __init__(self, entry: ConfigEntry, runtime: EMSRuntime, device_id: str) -> None:
+    def __init__(
+        self, entry: ConfigEntry, runtime: EMSRuntime,
+        device_id: str, label: str = "BK215",
+    ) -> None:
         self._runtime = runtime
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_battery_{device_id}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"battery_{device_id}")},
             via_device=(DOMAIN, "controller"),
-            name=f"EMS BK215 {device_id[:8]}",
+            name=f"{label} (EMS)",
             manufacturer="Community",
             model="BK215 EMS controller",
         )
