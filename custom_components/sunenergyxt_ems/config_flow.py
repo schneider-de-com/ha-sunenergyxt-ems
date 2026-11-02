@@ -339,12 +339,17 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         return self.async_update_reload_and_abort(
                             entry, data_updates=data
                         )
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title="SunEnergyXT EMS", data=data,
-                    options={CONF_ENABLED: True, CONF_FEED_IN: False,
-                             "grid_target_w": DEFAULT_GRID_TARGET_W},
-                )
+                else:
+                    self._abort_if_unique_id_configured()
+                    return self.async_create_entry(
+                        title="SunEnergyXT EMS",
+                        data=data,
+                        options={
+                            CONF_ENABLED: True,
+                            CONF_FEED_IN: False,
+                            "grid_target_w": DEFAULT_GRID_TARGET_W,
+                        },
+                    )
         suggestion = self._previous.get(CONF_GRID) or suggested_grid(self.hass)
         return self.async_show_form(
             step_id="grid",
