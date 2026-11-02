@@ -21,6 +21,7 @@ from .const import (
     CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
+    DEFAULT_GRID_TARGET_W,
     CONF_GRID,
     CONF_GRID_INVERT,
     CONF_INVERTERS,
@@ -35,6 +36,7 @@ from .logic import Battery, Controller, Inverter
 _LOGGER = logging.getLogger(__name__)
 UPDATE_PERIOD = timedelta(seconds=5)
 MAX_GRID_AGE = timedelta(seconds=30)
+MAX_SOC_AGE = timedelta(seconds=45)
 MIN_OUTPUT_CHANGE_W = 10.0
 
 
@@ -100,6 +102,18 @@ class EMSRuntime:
             return None
         return number if isfinite(number) else None
 
+    def _fresh_soc(self, source: str | float | int | None) -> float | None:
+        """Never discharge based on an old battery measurement."""
+        if isinstance(source, str) and source.startswith("sensor."):
+            state = self.hass.states.get(source)
+            if state is None:
+                return None
+            sample_time = getattr(state, "last_reported", None) or state.last_updated
+            age = datetime.now(UTC) - sample_time
+            if age < timedelta(seconds=-5) or age > MAX_SOC_AGE:
+                return None
+        return self._float(source)
+
     def _batteries(self) -> tuple[Battery, ...]:
         batteries = []
         for record in self.entry.data[CONF_BATTERIES]:
@@ -128,7 +142,7 @@ class EMSRuntime:
             charging = self._float(record.get("charging")) or 0
             batteries.append(Battery(
                 key=record[CONF_DEVICE],
-                soc=self._float(record.get(CONF_SOC)),
+                soc=self._fresh_soc(record.get(CONF_SOC)),
                 lower_soc=self._float(record.get(CONF_LOWER)),
                 upper_soc=self._float(record.get(CONF_UPPER)),
                 inverters=tuple(inverters),
@@ -230,6 +244,9 @@ class EMSRuntime:
                 self._publish()
                 return
             now = monotonic()
+            self.controller.grid_target_w = float(self.entry.options.get(
+                "grid_target_w", DEFAULT_GRID_TARGET_W
+            ))
             grid, sequence = self._grid()
             batteries = self._batteries()
             if not self._seen_valid:
