@@ -192,3 +192,148 @@ async def test_positive_emergency_reduction_bypasses_rate_limit(monkeypatch):
     runtime._sent_at["number.inverter"] = 1
     await runtime._apply({"number.inverter": 0}, now=11, emergency=True)
     assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+
+
+@pytest.mark.asyncio
+async def test_positive_start_and_stop_registers_one_scheduler(monkeypatch):
+    from unittest.mock import Mock
+
+    hass, entry = configured()
+    cancel = Mock()
+    callback = Mock()
+    monkeypatch.setattr(module, "async_track_time_interval", lambda *args: (callback(), cancel)[1])
+    runtime = EMSRuntime(hass, entry)
+    await runtime.async_start()
+    assert runtime._running
+    callback.assert_called_once()
+    await runtime.async_stop()
+    cancel.assert_called_once()
+    assert not runtime._running
+
+
+def test_negative_numeric_helpers_reject_missing_bad_and_nonfinite_inputs():
+    hass, entry = configured()
+    runtime = EMSRuntime(hass, entry)
+    assert runtime._float(None) is None
+    assert runtime._float("sensor.not_found") is None
+    assert runtime._float(float("inf")) is None
+    assert runtime._float("nonsense") is None
+    assert runtime._float("42.5") == 42.5
+
+
+def test_negative_invalid_inverter_rating_is_skipped():
+    hass, entry = configured()
+    entry.data["batteries"][0]["inverters"][0]["rated_w"] = "invalid"
+    runtime = EMSRuntime(hass, entry)
+    assert runtime._batteries()[0].inverters == ()
+
+
+def test_positive_grid_kilowatts_are_converted_and_sign_can_be_reversed():
+    hass, entry = configured()
+    entry.data["invert_grid"] = True
+    state = hass.states.get("sensor.grid")
+    state.state = "0.5"
+    state.attributes["unit_of_measurement"] = "kW"
+    runtime = EMSRuntime(hass, entry)
+    value, sequence = runtime._grid()
+    assert value == -500
+    assert sequence is not None
+
+
+def test_negative_missing_grid_state_returns_no_sample():
+    hass, entry = configured()
+    old_get = hass.states.get
+    hass.states.get = lambda key: None if key == "sensor.grid" else old_get(key)
+    runtime = EMSRuntime(hass, entry)
+    assert runtime._grid() == (None, None)
+
+
+def test_negative_wrong_grid_unit_has_no_valid_sample():
+    hass, entry = configured()
+    hass.states.get("sensor.grid").attributes["unit_of_measurement"] = "kWh"
+    assert EMSRuntime(hass, entry)._grid() == (None, None)
+
+
+def test_positive_ap_systems_inverters_use_conservative_command_interval(monkeypatch):
+    hass, entry = configured()
+    monkeypatch.setattr(
+        module.er, "async_get",
+        lambda _: SimpleNamespace(
+            async_get=lambda entity: SimpleNamespace(platform="apsystems")
+        ),
+    )
+    runtime = EMSRuntime(hass, entry)
+    assert runtime._minimum_interval("number.inverter") == 300
+
+
+@pytest.mark.asyncio
+async def test_negative_unavailable_limit_is_not_written():
+    hass, entry = configured()
+    hass.states.get("number.inverter").state = "unavailable"
+    runtime = EMSRuntime(hass, entry)
+    await runtime._apply({"number.inverter": 100}, now=50)
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_negative_malformed_limit_unit_is_not_written():
+    hass, entry = configured()
+    hass.states.get("number.inverter").attributes["unit_of_measurement"] = "kWh"
+    runtime = EMSRuntime(hass, entry)
+    await runtime._apply({"number.inverter": 100}, now=50)
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_negative_invalid_inverter_limits_are_not_written():
+    hass, entry = configured()
+    hass.states.get("number.inverter").attributes["min"] = 900
+    runtime = EMSRuntime(hass, entry)
+    await runtime._apply({"number.inverter": 100}, now=50)
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_positive_no_new_command_for_tiny_limit_changes():
+    hass, entry = configured()
+    runtime = EMSRuntime(hass, entry)
+    runtime._last_sent["number.inverter"] = 400
+    await runtime._apply({"number.inverter": 404}, now=1000)
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_negative_controller_does_not_write_if_disabled():
+    hass, entry = configured()
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    hass.services.async_call.assert_not_awaited()
+    assert runtime.status == "disabled"
+
+
+@pytest.mark.asyncio
+async def test_positive_disabling_through_options_stops_inverters():
+    hass, entry = configured()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    entry.options["enabled"] = False
+    hass.services.async_call.reset_mock()
+    await runtime.async_change_options()
+    assert not runtime.controller.enabled
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_positive_reenabling_through_options_resumes_if_data_valid():
+    hass, entry = configured()
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    entry.options["enabled"] = True
+    await runtime.async_change_options()
+    assert runtime.controller.enabled
+    assert runtime.status == "running"
