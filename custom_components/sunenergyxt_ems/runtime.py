@@ -160,9 +160,11 @@ class EMSRuntime:
         entry = er.async_get(self.hass).async_get(entity_id)
         if entry and "apsystems" in entry.platform.lower():
             return 300.0
-        return 15.0
+        return 5.0
 
-    async def _apply(self, targets: dict[str, float], now: float) -> None:
+    async def _apply(
+        self, targets: dict[str, float], now: float, *, emergency: bool = False
+    ) -> None:
         for entity_id, target in targets.items():
             state = self.hass.states.get(entity_id)
             if state is None or state.state in ("unknown", "unavailable"):
@@ -196,9 +198,12 @@ class EMSRuntime:
                     step, MIN_OUTPUT_CHANGE_W * (100 / rating if unit == "%" else 1)
                 ):
                     continue
-                # Safety reductions are not delayed by ordinary command throttling.
-                if value > previous and now - self._sent_at.get(entity_id, 0) < interval:
-                    continue
+                elapsed = now - self._sent_at.get(entity_id, 0)
+                # Safety fallback and deliberate shutdown may bypass the normal interval.
+                if not (emergency and value < previous):
+                    required = max(interval, 20.0) if value > previous else interval
+                    if elapsed < required:
+                        continue
             try:
                 await self.hass.services.async_call(
                     "number", "set_value",
@@ -243,7 +248,7 @@ class EMSRuntime:
             )
             self.last_error = None
             self.status = "running" if grid is not None else "grid_unavailable"
-            await self._apply(outputs, now)
+            await self._apply(outputs, now, emergency=grid is None)
             self._publish()
 
     async def async_disable(self) -> None:
@@ -258,7 +263,7 @@ class EMSRuntime:
                 for inverter in battery[CONF_INVERTERS]
             }
             unreachable = sorted(configured - commands.keys())
-            await self._apply(commands, monotonic())
+            await self._apply(commands, monotonic(), emergency=True)
             if unreachable:
                 self.last_error = (
                     (self.last_error + "; " if self.last_error else "")
