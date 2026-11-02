@@ -141,3 +141,50 @@ async def test_positive_status_sensor_receives_runtime_update_signals(objects, m
     entity._refresh()
     assert added == [cancel]
     assert writes == [1]
+
+@pytest.mark.asyncio
+async def test_batteries_have_separate_visible_status_entities(objects):
+    entry, runtime, _ = objects
+    entry.data = {"batteries": [
+        {"device_id": "bk1", "inverters": [{"entity_id": "number.one"}]},
+        {"device_id": "bk2", "inverters": [{"entity_id": "number.two"}]},
+    ]}
+    runtime.controller = SimpleNamespace(
+        enabled=True,
+        state=SimpleNamespace(
+            main="bk1", support="bk2", blocked=set(), outputs={}
+        ),
+    )
+    runtime._batteries = lambda: (
+        SimpleNamespace(key="bk1", soc=75, lower_soc=10, upper_soc=100,
+                        inverters=(SimpleNamespace(key="number.one", online=True),)),
+        SimpleNamespace(key="bk2", soc=50, lower_soc=10, upper_soc=100,
+                        inverters=(SimpleNamespace(key="number.two", online=True),)),
+    )
+    runtime.hass = SimpleNamespace(
+        data={"sunenergyxt_ems": {"ems-entry": runtime}}
+    )
+    added = []
+    await sensors.async_setup_entry(runtime.hass, entry, added.extend)
+    assert len(added) == 3
+    assert {entity.unique_id for entity in added} == {
+        "ems-entry_status", "ems-entry_battery_bk1", "ems-entry_battery_bk2"
+    }
+    assert added[1].native_value == "main"
+    assert added[2].native_value == "support"
+    assert added[1].device_info["identifiers"] != added[2].device_info["identifiers"]
+    assert added[1].extra_state_attributes["soc_pct"] == 75
+
+
+def test_unavailable_battery_has_independent_status(objects):
+    entry, runtime, _ = objects
+    entry.data = {"batteries": [{"device_id": "bk", "inverters": []}]}
+    runtime.controller = SimpleNamespace(
+        enabled=True,
+        state=SimpleNamespace(main=None, support=None, blocked={"bk"}, outputs={}),
+    )
+    runtime._batteries = lambda: (
+        SimpleNamespace(key="bk", soc=None, lower_soc=10, upper_soc=100, inverters=()),
+    )
+    entity = sensors.BatteryStatus(entry, runtime, "bk")
+    assert entity.native_value == "blocked"
