@@ -1,43 +1,59 @@
 # SunEnergyXT EMS for Home Assistant
 
-> **Status: Planning / pre-alpha — not yet installable.**
+> **Pre-alpha. Not production-ready. No stable release yet.**
 >
-> This is an independent community project and is not affiliated with or endorsed by SunEnergyXT or the Home Assistant project.
+> Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
-**SunEnergyXT EMS** is a planned Home Assistant custom integration for coordinating SunEnergyXT BK215 battery storage systems and controllable microinverters. Its primary goal is to reduce electricity costs through efficient solar self-consumption, while avoiding unnecessary grid feed-in and battery cycling.
+SunEnergyXT EMS controls existing inverter power-limit entities to follow household demand.
+It does **not** speak directly to batteries or inverters.
 
-## Planned first release (MVP)
+## MVP features
 
-- **Home Assistant configuration flow** with suggested entity selections from the existing Energy Dashboard where feasible, plus manual correction and selection.
-- **Multiple BK215 systems**, with **one or two individually controllable microinverters per BK215**; the two inverters may use different manufacturers or integrations.
-- **Vendor-independent inverter control through Home Assistant entities**, supporting power limits expressed in **watts or percent** and respecting device-specific output limits.
-- **Load-following power regulation** using grid measurements, battery state of charge (SoC), and suitable protection logic.
-- **Optional feed-in after the battery reaches its configured full-charge threshold**.
-- **Capability-aware inverter handling**, including device-dependent command intervals, availability and feedback, rather than assuming all integrations behave alike.
+- Guided setup: **BK215 batteries → inverters → grid power meter**.
+- Auto-detect the existing [SunEnergyXT BK integration](https://github.com/SunEnergyXT/SunEnergyXT-BK) and suggest its SoC and charge/discharge limits. Manual corrections are possible.
+- One or two independently controllable microinverters per BK215, in watts or percent.
+- One grid meter for all batteries and SoC-based main/support coordination.
+- Battery reserve protection, grid-meter failure fallback, and safe manual disable.
+- Optional feed-in after full charge, **off by default**.
 
-The planned integration will use existing Home Assistant integrations and entities wherever possible rather than implement separate communication protocols for each inverter manufacturer.
+## Requirements
 
-## Longer-term goals
+- A current Home Assistant version using Python 3.14.
+- At least one configured SunEnergyXT BK215 battery and a readable SoC sensor.
+- A *writable* Home Assistant `number` power limit for every inverter.
+- A **signed, real-time grid-power sensor** in W or kW. Positive must mean import; negative means export. Reverse the sign in setup if needed.
+- Only one controller may write a given inverter power-limit entity.
 
-After the first stable release, potential enhancements include:
+## Development installation
 
-- Self-learning household consumption forecasts that give more weight to recent usage.
-- Solar production and electricity price forecasts.
-- Cost-aware energy scheduling for both fixed-price and dynamic electricity tariffs.
-- More sophisticated seasonal storage strategies and grid-friendly operation.
+This is a development build, **not yet a released HACS integration**.
 
-These are **roadmap goals**, not features that are currently implemented.
+1. Copy `custom_components/sunenergyxt_ems/` into your Home Assistant configuration.
+2. Restart Home Assistant.
+3. Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
+4. Select the BK215 devices, the inverter limit entities, and the grid sensor. Enter inverter rated watts only when not detected.
+5. **Disable your old inverter-control automations before completing setup.** The new EMS starts actively controlling only when valid current measurements are available.
 
-## Development status
+The integration creates **EMS control**, **Feed-in after full charge**, and **EMS status** entities.
+The control switch and options flow preserve settings across restarts.
 
-The repository is being initialized. **There is no functional integration, installation package, or released version yet.** Please do not treat the repository as ready for use in a production energy system.
+## Safety and limitations
 
-During development, device safety and reliable behavior take precedence over aggressive regulation. Inverter control will only be considered suitable after its supported capabilities and failure modes have been verified. The integration must not operate in parallel with another controller writing to the same inverter power-limit entity.
+- Home Assistant service-call success does not prove that a disconnected inverter changed its physical output.
+- Disabling the EMS sends one minimum-safe limit to reachable inverters. Unreachable inverters cannot be stopped reliably.
+- If the grid sensor fails, the controller briefly holds and then reduces reachable inverters. It resumes after several fresh samples.
+- A bad SoC reading disables only the affected battery; healthy batteries can continue.
+- Some Deye inverters report a known nonfatal diagnostic fault at 0% limit.
+- Feed-in after full charge may export stored battery energy. Use it knowingly.
+- A physically failed controller or Home Assistant shutdown cannot issue a final safety command.
+- Current automated tests are not a replacement for real inverter and BK215 hardware validation.
 
-## Contributing
+## Development
 
-Ideas, compatibility reports, and technical findings are welcome through GitHub Issues. Implementation instructions, development conventions, and a contribution guide will be added as the project progresses.
+The [six MVP issues](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues)
+define the scope. See the [Definition of Done](CONTRIBUTING.md#definition-of-done).
+Every commit should reference its relevant issue.
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+[Apache License 2.0](LICENSE).
