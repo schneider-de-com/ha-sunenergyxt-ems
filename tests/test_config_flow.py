@@ -292,3 +292,46 @@ async def test_manual_inverter_fallback_keeps_unknown_brands(flow):
         "inverters_1": ["number.inverter"]
     })
     assert result["step_id"] == "grid"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_safely_stops_old_controller_first(flow, monkeypatch):
+    entry = SimpleNamespace(entry_id="ems-existing", data={
+        "batteries": [], "grid": "sensor.grid", "invert_grid": False
+    })
+    controller = SimpleNamespace(
+        async_stop=AsyncMock(),
+        async_disable=AsyncMock(),
+        last_error=None,
+    )
+    flow._reconfigure = True
+    flow.hass.data = {"sunenergyxt_ems": {"ems-existing": controller}}
+    monkeypatch.setattr(flow, "_get_reconfigure_entry", lambda: entry)
+    monkeypatch.setattr(flow, "async_set_unique_id", AsyncMock())
+    monkeypatch.setattr(flow, "_abort_if_unique_id_mismatch", lambda: None)
+    monkeypatch.setattr(flow, "async_update_reload_and_abort",
+                        lambda entry, *, data_updates: {"type": "abort",
+                        "reason": "reconfigure_successful"})
+    result = await flow.async_step_grid({"grid": "sensor.grid", "ack": True})
+    controller.async_stop.assert_awaited_once()
+    controller.async_disable.assert_awaited_once()
+    assert result["reason"] == "reconfigure_successful"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_refuses_to_switch_if_old_inverter_cannot_stop(
+    flow, monkeypatch,
+):
+    entry = SimpleNamespace(entry_id="ems-existing", data={})
+    controller = SimpleNamespace(
+        async_stop=AsyncMock(),
+        async_disable=AsyncMock(),
+        last_error="number.inverter: unavailable",
+    )
+    flow._reconfigure = True
+    flow.hass.data = {"sunenergyxt_ems": {"ems-existing": controller}}
+    monkeypatch.setattr(flow, "_get_reconfigure_entry", lambda: entry)
+    monkeypatch.setattr(flow, "async_set_unique_id", AsyncMock())
+    monkeypatch.setattr(flow, "_abort_if_unique_id_mismatch", lambda: None)
+    result = await flow.async_step_grid({"grid": "sensor.grid", "ack": True})
+    assert result["errors"]["base"] == "inverter_stop_failed"
