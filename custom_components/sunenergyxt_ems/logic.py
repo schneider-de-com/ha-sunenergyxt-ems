@@ -96,7 +96,8 @@ class Controller:
                 self.state.blocked.add(battery.key)
                 self.state.full.discard(battery.key)
                 continue
-            assert battery.soc is not None and battery.lower_soc is not None
+            if battery.soc is None or battery.lower_soc is None:
+                continue
             if battery.soc <= battery.lower_soc:
                 self.state.blocked.add(battery.key)
             elif battery.key in self.state.blocked and battery.soc >= battery.lower_soc + 5:
@@ -109,7 +110,8 @@ class Controller:
         original_order = {battery.key: index for index, battery in enumerate(batteries)}
 
         def score(battery: Battery) -> tuple[int, int, float, int]:
-            assert battery.soc is not None and battery.lower_soc is not None
+            if battery.soc is None or battery.lower_soc is None:
+                return (-1, 0, 0, 0)
             delta = battery.soc - battery.lower_soc
             points = min(20, ceil(delta / 5))
             if (
@@ -202,7 +204,8 @@ class Controller:
         total_w = max(0, current + grid_w - self.grid_target_w)
         commands = safe.copy()
         for battery in ranked:
-            assert battery.soc is not None
+            if battery.soc is None:
+                continue
             if (
                 self.feed_in
                 and self._valid_soc(battery.upper_soc)
