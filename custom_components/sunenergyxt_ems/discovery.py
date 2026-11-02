@@ -20,6 +20,7 @@ _BK_ROLES = {
     "wifi_soc": "soc",
     "wifi_cnfg_disc_soc_min": "lower",
     "wifi_cnfg_chg_soc_max": "upper",
+    "wifi_inputpower_total": "charging",
 }
 
 
@@ -30,8 +31,8 @@ def find_batteries(entities: Iterable[Candidate]) -> dict[str, dict[str, str]]:
         if item.source_domain.lower() != "sunenergyxt" or not item.device_id:
             continue
         role = _BK_ROLES.get(item.translation_key or "")
-        if role and item.unit == "%" and item.platform == (
-            "sensor" if role == "soc" else "number"
+        if role and item.unit == ("W" if role == "charging" else "%") and item.platform == (
+            "number" if role in ("lower", "upper") else "sensor"
         ):
             devices.setdefault(item.device_id, {})[role] = item.entity_id
     return {
