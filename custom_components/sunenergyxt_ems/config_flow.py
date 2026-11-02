@@ -310,9 +310,25 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
                 if self._reconfigure:
                     self._abort_if_unique_id_mismatch()
-                    return self.async_update_reload_and_abort(
-                        self._get_reconfigure_entry(), data_updates=data
+                    entry = self._get_reconfigure_entry()
+                    runtime = getattr(self.hass, "data", {}).get(DOMAIN, {}).get(
+                        entry.entry_id
                     )
+                    if runtime is not None:
+                        # Reconfiguration is an explicit handover: do not leave
+                        # a removed inverter running at an old EMS limit.
+                        await runtime.async_stop()
+                        await runtime.async_disable()
+                        if runtime.last_error:
+                            errors["base"] = "inverter_stop_failed"
+                        else:
+                            return self.async_update_reload_and_abort(
+                                entry, data_updates=data
+                            )
+                    else:
+                        return self.async_update_reload_and_abort(
+                            entry, data_updates=data
+                        )
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title="SunEnergyXT EMS", data=data,
