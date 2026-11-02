@@ -16,7 +16,6 @@ from .const import (
     CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
-    DEFAULT_GRID_TARGET_W,
     CONF_GRID,
     CONF_GRID_INVERT,
     CONF_INVERTERS,
@@ -24,6 +23,7 @@ from .const import (
     CONF_RATED_W,
     CONF_SOC,
     CONF_UPPER,
+    DEFAULT_GRID_TARGET_W,
     DOMAIN,
 )
 from .registry import (
@@ -266,7 +266,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
         return self.async_show_form(
             step_id="inverters_manual" if self._manual_inverters else "inverters",
-            data_schema=schema,
+            data_schema=vol.Schema(fields),
             errors=errors,
         )
 
