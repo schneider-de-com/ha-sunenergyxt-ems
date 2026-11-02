@@ -92,3 +92,47 @@ async def test_negative_setup_requires_disabling_other_controllers(flow):
         "grid": "sensor.grid", "ack": False
     })
     assert result["errors"]["base"] == "other_controller"
+
+
+
+@pytest.mark.asyncio
+async def test_positive_explicit_correction_step_preserves_automatic_suggestions(flow):
+    result = await flow.async_step_user({
+        "batteries": ["battery-1"],
+        "correct_values": True,
+    })
+    assert result["step_id"] == "correct"
+    result = await flow.async_step_correct({
+        "soc_1": "sensor.updated_soc",
+        "lower_1": "number.lower",
+        "upper_1": "number.upper",
+    })
+    assert result["step_id"] == "inverters"
+    assert flow._batteries[0]["soc"] == "sensor.updated_soc"
+
+
+@pytest.mark.asyncio
+async def test_negative_missing_upper_limit_requires_correction(flow, monkeypatch):
+    monkeypatch.setattr(
+        flow_module, "battery_suggestions",
+        lambda _: {"battery-1": {
+            "soc": "sensor.soc",
+            "lower": "number.lower",
+        }},
+    )
+    result = await flow.async_step_user({"batteries": ["battery-1"]})
+    assert result["step_id"] == "correct"
+
+
+@pytest.mark.asyncio
+async def test_positive_manual_battery_fallback_when_upstream_not_found(flow, monkeypatch):
+    monkeypatch.setattr(flow_module, "battery_suggestions", lambda _: {})
+    result = await flow.async_step_user()
+    assert result["step_id"] == "battery_manual"
+    result = await flow.async_step_battery_manual({
+        "soc": "sensor.manual_soc",
+        "lower": 10,
+        "upper": 90,
+    })
+    assert result["step_id"] == "inverters"
+    assert flow._batteries[0]["lower"] == 10
