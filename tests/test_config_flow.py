@@ -40,6 +40,9 @@ def flow(monkeypatch):
             async_get=lambda entity: SimpleNamespace(domain="number")
         ),
     )
+    monkeypatch.setattr(flow_module, "inverter_device_suggestions",
+                        lambda hass: {"number.inverter": "Deye inverter",
+                                      "number.same": "Other inverter"})
     monkeypatch.setattr(flow_module, "device_rated_w", lambda hass, entity: 800.0)
     monkeypatch.setattr(flow_module, "suggested_grid", lambda hass: "sensor.grid")
     return obj
@@ -266,3 +269,26 @@ async def test_setup_options_allow_simple_grid_target(flow, monkeypatch):
         "enabled": True, "feed_in": False, "grid_target_w": 35,
     })
     assert new["data"]["grid_target_w"] == 35
+
+
+@pytest.mark.asyncio
+async def test_detected_inverters_are_offered_by_device_label(flow):
+    flow._batteries = [{"device_id": "battery-1", "inverters": []}]
+    result = await flow.async_step_inverters()
+    choices = result["data_schema"].schema
+    fields = [schema for schema in choices.values() if
+              isinstance(schema, flow_module.selector.SelectSelector)]
+    assert fields
+    assert any(option["label"] == "Deye inverter"
+               for option in fields[0].config["options"])
+
+
+@pytest.mark.asyncio
+async def test_manual_inverter_fallback_keeps_unknown_brands(flow):
+    flow._batteries = [{"device_id": "battery-1", "inverters": []}]
+    result = await flow.async_step_inverters({"manual_inverters": True})
+    assert result["step_id"] == "inverters_manual"
+    result = await flow.async_step_inverters_manual({
+        "inverters_1": ["number.inverter"]
+    })
+    assert result["step_id"] == "grid"
