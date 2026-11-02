@@ -231,6 +231,7 @@ async def test_reconfigure_keeps_existing_batteries_and_preserves_options(flow, 
             "invert_grid": False,
         },
         options={"enabled": False, "feed_in": True},
+        entry_id="ems-existing",
     )
     monkeypatch.setattr(flow, "_get_reconfigure_entry", lambda: entry)
     result = await flow.async_step_reconfigure()
