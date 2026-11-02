@@ -115,7 +115,7 @@ async def test_positive_explicit_correction_step_preserves_automatic_suggestions
 
 
 @pytest.mark.asyncio
-async def test_negative_missing_upper_limit_requires_correction(flow, monkeypatch):
+async def test_missing_optional_upper_limit_does_not_block_initial_setup(flow, monkeypatch):
     monkeypatch.setattr(
         flow_module, "battery_suggestions",
         lambda _: {"battery-1": {
@@ -124,7 +124,7 @@ async def test_negative_missing_upper_limit_requires_correction(flow, monkeypatc
         }},
     )
     result = await flow.async_step_user({"batteries": ["battery-1"]})
-    assert result["step_id"] == "correct"
+    assert result["step_id"] == "inverters"
 
 
 @pytest.mark.asyncio
