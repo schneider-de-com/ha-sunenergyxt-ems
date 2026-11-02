@@ -61,9 +61,25 @@ class Controller:
         return {
             inv.key: inv.minimum_w
             for battery in batteries
+            if Controller._valid_output_limit(battery.output_limit_w)
             for inv in battery.inverters
-            if inv.online
+            if Controller._valid_inverter(inv)
         }
+
+    @staticmethod
+    def _valid_output_limit(value: float) -> bool:
+        return isfinite(value) and value > 0
+
+    @staticmethod
+    def _valid_inverter(inv: Inverter) -> bool:
+        return (
+            inv.online
+            and bool(inv.key)
+            and isfinite(inv.rated_w)
+            and isfinite(inv.minimum_w)
+            and inv.rated_w > 0
+            and 0 <= inv.minimum_w <= inv.rated_w
+        )
 
     @staticmethod
     def _valid_soc(soc: float | None) -> bool:
@@ -75,9 +91,11 @@ class Controller:
             if (
                 not self._valid_soc(battery.soc)
                 or not self._valid_soc(battery.lower_soc)
-                or not any(inv.online for inv in battery.inverters)
+                or not self._valid_output_limit(battery.output_limit_w)
+                or not any(self._valid_inverter(inv) for inv in battery.inverters)
             ):
                 self.state.blocked.add(battery.key)
+                self.state.full.discard(battery.key)
                 continue
             assert battery.soc is not None and battery.lower_soc is not None
             if battery.soc <= battery.lower_soc:
@@ -132,16 +150,29 @@ class Controller:
         if not self.enabled:
             return safe
 
-        if grid_w is None or not isfinite(grid_w):
+        eligible = self._eligible(batteries)
+        eligible_keys = {
+            inv.key
+            for battery in eligible
+            for inv in battery.inverters
+            if self._valid_inverter(inv)
+        }
+        time_ok = isfinite(now) and (
+            self.state.last_grid_ok is None or now >= self.state.last_grid_ok
+        )
+        if not time_ok or grid_w is None or not isfinite(grid_w) or abs(grid_w) > 100_000:
             if (
-                self.state.last_grid_ok is not None
+                time_ok
+                and self.state.last_grid_ok is not None
                 and now - self.state.last_grid_ok <= self.grid_grace_seconds
                 and not self.state.grid_outage
             ):
-                return {
-                    key: self.state.outputs.get(key, minimum)
+                held = {
+                    key: self.state.outputs.get(key, minimum) if key in eligible_keys else minimum
                     for key, minimum in safe.items()
                 }
+                self.state.outputs = held.copy()
+                return held
             self.state.grid_outage = True
             self.state.recovery_count = 0
             self.state.last_sequence = None
@@ -158,12 +189,12 @@ class Controller:
             self.state.recovery_count = 0
         self.state.last_grid_ok = now
 
-        ranked = self._rank(self._eligible(batteries))
+        ranked = self._rank(eligible)
         current = sum(
             self.state.outputs.get(inv.key, 0)
             for battery in ranked
             for inv in battery.inverters
-            if inv.online
+            if self._valid_inverter(inv)
         )
         total_w = max(0, current + grid_w - self.grid_target_w)
         commands = safe.copy()
@@ -181,9 +212,11 @@ class Controller:
             else:
                 self.state.full.discard(battery.key)
 
-            eligible_inverters = [inv for inv in battery.inverters if inv.online]
+            eligible_inverters = [
+                inv for inv in battery.inverters if self._valid_inverter(inv)
+            ]
             maximum_w = min(
-                battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters)
+                1920, battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters)
             )
             budget_w = (
                 maximum_w if battery.key in self.state.full else min(total_w, maximum_w)
