@@ -21,13 +21,14 @@
       },
       "inverters": {
         "title": "Assign inverters",
-        "description": "Choose one or two controllable inverter power-limit entities for each battery.",
+        "description": "Choose one or two detected inverter devices per BK215. Unknown devices can be assigned manually.",
         "data": {
           "inverters_1": "Battery 1: inverters",
           "inverters_2": "Battery 2: inverters",
           "inverters_3": "Battery 3: inverters",
           "inverters_4": "Battery 4: inverters",
-          "inverters_5": "Battery 5: inverters"
+          "inverters_5": "Battery 5: inverters",
+          "manual_inverters": "Select inverter power-limit entities manually"
         }
       },
       "grid": {
@@ -82,6 +83,25 @@
           "rating_4_0": "Battery 5, inverter 1: watts",
           "rating_4_1": "Battery 5, inverter 2: watts"
         }
+      },
+      "reconfigure": {
+        "title": "Change EMS devices",
+        "description": "Select BK215 systems, then review inverters and the meter. Operating settings are kept.",
+        "data": {
+          "batteries": "BK215 systems",
+          "correct_values": "Correct detected entities"
+        }
+      },
+      "inverters_manual": {
+        "title": "Select inverter power limits manually",
+        "description": "Choose only writable power limits in % or W.",
+        "data": {
+          "inverters_1": "Battery 1: inverters",
+          "inverters_2": "Battery 2: inverters",
+          "inverters_3": "Battery 3: inverters",
+          "inverters_4": "Battery 4: inverters",
+          "inverters_5": "Battery 5: inverters"
+        }
       }
     },
     "error": {
@@ -101,7 +121,8 @@
         "title": "EMS settings",
         "data": {
           "enabled": "Enable EMS",
-          "feed_in": "Feed-in after full charge"
+          "feed_in": "Feed-in after full charge",
+          "grid_target_w": "Grid import target (W)"
         }
       }
     }
@@ -110,6 +131,9 @@
     "sensor": {
       "status": {
         "name": "EMS status"
+      },
+      "battery_status": {
+        "name": "Battery status"
       }
     },
     "switch": {
