@@ -6,7 +6,8 @@
         "title": "Select BK215 batteries",
         "data": {
           "batteries": "BK215 systems"
-        }
+        },
+        "description": "Choose BK215 systems. Related sensors are filled in automatically."
       },
       "battery_manual": {
         "title": "Battery sensors",
@@ -14,18 +15,21 @@
           "soc": "Battery level",
           "lower": "Discharge limit",
           "upper": "Charge limit (optional)"
-        }
+        },
+        "description": "If no device was found, select the battery level and limits."
       },
       "inverters": {
         "title": "Assign inverters",
-        "data": {}
+        "data": {},
+        "description": "Select one or two writable power limits for each BK215."
       },
       "grid": {
         "title": "Select the grid meter",
         "data": {
           "grid": "Grid power",
           "invert_grid": "Reverse grid power sign"
-        }
+        },
+        "description": "Select signed grid power. Positive must mean import."
       },
       "confirm": {
         "title": "Start energy management",
