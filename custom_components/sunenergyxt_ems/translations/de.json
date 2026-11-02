@@ -1,0 +1,59 @@
+{
+  "title": "SunEnergyXT EMS",
+  "config": {
+    "step": {
+      "user": {
+        "title": "BK215-Speicher auswählen",
+        "data": {
+          "batteries": "BK215-Systeme"
+        }
+      },
+      "battery_manual": {
+        "title": "Speichersensoren",
+        "data": {
+          "soc": "Ladezustand",
+          "lower": "Entladegrenze",
+          "upper": "Ladegrenze (optional)"
+        }
+      },
+      "inverters": {
+        "title": "Wechselrichter zuordnen",
+        "data": {}
+      },
+      "grid": {
+        "title": "Netzzähler auswählen",
+        "data": {
+          "grid": "Netzleistung",
+          "invert_grid": "Vorzeichen umkehren"
+        }
+      },
+      "confirm": {
+        "title": "Energiemanagement starten",
+        "description": "Deaktiviere alle anderen Automationen, die dieselben Wechselrichter-Leistungsgrenzen verändern.",
+        "data": {
+          "ack": "Andere Wechselrichter-Steuerungen sind deaktiviert"
+        }
+      }
+    },
+    "error": {
+      "invalid_setup": "Prüfe die gewählten Sensoren und Leistungsgrenzen.",
+      "duplicate_inverter": "Ein Wechselrichter darf nur einmal zugeordnet werden.",
+      "invalid_inverter": "Wähle je Speicher einen oder zwei Wechselrichter.",
+      "no_battery": "Wähle mindestens einen Speicher."
+    },
+    "abort": {
+      "already_configured": "SunEnergyXT EMS ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EMS-Einstellungen",
+        "data": {
+          "enabled": "EMS aktivieren",
+          "feed_in": "Einspeisung nach Vollladung"
+        }
+      }
+    }
+  }
+}
