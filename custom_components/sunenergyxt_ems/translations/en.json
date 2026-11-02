@@ -5,7 +5,8 @@
       "user": {
         "title": "Select BK215 batteries",
         "data": {
-          "batteries": "BK215 systems"
+          "batteries": "BK215 systems",
+          "correct_values": "Correct detected entities"
         },
         "description": "Choose BK215 systems. Related sensors are filled in automatically."
       },
@@ -20,14 +21,21 @@
       },
       "inverters": {
         "title": "Assign inverters",
-        "data": {},
+        "data": {
+          "inverters_1": "Battery 1: inverters",
+          "inverters_2": "Battery 2: inverters",
+          "inverters_3": "Battery 3: inverters",
+          "inverters_4": "Battery 4: inverters",
+          "inverters_5": "Battery 5: inverters"
+        },
         "description": "Select one or two writable power limits for each BK215."
       },
       "grid": {
         "title": "Select the grid meter",
         "data": {
           "grid": "Grid power",
-          "invert_grid": "Reverse grid power sign"
+          "invert_grid": "Reverse grid power sign",
+          "ack": "Other inverter controllers are disabled"
         },
         "description": "Select signed grid power. Positive must mean import."
       },
@@ -37,13 +45,51 @@
         "data": {
           "ack": "Other inverter controllers are disabled"
         }
+      },
+      "correct": {
+        "title": "Review battery mapping",
+        "description": "Change only if the suggested battery sensors or limits are wrong.",
+        "data": {
+          "soc_1": "Battery 1: SoC",
+          "lower_1": "Battery 1: discharge limit",
+          "upper_1": "Battery 1: charge limit",
+          "soc_2": "Battery 2: SoC",
+          "lower_2": "Battery 2: discharge limit",
+          "upper_2": "Battery 2: charge limit",
+          "soc_3": "Battery 3: SoC",
+          "lower_3": "Battery 3: discharge limit",
+          "upper_3": "Battery 3: charge limit",
+          "soc_4": "Battery 4: SoC",
+          "lower_4": "Battery 4: discharge limit",
+          "upper_4": "Battery 4: charge limit",
+          "soc_5": "Battery 5: SoC",
+          "lower_5": "Battery 5: discharge limit",
+          "upper_5": "Battery 5: charge limit"
+        }
+      },
+      "ratings": {
+        "title": "Inverter rated power",
+        "description": "Only needed when the inverter rating cannot be detected.",
+        "data": {
+          "rating_0_0": "Battery 1, inverter 1: watts",
+          "rating_0_1": "Battery 1, inverter 2: watts",
+          "rating_1_0": "Battery 2, inverter 1: watts",
+          "rating_1_1": "Battery 2, inverter 2: watts",
+          "rating_2_0": "Battery 3, inverter 1: watts",
+          "rating_2_1": "Battery 3, inverter 2: watts",
+          "rating_3_0": "Battery 4, inverter 1: watts",
+          "rating_3_1": "Battery 4, inverter 2: watts",
+          "rating_4_0": "Battery 5, inverter 1: watts",
+          "rating_4_1": "Battery 5, inverter 2: watts"
+        }
       }
     },
     "error": {
       "invalid_setup": "Check the selected sensors and power limits.",
       "duplicate_inverter": "Each inverter can only be assigned once.",
       "invalid_inverter": "Choose one or two inverter limits per battery.",
-      "no_battery": "Select at least one battery."
+      "no_battery": "Select at least one battery.",
+      "other_controller": "Disable other inverter controllers first."
     },
     "abort": {
       "already_configured": "SunEnergyXT EMS is already configured."
@@ -57,6 +103,21 @@
           "enabled": "Enable EMS",
           "feed_in": "Feed-in after full charge"
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "EMS status"
+      }
+    },
+    "switch": {
+      "enabled": {
+        "name": "EMS control"
+      },
+      "feed_in": {
+        "name": "Feed-in after full charge"
       }
     }
   }
