@@ -109,7 +109,8 @@
       "duplicate_inverter": "Ein Wechselrichter darf nur einmal zugeordnet werden.",
       "invalid_inverter": "Wähle je Speicher einen oder zwei Wechselrichter.",
       "no_battery": "Wähle mindestens einen Speicher.",
-      "other_controller": "Bitte zuerst andere Wechselrichtersteuerungen deaktivieren."
+      "other_controller": "Bitte zuerst andere Wechselrichtersteuerungen deaktivieren.",
+      "inverter_stop_failed": "Ein bisheriger Wechselrichter konnte nicht sicher abgeregelt werden. Bitte prüfen und erneut versuchen."
     },
     "abort": {
       "already_configured": "SunEnergyXT EMS ist bereits eingerichtet."
