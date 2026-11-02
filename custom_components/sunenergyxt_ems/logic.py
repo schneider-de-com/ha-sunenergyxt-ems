@@ -61,7 +61,6 @@ class Controller:
         return {
             inv.key: inv.minimum_w
             for battery in batteries
-            if Controller._valid_output_limit(battery.output_limit_w)
             for inv in battery.inverters
             if Controller._valid_inverter(inv)
         }
