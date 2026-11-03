@@ -15,6 +15,7 @@ BK_REGISTRY_SUFFIXES = {
     "wifi_cnfg_disc_soc_min",
     "wifi_cnfg_chg_soc_max",
     "wifi_inputpower_total",
+    "wifi_outputpower_total",
 }
 
 
