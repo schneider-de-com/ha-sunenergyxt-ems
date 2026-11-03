@@ -11,6 +11,18 @@ from custom_components.sunenergyxt_ems import sensor as sensors  # noqa: E402
 from custom_components.sunenergyxt_ems import switch as switches  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def mocked_device_registry(monkeypatch):
+    """Only simple unit tests mock the registry; HA lifecycle uses the real registry."""
+    monkeypatch.setattr(
+        sensors.dr,
+        "async_get",
+        lambda hass: SimpleNamespace(
+            async_get_or_create=lambda **kwargs: SimpleNamespace(id="ems-hub-device")
+        ),
+    )
+
+
 @pytest.fixture
 def objects():
     entry = SimpleNamespace(
