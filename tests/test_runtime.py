@@ -382,3 +382,25 @@ async def test_advanced_grid_target_option_changes_output():
     runtime._running = True
     await runtime.async_update()
     assert hass.services.async_call.await_args.args[2]["value"] == 190
+
+
+@pytest.mark.asyncio
+async def test_household_feed_in_mode_ignores_upper_soc_for_normal_demand() -> None:
+    """The source screenshot says household mode is independent of full charge."""
+    hass, entry = configured(grid=100, soc=95)
+    entry.options.update({"feed_in": True, "feed_in_mode": "household"})
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] == 40
+
+
+@pytest.mark.asyncio
+async def test_pv_feed_in_mode_uses_maximum_only_at_upper_soc() -> None:
+    """The PV mode can release maximum power after reaching the upper SoC."""
+    hass, entry = configured(grid=100, soc=95)
+    entry.options.update({"feed_in": True, "feed_in_mode": "pv"})
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] == 800
