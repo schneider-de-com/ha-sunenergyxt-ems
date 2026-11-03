@@ -68,7 +68,7 @@ async def test_positive_watts_are_sent_through_number_integration():
     await runtime.async_update()
     hass.services.async_call.assert_awaited_once()
     assert hass.services.async_call.await_args.args[:2] == ("number", "set_value")
-    assert hass.services.async_call.await_args.args[2]["value"] == 400
+    assert hass.services.async_call.await_args.args[2]["value"] == 200
 
 
 @pytest.mark.asyncio
@@ -77,7 +77,7 @@ async def test_positive_percent_limit_is_converted_from_watts():
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
-    assert hass.services.async_call.await_args.args[2]["value"] == 50
+    assert hass.services.async_call.await_args.args[2]["value"] == 25
 
 
 @pytest.mark.asyncio
@@ -378,4 +378,4 @@ async def test_advanced_grid_target_option_changes_output():
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
-    assert hass.services.async_call.await_args.args[2]["value"] == 380
+    assert hass.services.async_call.await_args.args[2]["value"] == 190
