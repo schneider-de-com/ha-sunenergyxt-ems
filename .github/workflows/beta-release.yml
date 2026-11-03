@@ -21,15 +21,19 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
       - name: Verify target is still the tested main revision
+        id: verify
         env:
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
-          test "$remote_main" = "$SOURCE_SHA" || {
+          if [ "$remote_main" = "$SOURCE_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
             echo "::notice::A newer main revision supersedes this one."
-            exit 0
-          }
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Require the HACS and CodeQL workflow results for this commit
+        if: steps.verify.outputs.current == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -54,6 +58,7 @@ jobs:
           echo "::error::HACS/CodeQL did not both pass before release gate timed out."
           exit 1
       - name: Publish a prerelease, never a stable release
+        if: steps.verify.outputs.current == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
