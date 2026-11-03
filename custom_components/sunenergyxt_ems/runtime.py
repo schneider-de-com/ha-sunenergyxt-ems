@@ -481,6 +481,15 @@ class EMSRuntime:
             }
             unreachable = sorted(configured - commands.keys())
             await self._apply(commands, monotonic(), emergency=True)
+            self._shutdown_pending = dict(self._pending)
+            self._pending.clear()
+            observed = self._reported_outputs(self._batteries())
+            missed = [
+                key for key, target in commands.items()
+                if key not in self._shutdown_pending and observed.get(key, 0) > target + 10
+            ]
+            if missed:
+                self.last_error = "Shutdown command not dispatched: " + ", ".join(missed)
             if unreachable:
                 self.last_error = (
                     (self.last_error + "; " if self.last_error else "")
