@@ -468,6 +468,14 @@ class EMSRuntime:
                 self._verify_shutdown(monotonic())
                 self._publish()
                 return
+            if self._deferred_shutdown:
+                self.status = "write_error"
+                self.last_error = (
+                    "Incomplete previous inverter shutdown: "
+                    + ", ".join(sorted(self._deferred_shutdown))
+                )
+                self._publish()
+                return
             now = monotonic()
             self.controller.grid_target_w = float(
                 self.entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W)
