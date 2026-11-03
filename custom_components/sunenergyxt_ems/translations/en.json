@@ -129,7 +129,8 @@
           "upper_3": "Battery 3: upper SoC limit (feed-in only)",
           "upper_4": "Battery 4: upper SoC limit (feed-in only)",
           "upper_5": "Battery 5: upper SoC limit (feed-in only)",
-          "feed_in_mode": "Feed-in behavior"
+          "feed_in_mode": "Feed-in behavior",
+          "feed_in_hysteresis_pct": "PV mode: SoC hysteresis (percentage points)"
         },
         "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. Keep feed-in off until hardware-tested."
       }
