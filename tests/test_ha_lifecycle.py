@@ -7,12 +7,12 @@ CI job with pytest-homeassistant-custom-component; no skip-on-missing-plugin.
 
 from __future__ import annotations
 
+import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-import pytest
 
 from custom_components.sunenergyxt_ems.const import DOMAIN
 
