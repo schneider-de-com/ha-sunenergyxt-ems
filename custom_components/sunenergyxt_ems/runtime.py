@@ -19,8 +19,8 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     CONF_BATTERIES,
-    CONF_DEVICE,
     CONF_DC_TRIPPED,
+    CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
     CONF_FEED_IN_HYSTERESIS,
