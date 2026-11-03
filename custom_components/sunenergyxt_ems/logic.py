@@ -24,6 +24,7 @@ class Battery:
     inverters: tuple[Inverter, ...]
     charging_w: float = 0
     output_limit_w: float = 1920
+    dc_output_w: float | None = None
 
 
 @dataclass(slots=True)
