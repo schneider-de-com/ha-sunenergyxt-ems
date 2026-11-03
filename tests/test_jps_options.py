@@ -43,7 +43,7 @@ async def test_options_save_pid_start_hold_full_pv_ev_and_measured_ac(options):
             "pid_kd": 0.12,
             "start_hold_seconds": 30,
             "pv_input_1": "sensor.pv",
-                "ev_mode_1": "switch.ev3600",
+            "ev_mode_1": "switch.ev3600",
             "ev_power_1": "sensor.ev3600",
             "ac_1_1": "sensor.m200_ac",
         }
@@ -63,10 +63,11 @@ async def test_options_save_pid_start_hold_full_pv_ev_and_measured_ac(options):
 @pytest.mark.asyncio
 async def test_options_refuse_unpaired_ev3600_source(options):
     handler, _entry = options
-    result = await handler.async_step_init({
-        "enabled": False,
-                "feed_in": False,
-        "ev_mode_1": "switch.ev3600",
+    result = await handler.async_step_init(
+        {
+            "enabled": False,
+            "feed_in": False,
+            "ev_mode_1": "switch.ev3600",
         }
     )
     assert result["errors"]["base"] == "incomplete_ev3600"
@@ -75,9 +76,10 @@ async def test_options_refuse_unpaired_ev3600_source(options):
 @pytest.mark.asyncio
 async def test_options_refuse_inverted_pid_gains(options):
     handler, _entry = options
-    result = await handler.async_step_init({
-        "enabled": False,
-        "feed_in": False,
+    result = await handler.async_step_init(
+        {
+            "enabled": False,
+            "feed_in": False,
             "pid_kp_min": 1.0,
             "pid_kp_max": 0.5,
         }
