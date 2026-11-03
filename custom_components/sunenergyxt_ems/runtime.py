@@ -81,6 +81,7 @@ class EMSRuntime:
         self._sent_at: dict[str, float] = {}
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
+        self._deferred_shutdown: set[str] = set()
         self._overload_latched: set[str] = set(entry.options.get(CONF_DC_TRIPPED, ()))
         self._dc_monitored: dict[str, str] = {}
         self._last_processed_grid: datetime | None = None
