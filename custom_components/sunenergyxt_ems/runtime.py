@@ -322,6 +322,14 @@ class EMSRuntime:
             # No-op writes on startup only create unnecessary communication
             # (and a fake pending acknowledgement) for already-correct limits.
             reported_value = self._float(state.state)
+            pending = self._pending.get(entity_id)
+            if (
+                emergency
+                and pending is not None
+                and abs(pending.target - value) < 0.01
+                and now - pending.sent_at < FEEDBACK_TIMEOUT_SECONDS
+            ):
+                continue
             if (
                 previous is None
                 and reported_value is not None
