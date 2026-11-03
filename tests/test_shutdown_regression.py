@@ -189,6 +189,7 @@ async def test_stop_does_not_erase_other_inverter_failure_when_ack_is_pending() 
     assert runtime.status == "write_error"
     assert "number.m200" in (runtime.last_error or "")
 
+
 @pytest.mark.asyncio
 async def test_disabled_ems_sends_deferred_zero_when_offline_m80_recovers() -> None:
     """Unreachable at stop must not mean the later recovering M80 keeps its old limit."""
@@ -207,10 +208,11 @@ async def test_disabled_ems_sends_deferred_zero_when_offline_m80_recovers() -> N
     runtime._running = True
     await runtime.async_update()
     commands = [c.args[2] for c in hass.services.async_call.await_args_list]
-    assert any(
-        c["entity_id"] == "number.m80" and c["value"] == 0 for c in commands
-    ), "A delayed zero must be sent once communication returns"
+    assert any(c["entity_id"] == "number.m80" and c["value"] == 0 for c in commands), (
+        "A delayed zero must be sent once communication returns"
+    )
     assert runtime.controller.enabled is False
+
 
 @pytest.mark.asyncio
 async def test_unconfirmed_offline_shutdown_blocks_controller_reenable() -> None:
