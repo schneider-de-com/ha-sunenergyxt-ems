@@ -188,4 +188,3 @@ async def test_stop_does_not_erase_other_inverter_failure_when_ack_is_pending() 
     await runtime.async_update()
     assert runtime.status == "write_error"
     assert "number.m200" in (runtime.last_error or "")
-
