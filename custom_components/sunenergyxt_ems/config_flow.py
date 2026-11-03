@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -13,6 +14,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_BATTERIES,
+    CONF_DC_TRIPPED,
     CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
@@ -419,6 +421,35 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             requested = dict(user_input)
+            reset_trip = bool(requested.pop("reset_dc_trip", False))
+            if reset_trip:
+                if requested.get(CONF_ENABLED, True):
+                    errors["base"] = "disable_before_trip_reset"
+                else:
+                    tripped = set(self.config_entry.options.get(CONF_DC_TRIPPED, ()))
+                    records = self.config_entry.data.get(CONF_BATTERIES, ())
+                    safe_to_reset = True
+                    for battery in records:
+                        if battery.get(CONF_DEVICE) not in tripped:
+                            continue
+                        state = self.hass.states.get(battery.get("dc_output"))
+                        report = getattr(state, "last_reported", None) or getattr(
+                            state, "last_updated", None
+                        )
+                        try:
+                            watts = float(state.state) if state else float("nan")
+                        except (TypeError, ValueError):
+                            watts = float("nan")
+                        if (
+                            state is None
+                            or state.attributes.get("unit_of_measurement") != "W"
+                            or not isinstance(report, datetime)
+                            or not 0 <= (datetime.now(UTC) - report).total_seconds() <= 90
+                            or not 0 <= watts <= 100
+                        ):
+                            safe_to_reset = False
+                    if not safe_to_reset:
+                        errors["base"] = "trip_reset_unconfirmed"
             if (
                 requested.get(CONF_FEED_IN)
                 and requested.get(
@@ -450,6 +481,9 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                         "grid_target_w",
                     )
                 }
+                settings[CONF_DC_TRIPPED] = (
+                    [] if reset_trip else list(self.config_entry.options.get(CONF_DC_TRIPPED, ()))
+                )
                 return self.async_create_entry(title="", data=settings)
         fields: dict[Any, Any] = {
             vol.Required(
@@ -486,6 +520,8 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 default=self.config_entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W),
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
         }
+        if self.config_entry.options.get(CONF_DC_TRIPPED):
+            fields[vol.Optional("reset_dc_trip", default=False)] = selector.BooleanSelector()
         for index, _ in missing:
             fields[vol.Optional(f"upper_{index}")] = vol.All(
                 vol.Coerce(float), vol.Range(min=70, max=100)
