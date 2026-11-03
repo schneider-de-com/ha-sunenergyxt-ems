@@ -55,6 +55,9 @@ async def test_setup_registers_real_integration_devices_and_controls(
     assert len(devices) == 2, "Expected EMS hub and one BK215 child device"
     assert any(device.name == "SunEnergyXT EMS" for device in devices)
     assert any("BK215" in (device.name or "") for device in devices)
+    parent = next(device for device in devices if device.name == "SunEnergyXT EMS")
+    child = next(device for device in devices if "BK215" in (device.name or ""))
+    assert child.via_device_id == parent.id
 
     entities = er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
     unique_ids = {entity.unique_id for entity in entities}
