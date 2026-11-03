@@ -14,3 +14,7 @@ CONF_ENABLED = "enabled"
 CONF_FEED_IN = "feed_in"
 DEFAULT_GRID_TARGET_W = 20.0
 BK215_MAX_AC_W = 1920.0
+
+CONF_FEED_IN_MODE = "feed_in_mode"
+FEED_IN_MODE_HOUSEHOLD = "household"
+FEED_IN_MODE_PV = "pv"
