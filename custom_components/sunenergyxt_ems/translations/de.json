@@ -129,7 +129,8 @@
           "upper_3": "Speicher 3: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_4": "Speicher 4: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)",
-          "feed_in_mode": "Einspeiseverhalten"
+          "feed_in_mode": "Einspeiseverhalten",
+          "feed_in_hysteresis_pct": "PV-Modus: SoC-Hysterese (Prozentpunkte)"
         },
         "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
       }
