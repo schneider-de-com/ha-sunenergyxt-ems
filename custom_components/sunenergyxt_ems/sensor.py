@@ -19,6 +19,13 @@ async def async_setup_entry(
 ) -> None:
     """Add an easy-to-read EMS status entity."""
     runtime: EMSRuntime = hass.data[DOMAIN][entry.entry_id]
+    controller_device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "controller")},
+        name="SunEnergyXT EMS",
+        manufacturer="Community",
+        model="Energy management",
+    )
     entities: list[SensorEntity] = [EMSStatus(entry, runtime)]
     entities.extend(
         BatteryStatus(
