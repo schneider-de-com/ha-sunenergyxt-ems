@@ -435,6 +435,17 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 default=self.config_entry.options.get(CONF_FEED_IN, False),
             ): selector.BooleanSelector(),
             vol.Required(
+                CONF_FEED_IN_MODE,
+                default=self.config_entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        {"value": FEED_IN_MODE_HOUSEHOLD, "label": "Household load / Haushaltslast"},
+                        {"value": FEED_IN_MODE_PV, "label": "Full charge then max inverter / PV-Erzeugung"},
+                    ]
+                )
+            ),
+            vol.Required(
                 "grid_target_w",
                 default=self.config_entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W),
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
