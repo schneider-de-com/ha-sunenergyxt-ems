@@ -429,6 +429,29 @@ class EMSRuntime:
             )
             grid, sequence = self._grid()
             batteries = self._batteries()
+            self._overload_latched.update(
+                battery.key
+                for battery in batteries
+                if battery.dc_output_w is not None and battery.dc_output_w > MAX_BK215_DC_W
+            )
+            if self._overload_latched:
+                safe = {
+                    inv.key: inv.minimum_w
+                    for battery in batteries
+                    if battery.key in self._overload_latched
+                    for inv in battery.inverters
+                    if inv.online
+                }
+                self.last_error = None
+                await self._apply(safe, now, emergency=True)
+                if self.last_error is None:
+                    self.status = "hardware_limit"
+                    self.last_error = (
+                        "BK215 DC output above 1920 W; manual inspection required: "
+                        + ", ".join(sorted(self._overload_latched))
+                    )
+                self._publish()
+                return
             if not self._seen_valid:
                 if grid is None or not any(
                     battery.soc is not None
