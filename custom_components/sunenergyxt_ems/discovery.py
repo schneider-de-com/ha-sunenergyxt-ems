@@ -21,6 +21,7 @@ _BK_ROLES = {
     "wifi_cnfg_disc_soc_min": "lower",
     "wifi_cnfg_chg_soc_max": "upper",
     "wifi_inputpower_total": "charging",
+    "wifi_outputpower_total": "dc_output",
 }
 
 
