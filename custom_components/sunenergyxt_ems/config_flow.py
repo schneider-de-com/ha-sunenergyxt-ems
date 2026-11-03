@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
 import voluptuous as vol
@@ -362,9 +363,17 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if runtime is not None:
                         # Reconfiguration is an explicit handover: do not leave
                         # a removed inverter running at an old EMS limit.
-                        await runtime.async_stop()
-                        await runtime.async_disable()
-                        if runtime.last_error:
+                        if getattr(getattr(runtime, "controller", None), "enabled", True):
+                            await runtime.async_stop()
+                            await runtime.async_disable()
+                            if hasattr(self.hass, "config_entries"):
+                                # Do not resume the old controller if the user abandons reconfiguration.
+                                self.hass.config_entries.async_update_entry(
+                                    entry, options={**entry.options, CONF_ENABLED: False}
+                                )
+                        elif hasattr(runtime, "_verify_shutdown"):
+                            runtime._verify_shutdown(monotonic())
+                        if runtime.last_error or getattr(runtime, "_shutdown_pending", {}):
                             errors["base"] = "inverter_stop_failed"
                         else:
                             return self.async_update_reload_and_abort(entry, data_updates=data)
