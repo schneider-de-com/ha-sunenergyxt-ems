@@ -130,13 +130,16 @@
           "upper_4": "Battery 4: upper SoC limit (feed-in only)",
           "upper_5": "Battery 5: upper SoC limit (feed-in only)",
           "feed_in_mode": "Feed-in behavior",
-          "feed_in_hysteresis_pct": "PV mode: SoC hysteresis (percentage points)"
+          "feed_in_hysteresis_pct": "PV mode: SoC hysteresis (percentage points)",
+          "reset_dc_trip": "Reset stored DC-output safety trip (EMS off, fresh BK215 output <= 100 W)"
         },
         "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. Keep feed-in off until hardware-tested."
       }
     },
     "error": {
-      "missing_upper": "Enter an upper SoC limit for each battery without a matching entity."
+      "missing_upper": "Enter an upper SoC limit for each battery without a matching entity.",
+      "disable_before_trip_reset": "Disable EMS before resetting the DC-output safety trip.",
+      "trip_reset_unconfirmed": "Reset denied: BK215 DC-output reading is unavailable, stale or above 100 W."
     }
   },
   "entity": {
