@@ -431,6 +431,32 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             requested = dict(user_input)
             reset_trip = bool(requested.pop("reset_dc_trip", False))
+            pv_map = dict(self.config_entry.options.get("pv_input", {}))
+            ev_map = dict(self.config_entry.options.get("ev3600", {}))
+            ac_map = dict(self.config_entry.options.get("ac_power", {}))
+            for index, battery in enumerate(existing, start=1):
+                device = battery[CONF_DEVICE]
+                pv = requested.pop(f"pv_input_{index}", pv_map.get(device))
+                mode = requested.pop(f"ev_mode_{index}", ev_map.get(device, {}).get("mode"))
+                power = requested.pop(f"ev_power_{index}", ev_map.get(device, {}).get("power"))
+                if pv:
+                    pv_map[device] = pv
+                else:
+                    pv_map.pop(device, None)
+                if bool(mode) != bool(power):
+                    errors["base"] = "incomplete_ev3600"
+                elif mode:
+                    ev_map[device] = {"mode": mode, "power": power}
+                else:
+                    ev_map.pop(device, None)
+            for i, battery in enumerate(existing, 1):
+                for j, inverter in enumerate(battery.get(CONF_INVERTERS, ()), 1):
+                    key = inverter["entity_id"]
+                    source = requested.pop(f"ac_{i}_{j}", ac_map.get(key))
+                    if source:
+                        ac_map[key] = source
+                    else:
+                        ac_map.pop(key, None)
             if reset_trip:
                 if requested.get(CONF_ENABLED, True):
                     errors["base"] = "disable_before_trip_reset"
@@ -482,6 +508,10 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                         records[index - 1][CONF_UPPER] = float(requested.pop(f"upper_{index}"))
                     updated[CONF_BATTERIES] = records
                     self.hass.config_entries.async_update_entry(self.config_entry, data=updated)
+            if float(requested.get("pid_kp_max", 0.9)) < float(
+                requested.get("pid_kp_min", 0.5)
+            ):
+                errors["base"] = "invalid_pid_gains"
             if not errors:
                 settings = {
                     key: value
@@ -493,8 +523,18 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                         CONF_FEED_IN_MODE,
                         CONF_FEED_IN_HYSTERESIS,
                         "grid_target_w",
+                        "adaptive_pid",
+                        "pid_kp_min",
+                        "pid_kp_max",
+                        "pid_kp_export",
+                        "pid_ki",
+                        "pid_kd",
+                        "start_hold_seconds",
                     )
                 }
+                settings["pv_input"] = pv_map
+                settings["ev3600"] = ev_map
+                settings["ac_power"] = ac_map
                 settings[CONF_DC_TRIPPED] = (
                     [] if reset_trip else list(self.config_entry.options.get(CONF_DC_TRIPPED, ()))
                 )
@@ -534,6 +574,40 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 default=self.config_entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W),
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
         }
+        fields[vol.Optional("adaptive_pid", default=self.config_entry.options.get("adaptive_pid", False))] = selector.BooleanSelector()
+        fields[vol.Optional("start_hold_seconds", default=self.config_entry.options.get("start_hold_seconds", 30))] = vol.All(vol.Coerce(float), vol.Range(min=5, max=60))
+        fields[vol.Optional("pid_kp_min", default=self.config_entry.options.get("pid_kp_min", 0.5))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=2))
+        fields[vol.Optional("pid_kp_max", default=self.config_entry.options.get("pid_kp_max", 0.9))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=2))
+        fields[vol.Optional("pid_kp_export", default=self.config_entry.options.get("pid_kp_export", 1))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=2))
+        fields[vol.Optional("pid_ki", default=self.config_entry.options.get("pid_ki", 0.02))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=0.5))
+        fields[vol.Optional("pid_kd", default=self.config_entry.options.get("pid_kd", 0.12))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=1))
+        for index, battery in enumerate(existing, start=1):
+            device = battery[CONF_DEVICE]
+            pv = self.config_entry.options.get("pv_input", {}).get(device)
+            ev = self.config_entry.options.get("ev3600", {}).get(device, {})
+            for prefix, source, domain in (
+                ("ev_mode", ev.get("mode"), "switch"),
+                ("ev_power", ev.get("power"), "sensor"),
+            ):
+                key = vol.Optional(
+                    f"{prefix}_{index}",
+                    **({"default": source} if source else {}),
+                )
+                fields[key] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=domain)
+                )
+            fields[vol.Optional(f"pv_input_{index}", **({"default": pv} if pv else {}))] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
+        for i, battery in enumerate(existing, 1):
+            for j, inverter in enumerate(battery.get(CONF_INVERTERS, ()), 1):
+                source = self.config_entry.options.get("ac_power", {}).get(
+                    inverter["entity_id"]
+                )
+                key = vol.Optional(f"ac_{i}_{j}", **({"default": source} if source else {}))
+                fields[key] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                )
         if self.config_entry.options.get(CONF_DC_TRIPPED):
             fields[vol.Optional("reset_dc_trip", default=False)] = selector.BooleanSelector()
         for index, _ in missing:

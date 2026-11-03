@@ -131,7 +131,39 @@
           "upper_5": "Battery 5: upper SoC limit (feed-in only)",
           "feed_in_mode": "Feed-in behavior",
           "feed_in_hysteresis_pct": "PV mode: SoC hysteresis (percentage points)",
-          "reset_dc_trip": "Reset stored DC-output safety trip (EMS off, fresh BK215 output <= 100 W)"
+          "reset_dc_trip": "Reset stored DC-output safety trip (EMS off, fresh BK215 output <= 100 W)",
+          "adaptive_pid": "Enable adaptive PID",
+          "start_hold_seconds": "Inverter startup hold (seconds)",
+          "pid_kp_min": "PID Kp small error",
+          "pid_kp_max": "PID Kp large error",
+          "pid_kp_export": "PID Kp on export",
+          "pid_ki": "PID integral Ki",
+          "pid_kd": "PID derivative Kd",
+          "pv_input_1": "Battery 1: optional PV input power",
+          "ev_mode_1": "Battery 1: EV3600 auto-charge switch",
+          "ev_power_1": "Battery 1: EV3600 charging power",
+          "pv_input_2": "Battery 2: optional PV input power",
+          "ev_mode_2": "Battery 2: EV3600 auto-charge switch",
+          "ev_power_2": "Battery 2: EV3600 charging power",
+          "pv_input_3": "Battery 3: optional PV input power",
+          "ev_mode_3": "Battery 3: EV3600 auto-charge switch",
+          "ev_power_3": "Battery 3: EV3600 charging power",
+          "pv_input_4": "Battery 4: optional PV input power",
+          "ev_mode_4": "Battery 4: EV3600 auto-charge switch",
+          "ev_power_4": "Battery 4: EV3600 charging power",
+          "pv_input_5": "Battery 5: optional PV input power",
+          "ev_mode_5": "Battery 5: EV3600 auto-charge switch",
+          "ev_power_5": "Battery 5: EV3600 charging power",
+          "ac_1_1": "Battery 1, inverter 1: measured AC watts (optional)",
+          "ac_1_2": "Battery 1, inverter 2: measured AC watts (optional)",
+          "ac_2_1": "Battery 2, inverter 1: measured AC watts (optional)",
+          "ac_2_2": "Battery 2, inverter 2: measured AC watts (optional)",
+          "ac_3_1": "Battery 3, inverter 1: measured AC watts (optional)",
+          "ac_3_2": "Battery 3, inverter 2: measured AC watts (optional)",
+          "ac_4_1": "Battery 4, inverter 1: measured AC watts (optional)",
+          "ac_4_2": "Battery 4, inverter 2: measured AC watts (optional)",
+          "ac_5_1": "Battery 5, inverter 1: measured AC watts (optional)",
+          "ac_5_2": "Battery 5, inverter 2: measured AC watts (optional)"
         },
         "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. Keep feed-in off until hardware-tested."
       }
@@ -139,7 +171,9 @@
     "error": {
       "missing_upper": "Enter an upper SoC limit for each battery without a matching entity.",
       "disable_before_trip_reset": "Disable EMS before resetting the DC-output safety trip.",
-      "trip_reset_unconfirmed": "Reset denied: BK215 DC-output reading is unavailable, stale or above 100 W."
+      "trip_reset_unconfirmed": "Reset denied: BK215 DC-output reading is unavailable, stale or above 100 W.",
+      "incomplete_ev3600": "Select both EV3600 switch and charging-power sensor.",
+      "invalid_pid_gains": "PID maximum Kp must be at least its minimum."
     }
   },
   "entity": {
@@ -149,6 +183,27 @@
       },
       "battery_status": {
         "name": "Battery status"
+      },
+      "grid_raw": {
+        "name": "Raw grid power"
+      },
+      "grid_effective": {
+        "name": "Filtered grid power"
+      },
+      "grid_error": {
+        "name": "Grid error"
+      },
+      "pid_proportional": {
+        "name": "PID proportional"
+      },
+      "pid_integral": {
+        "name": "PID integral"
+      },
+      "pid_derivative": {
+        "name": "PID derivative"
+      },
+      "controller_target": {
+        "name": "Requested total limit"
       }
     },
     "switch": {
