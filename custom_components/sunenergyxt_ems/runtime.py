@@ -391,7 +391,7 @@ class EMSRuntime:
         if not self._running or self._lock.locked():
             return
         async with self._lock:
-            self.controller.feed_in = bool(self.entry.options.get(CONF_FEED_IN, False))
+            self.controller.feed_in = bool(self.entry.options.get(CONF_FEED_IN, False)) and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
             self.controller.enabled = bool(self.entry.options.get(CONF_ENABLED, True))
             if not self.controller.enabled:
                 self._verify_shutdown(monotonic())
@@ -526,7 +526,7 @@ class EMSRuntime:
     async def async_change_options(self) -> None:
         """Apply an options-flow update without restarting the control loop."""
         enabled = bool(self.entry.options.get(CONF_ENABLED, True))
-        self.controller.feed_in = bool(self.entry.options.get(CONF_FEED_IN, False))
+        self.controller.feed_in = bool(self.entry.options.get(CONF_FEED_IN, False)) and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
         if not enabled and self.controller.enabled:
             await self.async_disable()
         elif enabled and not self.controller.enabled:
