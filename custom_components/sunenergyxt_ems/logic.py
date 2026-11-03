@@ -201,7 +201,38 @@ class Controller:
             for inv in battery.inverters
             if self._valid_inverter(inv)
         )
-        total_w = max(0, current + grid_w - self.grid_target_w)
+        # One step of the agreed proportional controller; never use the full
+        # grid error as an unrestricted actuator change.
+        in_deadband = 0 <= grid_w < 30
+        if in_deadband:
+            correction = 0.0
+        else:
+            gain = 1.0 if grid_w < 0 else 0.5
+            step_cap = (
+                20.0 if abs(grid_w) < 30
+                else 120.0 if abs(grid_w) <= 150
+                else 520.0
+            )
+            correction = max(
+                -step_cap, min(step_cap, (grid_w - self.grid_target_w) * gain)
+            )
+        # Leaving a full-charge export override must not continue intentional
+        # export merely to respect the ordinary rate limit.
+        exiting_full = any(
+            battery.key in self.state.full
+            and (
+                not self.feed_in
+                or (
+                    battery.soc is not None
+                    and battery.upper_soc is not None
+                    and battery.soc <= battery.upper_soc - 2
+                )
+            )
+            for battery in ranked
+        )
+        if exiting_full and grid_w < 0:
+            correction = grid_w - self.grid_target_w
+        total_w = max(0, current + correction)
         commands = safe.copy()
         for battery in ranked:
             if battery.soc is None:
