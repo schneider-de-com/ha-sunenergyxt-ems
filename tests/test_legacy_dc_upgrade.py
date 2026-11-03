@@ -50,7 +50,7 @@ async def test_legacy_entry_recovers_dc_sensor(monkeypatch, dc, expected):
     )
     monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
     monkeypatch.setattr(module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None, entities={}))
-    monkeypatch.setattr(module, "battery_suggestions", lambda _: {"bk1": {"dc_output": "sensor.bk_dc"}}, raising=False)
+    monkeypatch.setattr(module, "registered_dc_output", lambda hass, device: "sensor.bk_dc")
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
