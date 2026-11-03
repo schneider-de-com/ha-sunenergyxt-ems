@@ -316,7 +316,12 @@ class EMSRuntime:
                     continue
                 elapsed = now - self._sent_at.get(entity_id, 0)
                 # Safety fallback and deliberate shutdown may bypass the normal interval.
-                if not (emergency and (value < previous or (reported_value is not None and value < reported_value))):
+                if not (
+                    emergency
+                    and (
+                        value < previous or (reported_value is not None and value < reported_value)
+                    )
+                ):
                     required = max(interval, 20.0) if value > previous else interval
                     if elapsed < required:
                         continue
@@ -357,7 +362,9 @@ class EMSRuntime:
         for entity_id, pending in list(self._shutdown_pending.items()):
             state = self.hass.states.get(entity_id)
             current = self._float(state.state) if state else None
-            reported = (getattr(state, "last_reported", None) or state.last_updated) if state else None
+            reported = (
+                (getattr(state, "last_reported", None) or state.last_updated) if state else None
+            )
             step = self._float(state.attributes.get("step", 1)) if state else None
             if (
                 current is not None
