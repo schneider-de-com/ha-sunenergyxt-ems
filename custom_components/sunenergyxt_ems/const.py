@@ -12,6 +12,7 @@ CONF_DEVICE = "device_id"
 CONF_GRID_INVERT = "invert_grid"
 CONF_ENABLED = "enabled"
 CONF_FEED_IN = "feed_in"
+CONF_DC_TRIPPED = "dc_tripped_batteries"
 DEFAULT_GRID_TARGET_W = 20.0
 BK215_MAX_AC_W = 1920.0
 
