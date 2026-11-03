@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -416,3 +417,52 @@ async def test_options_display_household_and_pv_modes(flow, monkeypatch):
         {"enabled": False, "feed_in": True, "feed_in_mode": "household", "grid_target_w": 20}
     )
     assert saved["data"]["feed_in_mode"] == "household"
+
+
+@pytest.mark.asyncio
+async def test_tripped_dc_output_cannot_be_reset_while_enabled(monkeypatch):
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    entry = SimpleNamespace(
+        data={"batteries": [{"device_id": "bk1", "dc_output": "sensor.dc"}]},
+        options={"enabled": False, "dc_tripped_batteries": ["bk1"]},
+    )
+    monkeypatch.setattr(
+        flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry)
+    )
+    result = await options.async_step_init(
+        {"enabled": True, "feed_in": False, "reset_dc_trip": True}
+    )
+    assert result["errors"]["base"] == "disable_before_trip_reset"
+
+
+@pytest.mark.asyncio
+async def test_tripped_dc_output_reset_requires_fresh_zero_watts(monkeypatch):
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    entry = SimpleNamespace(
+        data={"batteries": [{"device_id": "bk1", "dc_output": "sensor.dc"}]},
+        options={"enabled": False, "dc_tripped_batteries": ["bk1"]},
+    )
+    monkeypatch.setattr(
+        flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry)
+    )
+    state = SimpleNamespace(
+        state="0",
+        attributes={"unit_of_measurement": "W"},
+        last_reported=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    monkeypatch.setattr(
+        flow_module.EMSEntryOptionsFlow,
+        "hass",
+        property(lambda _: SimpleNamespace(states=SimpleNamespace(get=lambda entity: state))),
+    )
+    result = await options.async_step_init(
+        {"enabled": False, "feed_in": False, "reset_dc_trip": True}
+    )
+    assert result["errors"]["base"] == "trip_reset_unconfirmed"
+
+    state.last_reported = datetime.now(UTC)
+    saved = await options.async_step_init(
+        {"enabled": False, "feed_in": False, "reset_dc_trip": True}
+    )
+    assert saved["type"] == "create_entry"
+    assert saved["data"]["dc_tripped_batteries"] == []
