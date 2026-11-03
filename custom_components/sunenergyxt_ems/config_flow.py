@@ -442,7 +442,10 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     ]
                     safe_to_reset = bool(tripped) and len(matching) == len(tripped)
                     for battery in matching:
-                        state = self.hass.states.get(battery.get("dc_output") or battery_suggestions(self.hass).get(battery[CONF_DEVICE], {}).get("dc_output"))
+                        source = battery.get("dc_output") or battery_suggestions(self.hass).get(
+                            battery[CONF_DEVICE], {}
+                        ).get("dc_output")
+                        state = self.hass.states.get(source) if source else None
                         report = getattr(state, "last_reported", None) or getattr(
                             state, "last_updated", None
                         )
