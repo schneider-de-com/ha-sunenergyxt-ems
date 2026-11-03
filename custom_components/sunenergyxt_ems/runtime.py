@@ -316,7 +316,7 @@ class EMSRuntime:
                     continue
                 elapsed = now - self._sent_at.get(entity_id, 0)
                 # Safety fallback and deliberate shutdown may bypass the normal interval.
-                if not (emergency and value < previous):
+                if not (emergency and (value < previous or (reported_value is not None and value < reported_value))):
                     required = max(interval, 20.0) if value > previous else interval
                     if elapsed < required:
                         continue
