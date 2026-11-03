@@ -439,7 +439,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                         )
                         try:
                             watts = float(state.state) if state else float("nan")
-                        except (TypeError, ValueError):
+                        except TypeError, ValueError:
                             watts = float("nan")
                         if (
                             state is None
