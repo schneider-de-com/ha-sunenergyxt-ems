@@ -54,7 +54,13 @@ def registry(monkeypatch):
             "sunEnergyXT",
             config="entry_a",
         ),
-        item("sensor.changed_dc", "entry_a_wifi_outputpower_total", "bk1", "sunEnergyXT", config="entry_a"),
+        item(
+            "sensor.changed_dc",
+            "entry_a_wifi_outputpower_total",
+            "bk1",
+            "sunEnergyXT",
+            config="entry_a",
+        ),
         item("sensor.other_bk_soc", "entry_b_wifi_soc", "bk2", "sunEnergyXT", config="entry_b"),
         item(
             "sensor.grid_renamed",
