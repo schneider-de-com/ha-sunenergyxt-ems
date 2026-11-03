@@ -77,7 +77,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     {
                         key: value
                         for key, value in battery.items()
-                        if key in (CONF_SOC, CONF_LOWER, CONF_UPPER, "charging")
+                        if key in (CONF_SOC, CONF_LOWER, CONF_UPPER, "charging", "dc_output")
                     },
                 )
         if not suggestions:
