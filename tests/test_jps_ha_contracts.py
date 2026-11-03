@@ -38,15 +38,29 @@ def configured():
     hass = SimpleNamespace(
         states=SimpleNamespace(get=states.get),
         services=SimpleNamespace(async_call=AsyncMock()),
-        config_entries=SimpleNamespace(async_update_entry=lambda entry, *, options: setattr(entry, "options", options)),
+        config_entries=SimpleNamespace(
+            async_update_entry=lambda entry, *, options: setattr(entry, "options", options)
+        ),
     )
     entry = SimpleNamespace(
         entry_id="jps-test",
-        data={"grid": "sensor.grid", "batteries": [
-            {"device_id": "bk1", "soc": "sensor.soc", "lower": 10, "upper": 90,
-             "inverters": [{"entity_id": "number.inverter", "rated_w": 800}]}
-        ]},
-        options={"enabled": True, "feed_in": False, "ev3600": {"bk1": {"mode": "switch.ev", "power": "sensor.ev"}}},
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 90,
+                    "inverters": [{"entity_id": "number.inverter", "rated_w": 800}],
+                }
+            ],
+        },
+        options={
+            "enabled": True,
+            "feed_in": False,
+            "ev3600": {"bk1": {"mode": "switch.ev", "power": "sensor.ev"}},
+        },
     )
     return hass, entry, states
 
@@ -93,6 +107,7 @@ def test_stale_power_or_unknown_ev_state_never_looks_like_not_charging():
     assert ev3600_charging(hass, None) is False
     assert fresh_power(hass, "sensor.ev") is None
 
+
 @pytest.mark.asyncio
 async def test_startup_hold_prevents_normal_writes_but_releases_after_30s(monkeypatch):
     hass, entry, states = configured()
@@ -118,6 +133,7 @@ async def test_startup_hold_prevents_normal_writes_but_releases_after_30s(monkey
     await runtime.async_update()
     assert hass.services.async_call.await_count >= 2
 
+
 @pytest.mark.asyncio
 async def test_startup_hold_allows_reducing_percent_inverter_on_real_export():
     """Compare % with %, not target watts with native reported percentage."""
@@ -133,6 +149,7 @@ async def test_startup_hold_allows_reducing_percent_inverter_on_real_export():
     runtime._grid_filtered_w = -700.0
     await runtime._apply({"number.inverter": 40}, now=100)
     assert hass.services.async_call.await_args.args[2]["value"] == 5.0
+
 
 @pytest.mark.asyncio
 async def test_ev3600_safety_stop_is_not_blocked_by_missing_grid_at_startup():
