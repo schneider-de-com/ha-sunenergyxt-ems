@@ -14,11 +14,7 @@ from pathlib import Path
 
 from custom_components.sunenergyxt_ems.logic import Battery, Controller, Inverter
 
-FIXTURE = (
-    Path(__file__).parent
-    / "fixtures"
-    / "ems_oscillation_anonymized.json"
-)
+FIXTURE = Path(__file__).parent / "fixtures" / "ems_oscillation_anonymized.json"
 
 
 def _track(record: dict[str, object], entity: str) -> list[tuple[float, float | None]]:
@@ -26,9 +22,7 @@ def _track(record: dict[str, object], entity: str) -> list[tuple[float, float | 
     return [(float(seconds), v) for seconds, v in raw]
 
 
-def _soc_at(
-    readings: list[tuple[float, float | None]], when: float
-) -> float | None:
+def _soc_at(readings: list[tuple[float, float | None]], when: float) -> float | None:
     times = [instant for instant, _ in readings]
     pos = bisect_right(times, when) - 1
     return readings[pos][1] if pos >= 0 else None
@@ -37,9 +31,7 @@ def _soc_at(
 def test_night_replay_preserves_reserve_and_limits_every_normal_step() -> None:
     """Real meter spikes must not defeat the bounded, reserve-aware controller."""
     incident = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    meter = _track(
-        incident, "grid_w"
-    )
+    meter = _track(incident, "grid_w")
     first_soc = _track(incident, "soc_a_pct")
     second_soc = _track(incident, "soc_b_pct")
 
@@ -96,9 +88,7 @@ def test_night_replay_preserves_reserve_and_limits_every_normal_step() -> None:
 def test_fixture_retains_original_inverter_telemetry_not_simulated_success() -> None:
     """Keep real command history separate from what the policy simulation predicts."""
     incident = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    m80 = _track(
-        incident, "inverter_b_limit_pct"
-    )
+    m80 = _track(incident, "inverter_b_limit_pct")
     observed_percent = [p for _, p in m80 if p is not None]
     assert len(m80) >= 80
     assert min(observed_percent) == 0
