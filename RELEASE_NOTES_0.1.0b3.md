@@ -26,3 +26,4 @@ Before any supervised hardware test, take a Home Assistant backup or Proxmox sna
 - Advanced dynamic tariff, PV forecast, seasonal optimization and a permanent simulation mode are intentionally outside the original MVP.
 
 Related: #6, #22, #27, #28, #30, #31, #32 and PR #29.
+\n
