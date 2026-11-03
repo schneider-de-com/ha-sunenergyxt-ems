@@ -1,7 +1,7 @@
 """Replay a recorded incident as controller input, with explicit limitations.
 
-The samples were read from Home Assistant's recorder on 2026-11-03.
-They are the observed response of the OLD controller, not an independent load
+The samples come from an anonymized HA recorder incident with relative time.
+They are the observed response of an earlier controller, not an independent load
 trajectory or a high-fidelity electrical plant model. They can validate
 policy invariants, but never prove financial savings or exact physical output.
 """
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 from bisect import bisect_right
-from datetime import datetime
 from pathlib import Path
 
 from custom_components.sunenergyxt_ems.logic import Battery, Controller, Inverter
@@ -18,17 +17,17 @@ from custom_components.sunenergyxt_ems.logic import Battery, Controller, Inverte
 FIXTURE = (
     Path(__file__).parent
     / "fixtures"
-    / "incident_2026-11-03_0025_0053.json"
+    / "ems_oscillation_anonymized.json"
 )
 
 
-def _track(record: dict[str, object], entity: str) -> list[tuple[datetime, float | None]]:
+def _track(record: dict[str, object], entity: str) -> list[tuple[float, float | None]]:
     raw = record["tracks"][entity]
-    return [(datetime.fromisoformat(ts), v) for ts, v in raw]
+    return [(float(seconds), v) for seconds, v in raw]
 
 
 def _soc_at(
-    readings: list[tuple[datetime, float | None]], when: datetime
+    readings: list[tuple[float, float | None]], when: float
 ) -> float | None:
     times = [instant for instant, _ in readings]
     pos = bisect_right(times, when) - 1
@@ -39,10 +38,10 @@ def test_night_replay_preserves_reserve_and_limits_every_normal_step() -> None:
     """Real meter spikes must not defeat the bounded, reserve-aware controller."""
     incident = json.loads(FIXTURE.read_text(encoding="utf-8"))
     meter = _track(
-        incident, "sensor.heizungsraum_shelly_pro_3em_total_active_power"
+        incident, "grid_w"
     )
-    first_soc = _track(incident, "sensor.bk215_keller_speicherlevel")
-    second_soc = _track(incident, "sensor.bk215_2_bk_speicherlevel")
+    first_soc = _track(incident, "soc_a_pct")
+    second_soc = _track(incident, "soc_b_pct")
 
     assert len(meter) == 311
     assert min(v for _, v in meter if v is not None) < -1000
@@ -72,7 +71,7 @@ def test_night_replay_preserves_reserve_and_limits_every_normal_step() -> None:
                 output_limit_w=1920,
             ),
         )
-        output = controller.update(batteries, grid, when.timestamp())
+        output = controller.update(batteries, grid, when)
         a, b = output["m200"], output["m80"]
         assert 0 <= a <= 1920
         assert 0 <= b <= 800
@@ -98,7 +97,7 @@ def test_fixture_retains_original_inverter_telemetry_not_simulated_success() -> 
     """Keep real command history separate from what the policy simulation predicts."""
     incident = json.loads(FIXTURE.read_text(encoding="utf-8"))
     m80 = _track(
-        incident, "number.heizungsraum_deye_m80_active_power_regulation"
+        incident, "inverter_b_limit_pct"
     )
     observed_percent = [p for _, p in m80 if p is not None]
     assert len(m80) >= 80
