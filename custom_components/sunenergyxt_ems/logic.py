@@ -175,7 +175,7 @@ class Controller:
             self.state.pid_last_error_w = error
             self.state.pid_last_sequence = sequence
         step = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
-        return max(-step, min(step, terms.correction))
+        return max(-step, min(step, float(terms.correction)))
 
     def disable(self, batteries: tuple[Battery, ...]) -> dict[str, float]:
         self.enabled = False
