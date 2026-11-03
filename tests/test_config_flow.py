@@ -360,6 +360,24 @@ async def test_reconfigure_refuses_to_switch_if_old_inverter_cannot_stop(
 
 
 @pytest.mark.asyncio
+async def test_reconfigure_never_reassigns_inverters_before_shutdown_ack(flow, monkeypatch):
+    entry = SimpleNamespace(entry_id="ems-existing", data={})
+    runtime = SimpleNamespace(
+        async_stop=AsyncMock(),
+        async_disable=AsyncMock(),
+        last_error=None,
+        _shutdown_pending={"number.inverter": object()},
+    )
+    flow._reconfigure = True
+    flow.hass.data = {"sunenergyxt_ems": {"ems-existing": runtime}}
+    monkeypatch.setattr(flow, "_get_reconfigure_entry", lambda: entry)
+    monkeypatch.setattr(flow, "async_set_unique_id", AsyncMock())
+    monkeypatch.setattr(flow, "_abort_if_unique_id_mismatch", lambda: None)
+    result = await flow.async_step_grid({"grid": "sensor.grid", "ack": True})
+    assert result["errors"]["base"] == "inverter_stop_failed"
+
+
+@pytest.mark.asyncio
 async def test_reject_number_entities_that_are_not_power_limits(flow):
     flow._batteries = [{"device_id": "battery-1", "inverters": []}]
     flow.hass.states.get = lambda _: SimpleNamespace(attributes={"unit_of_measurement": "Hz"})
