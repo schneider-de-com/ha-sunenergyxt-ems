@@ -480,3 +480,32 @@ async def test_tripped_dc_output_reset_requires_fresh_zero_watts(monkeypatch):
     )
     assert saved["type"] == "create_entry"
     assert saved["data"]["dc_tripped_batteries"] == []
+
+
+@pytest.mark.asyncio
+async def test_legacy_entry_can_reset_dc_trip_with_registered_sensor(monkeypatch):
+    """A migrated entry has no dc_output field but the official device still does."""
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    entry = SimpleNamespace(
+        data={"batteries": [{"device_id": "bk1"}]},
+        options={"enabled": False, "dc_tripped_batteries": ["bk1"]},
+    )
+    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
+    state = SimpleNamespace(
+        state="0",
+        attributes={"unit_of_measurement": "W"},
+        last_reported=datetime.now(UTC),
+    )
+    monkeypatch.setattr(
+        flow_module.EMSEntryOptionsFlow,
+        "hass",
+        property(lambda _: SimpleNamespace(states=SimpleNamespace(get=lambda key: state))),
+    )
+    monkeypatch.setattr(
+        flow_module, "battery_suggestions", lambda hass: {"bk1": {"dc_output": "sensor.dc"}}
+    )
+    result = await options.async_step_init(
+        {"enabled": False, "feed_in": False, "reset_dc_trip": True}
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"]["dc_tripped_batteries"] == []

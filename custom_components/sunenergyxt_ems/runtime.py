@@ -37,6 +37,7 @@ from .const import (
     FEED_IN_MODE_PV,
 )
 from .logic import Battery, Controller, Inverter
+from .registry import registered_dc_output
 
 _LOGGER = logging.getLogger(__name__)
 UPDATE_PERIOD = timedelta(seconds=5)
@@ -80,7 +81,9 @@ class EMSRuntime:
         self._sent_at: dict[str, float] = {}
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
+        self._deferred_shutdown: set[str] = set()
         self._overload_latched: set[str] = set(entry.options.get(CONF_DC_TRIPPED, ()))
+        self._dc_monitored: dict[str, str] = {}
         self._last_processed_grid: datetime | None = None
         self._running = False
         self._seen_valid = False
@@ -181,6 +184,13 @@ class EMSRuntime:
                     Inverter(entity_id, rated_w=rated, minimum_w=minimum, online=online)
                 )
             charging = self._float(record.get("charging")) or 0
+            dc_source = (
+                record.get("dc_output")
+                or self._dc_monitored.get(record[CONF_DEVICE])
+                or registered_dc_output(self.hass, record[CONF_DEVICE])
+            )
+            if dc_source:
+                self._dc_monitored[record[CONF_DEVICE]] = dc_source
             batteries.append(
                 Battery(
                     key=record[CONF_DEVICE],
@@ -189,7 +199,7 @@ class EMSRuntime:
                     upper_soc=self._float(record.get(CONF_UPPER)),
                     inverters=tuple(inverters),
                     charging_w=charging,
-                    dc_output_w=self._fresh_dc_output(record.get("dc_output")),
+                    dc_output_w=self._fresh_dc_output(dc_source),
                 )
             )
         return tuple(batteries)
@@ -436,7 +446,33 @@ class EMSRuntime:
                 self.entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
             )
             if not self.controller.enabled:
+                if self._deferred_shutdown:
+                    recovered = {
+                        inverter.key: inverter.minimum_w
+                        for battery in self._batteries()
+                        for inverter in battery.inverters
+                        if inverter.key in self._deferred_shutdown and inverter.online
+                    }
+                    if recovered:
+                        await self._apply(recovered, monotonic(), emergency=True, force=True)
+                        sent = self._deferred_shutdown.intersection(self._pending)
+                        self._deferred_shutdown.difference_update(sent)
+                        self._shutdown_pending.update(self._pending)
+                        self._pending.clear()
+                        if (
+                            not self._deferred_shutdown
+                            and self.last_error
+                            and self.last_error.startswith("Cannot stop unavailable inverters:")
+                        ):
+                            self.last_error = None
                 self._verify_shutdown(monotonic())
+                self._publish()
+                return
+            if self._deferred_shutdown:
+                self.status = "write_error"
+                self.last_error = "Incomplete previous inverter shutdown: " + ", ".join(
+                    sorted(self._deferred_shutdown)
+                )
                 self._publish()
                 return
             now = monotonic()
@@ -475,6 +511,25 @@ class EMSRuntime:
                         "BK215 DC output above 1920 W; manual inspection required: "
                         + ", ".join(sorted(self._overload_latched))
                     )
+                self._publish()
+                return
+            missing_dc = sorted(
+                self._dc_monitored[battery.key]
+                for battery in batteries
+                if battery.key in self._dc_monitored and battery.dc_output_w is None
+            )
+            if missing_dc:
+                safe = {
+                    inv.key: inv.minimum_w
+                    for battery in batteries
+                    for inv in battery.inverters
+                    if inv.online
+                }
+                self.last_error = None
+                await self._apply(safe, now, emergency=True)
+                if self.last_error is None:
+                    self.status = "dc_unavailable"
+                    self.last_error = "BK215 DC sensor not current: " + ", ".join(missing_dc)
                 self._publish()
                 return
             if not self._seen_valid:
@@ -571,6 +626,7 @@ class EMSRuntime:
                 for inverter in battery[CONF_INVERTERS]
             }
             unreachable = sorted(configured - commands.keys())
+            self._deferred_shutdown.update(unreachable)
             await self._apply(commands, monotonic(), emergency=True, force=True)
             self._shutdown_pending = dict(self._pending)
             self._pending.clear()

@@ -73,6 +73,14 @@ def battery_suggestions(hass: HomeAssistant) -> dict[str, dict[str, str]]:
     return find_batteries(registry_candidates(hass))
 
 
+def registered_dc_output(hass: HomeAssistant, device_id: str) -> str | None:
+    """Recover a DC sensor for a pre-beta entry using the exact BK215 device ID."""
+    registry = er.async_get(hass)
+    if getattr(registry, "entities", None) is None:
+        return None
+    return battery_suggestions(hass).get(device_id, {}).get("dc_output")
+
+
 def device_label(hass: HomeAssistant, device_id: str) -> str:
     """Keep a readable name in the setup flow only."""
     device = dr.async_get(hass).async_get(device_id)
