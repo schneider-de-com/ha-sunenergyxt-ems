@@ -366,6 +366,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         options={
                             CONF_ENABLED: True,
                             CONF_FEED_IN: False,
+                            CONF_FEED_IN_MODE: FEED_IN_MODE_HOUSEHOLD,
                             "grid_target_w": DEFAULT_GRID_TARGET_W,
                         },
                     )
@@ -421,7 +422,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 settings = {
                     key: value
                     for key, value in requested.items()
-                    if key in (CONF_ENABLED, CONF_FEED_IN, "grid_target_w")
+                    if key in (CONF_ENABLED, CONF_FEED_IN, CONF_FEED_IN_MODE, "grid_target_w")
                 }
                 return self.async_create_entry(title="", data=settings)
         fields: dict[Any, Any] = {
