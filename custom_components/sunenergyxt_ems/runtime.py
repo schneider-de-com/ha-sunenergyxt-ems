@@ -206,9 +206,15 @@ class EMSRuntime:
                     inverters=tuple(inverters),
                     charging_w=charging,
                     dc_output_w=self._fresh_dc_output(dc_source),
-                    pv_input_w=fresh_power(self.hass, self.entry.options.get("pv_input", {}).get(record[CONF_DEVICE])),
-                    pv_input_configured=bool(self.entry.options.get("pv_input", {}).get(record[CONF_DEVICE])),
-                    ev3600_charging=ev3600_charging(self.hass, self.entry.options.get("ev3600", {}).get(record[CONF_DEVICE])),
+                    pv_input_w=fresh_power(
+                        self.hass, self.entry.options.get("pv_input", {}).get(record[CONF_DEVICE])
+                    ),
+                    pv_input_configured=bool(
+                        self.entry.options.get("pv_input", {}).get(record[CONF_DEVICE])
+                    ),
+                    ev3600_charging=ev3600_charging(
+                        self.hass, self.entry.options.get("ev3600", {}).get(record[CONF_DEVICE])
+                    ),
                 )
             )
         return tuple(batteries)
@@ -510,9 +516,7 @@ class EMSRuntime:
                 self._publish()
                 return
             now = monotonic()
-            self._start_hold.seconds = float(
-                self.entry.options.get("start_hold_seconds", 30.0)
-            )
+            self._start_hold.seconds = float(self.entry.options.get("start_hold_seconds", 30.0))
             self.controller.grid_target_w = float(
                 self.entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W)
             )
