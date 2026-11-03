@@ -21,7 +21,9 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [EMSStatus(entry, runtime)]
     entities.extend(
         BatteryStatus(
-            entry, runtime, record["device_id"],
+            entry,
+            runtime,
+            record["device_id"],
             record.get("label", f"BK215 {index}"),
         )
         for index, record in enumerate(entry.data["batteries"], start=1)
@@ -74,8 +76,11 @@ class BatteryStatus(SensorEntity):
     _attr_should_poll = False
 
     def __init__(
-        self, entry: ConfigEntry, runtime: EMSRuntime,
-        device_id: str, label: str = "BK215",
+        self,
+        entry: ConfigEntry,
+        runtime: EMSRuntime,
+        device_id: str,
+        label: str = "BK215",
     ) -> None:
         self._runtime = runtime
         self._device_id = device_id
@@ -90,8 +95,7 @@ class BatteryStatus(SensorEntity):
 
     def _battery(self):
         return next(
-            (battery for battery in self._runtime._batteries()
-             if battery.key == self._device_id),
+            (battery for battery in self._runtime._batteries() if battery.key == self._device_id),
             None,
         )
 
@@ -124,8 +128,7 @@ class BatteryStatus(SensorEntity):
             "inverters_online": sum(inv.online for inv in battery.inverters),
             "inverters_total": len(battery.inverters),
             "requested_power_w": sum(
-                self._runtime.controller.state.outputs.get(inv.key, 0)
-                for inv in battery.inverters
+                self._runtime.controller.state.outputs.get(inv.key, 0) for inv in battery.inverters
             ),
         }
 

@@ -27,22 +27,25 @@ def flow(monkeypatch):
     monkeypatch.setattr(
         flow_module,
         "battery_suggestions",
-        lambda _: {"battery-1": {
-            "soc": "sensor.soc",
-            "lower": "number.lower",
-            "upper": "number.upper",
-        }},
+        lambda _: {
+            "battery-1": {
+                "soc": "sensor.soc",
+                "lower": "number.lower",
+                "upper": "number.upper",
+            }
+        },
     )
     monkeypatch.setattr(flow_module, "device_label", lambda hass, device: "BK215")
     monkeypatch.setattr(
-        flow_module.er, "async_get",
-        lambda hass: SimpleNamespace(
-            async_get=lambda entity: SimpleNamespace(domain="number")
-        ),
+        flow_module.er,
+        "async_get",
+        lambda hass: SimpleNamespace(async_get=lambda entity: SimpleNamespace(domain="number")),
     )
-    monkeypatch.setattr(flow_module, "inverter_device_suggestions",
-                        lambda hass: {"number.inverter": "Deye inverter",
-                                      "number.same": "Other inverter"})
+    monkeypatch.setattr(
+        flow_module,
+        "inverter_device_suggestions",
+        lambda hass: {"number.inverter": "Deye inverter", "number.same": "Other inverter"},
+    )
     monkeypatch.setattr(flow_module, "device_rated_w", lambda hass, entity: 800.0)
     monkeypatch.setattr(flow_module, "suggested_grid", lambda hass: "sensor.grid")
     return obj
@@ -58,18 +61,18 @@ async def test_positive_setup_uses_device_instead_of_three_manual_entities(flow,
     assert flow._batteries[0]["soc"] == "sensor.soc"
     assert flow._batteries[0]["lower"] == "number.lower"
 
-    result = await flow.async_step_inverters({
-        "inverters_1": ["number.inverter"]
-    })
+    result = await flow.async_step_inverters({"inverters_1": ["number.inverter"]})
     assert result["step_id"] == "grid"
 
     monkeypatch.setattr(flow, "async_set_unique_id", AsyncMock())
     monkeypatch.setattr(flow, "_abort_if_unique_id_configured", lambda: None)
-    result = await flow.async_step_grid({
-        "grid": "sensor.grid",
-        "ack": True,
-        "invert_grid": False,
-    })
+    result = await flow.async_step_grid(
+        {
+            "grid": "sensor.grid",
+            "ack": True,
+            "invert_grid": False,
+        }
+    )
     assert result["type"] == "create_entry"
     assert result["options"]["enabled"] is True
     assert result["options"]["feed_in"] is False
@@ -81,35 +84,38 @@ async def test_negative_duplicate_inverter_is_rejected(flow):
         {"device_id": "a", "inverters": []},
         {"device_id": "b", "inverters": []},
     ]
-    result = await flow.async_step_inverters({
-        "inverters_1": ["number.same"],
-        "inverters_2": ["number.same"],
-    })
+    result = await flow.async_step_inverters(
+        {
+            "inverters_1": ["number.same"],
+            "inverters_2": ["number.same"],
+        }
+    )
     assert result["errors"]["base"] == "duplicate_inverter"
 
 
 @pytest.mark.asyncio
 async def test_negative_setup_requires_disabling_other_controllers(flow):
     flow._batteries = [{"device_id": "a", "inverters": []}]
-    result = await flow.async_step_grid({
-        "grid": "sensor.grid", "ack": False
-    })
+    result = await flow.async_step_grid({"grid": "sensor.grid", "ack": False})
     assert result["errors"]["base"] == "other_controller"
-
 
 
 @pytest.mark.asyncio
 async def test_positive_explicit_correction_step_preserves_automatic_suggestions(flow):
-    result = await flow.async_step_user({
-        "batteries": ["battery-1"],
-        "correct_values": True,
-    })
+    result = await flow.async_step_user(
+        {
+            "batteries": ["battery-1"],
+            "correct_values": True,
+        }
+    )
     assert result["step_id"] == "correct"
-    result = await flow.async_step_correct({
-        "soc_1": "sensor.updated_soc",
-        "lower_1": "number.lower",
-        "upper_1": "number.upper",
-    })
+    result = await flow.async_step_correct(
+        {
+            "soc_1": "sensor.updated_soc",
+            "lower_1": "number.lower",
+            "upper_1": "number.upper",
+        }
+    )
     assert result["step_id"] == "inverters"
     assert flow._batteries[0]["soc"] == "sensor.updated_soc"
 
@@ -117,11 +123,14 @@ async def test_positive_explicit_correction_step_preserves_automatic_suggestions
 @pytest.mark.asyncio
 async def test_missing_optional_upper_limit_does_not_block_initial_setup(flow, monkeypatch):
     monkeypatch.setattr(
-        flow_module, "battery_suggestions",
-        lambda _: {"battery-1": {
-            "soc": "sensor.soc",
-            "lower": "number.lower",
-        }},
+        flow_module,
+        "battery_suggestions",
+        lambda _: {
+            "battery-1": {
+                "soc": "sensor.soc",
+                "lower": "number.lower",
+            }
+        },
     )
     result = await flow.async_step_user({"batteries": ["battery-1"]})
     assert result["step_id"] == "inverters"
@@ -132,14 +141,15 @@ async def test_positive_manual_battery_fallback_when_upstream_not_found(flow, mo
     monkeypatch.setattr(flow_module, "battery_suggestions", lambda _: {})
     result = await flow.async_step_user()
     assert result["step_id"] == "battery_manual"
-    result = await flow.async_step_battery_manual({
-        "soc": "sensor.manual_soc",
-        "lower": 10,
-        "upper": 90,
-    })
+    result = await flow.async_step_battery_manual(
+        {
+            "soc": "sensor.manual_soc",
+            "lower": 10,
+            "upper": 90,
+        }
+    )
     assert result["step_id"] == "inverters"
     assert flow._batteries[0]["lower"] == 10
-
 
 
 @pytest.mark.asyncio
@@ -167,12 +177,11 @@ async def test_negative_missing_inverter_rejected(flow):
 async def test_negative_non_number_entity_rejected(flow, monkeypatch):
     flow._batteries = [{"device_id": "a", "inverters": []}]
     monkeypatch.setattr(
-        flow_module.er, "async_get",
+        flow_module.er,
+        "async_get",
         lambda hass: SimpleNamespace(async_get=lambda entity: SimpleNamespace(domain="sensor")),
     )
-    result = await flow.async_step_inverters({
-        "inverters_1": ["sensor.unsupported"]
-    })
+    result = await flow.async_step_inverters({"inverters_1": ["sensor.unsupported"]})
     assert result["errors"]["base"] == "invalid_inverter"
 
 
@@ -180,9 +189,7 @@ async def test_negative_non_number_entity_rejected(flow, monkeypatch):
 async def test_positive_unknown_inverter_rating_uses_manual_rating_page(flow, monkeypatch):
     flow._batteries = [{"device_id": "a", "inverters": []}]
     monkeypatch.setattr(flow_module, "device_rated_w", lambda hass, entity: None)
-    result = await flow.async_step_inverters({
-        "inverters_1": ["number.inverter"]
-    })
+    result = await flow.async_step_inverters({"inverters_1": ["number.inverter"]})
     assert result["step_id"] == "ratings"
     result = await flow.async_step_ratings({"rating_0_0": 500})
     assert result["step_id"] == "grid"
@@ -191,12 +198,8 @@ async def test_positive_unknown_inverter_rating_uses_manual_rating_page(flow, mo
 
 @pytest.mark.asyncio
 async def test_negative_wrong_grid_meter_unit_rejected(flow):
-    flow.hass.states.get = lambda _: SimpleNamespace(
-        attributes={"unit_of_measurement": "kWh"}
-    )
-    result = await flow.async_step_grid({
-        "grid": "sensor.energy", "ack": True
-    })
+    flow.hass.states.get = lambda _: SimpleNamespace(attributes={"unit_of_measurement": "kWh"})
+    result = await flow.async_step_grid({"grid": "sensor.energy", "ack": True})
     assert result["errors"]["base"] == "invalid_setup"
 
 
@@ -206,27 +209,28 @@ async def test_positive_options_flow_returns_editable_switches(flow, monkeypatch
     monkeypatch.setattr(
         flow_module.EMSEntryOptionsFlow,
         "config_entry",
-        property(lambda _: SimpleNamespace(
-            options={"enabled": True, "feed_in": False}
-        )),
+        property(lambda _: SimpleNamespace(options={"enabled": True, "feed_in": False})),
     )
     result = await options.async_step_init()
     assert result["step_id"] == "init"
-    result = await options.async_step_init({
-        "enabled": False, "feed_in": True
-    })
+    result = await options.async_step_init({"enabled": False, "feed_in": True})
     assert result["type"] == "create_entry"
     assert result["data"]["enabled"] is False
+
 
 @pytest.mark.asyncio
 async def test_reconfigure_keeps_existing_batteries_and_preserves_options(flow, monkeypatch):
     entry = SimpleNamespace(
         data={
-            "batteries": [{
-                "device_id": "battery-1", "soc": "sensor.soc",
-                "lower": "number.lower", "upper": "number.upper",
-                "inverters": [{"entity_id": "number.inverter", "rated_w": 800}],
-            }],
+            "batteries": [
+                {
+                    "device_id": "battery-1",
+                    "soc": "sensor.soc",
+                    "lower": "number.lower",
+                    "upper": "number.upper",
+                    "inverters": [{"entity_id": "number.inverter", "rated_w": 800}],
+                }
+            ],
             "grid": "sensor.grid",
             "invert_grid": False,
         },
@@ -243,9 +247,13 @@ async def test_reconfigure_keeps_existing_batteries_and_preserves_options(flow, 
     monkeypatch.setattr(flow, "async_set_unique_id", AsyncMock())
     monkeypatch.setattr(flow, "_abort_if_unique_id_mismatch", lambda: None)
     monkeypatch.setattr(
-        flow, "async_update_reload_and_abort",
-        lambda old, *, data_updates: {"type": "abort", "reason": "reconfigure_successful",
-                                    "data": data_updates},
+        flow,
+        "async_update_reload_and_abort",
+        lambda old, *, data_updates: {
+            "type": "abort",
+            "reason": "reconfigure_successful",
+            "data": data_updates,
+        },
     )
     result = await flow.async_step_grid({"grid": "sensor.grid", "ack": True})
     assert result["reason"] == "reconfigure_successful"
@@ -257,18 +265,27 @@ async def test_reconfigure_keeps_existing_batteries_and_preserves_options(flow, 
 async def test_setup_options_allow_simple_grid_target(flow, monkeypatch):
     options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
     monkeypatch.setattr(
-        flow_module.EMSEntryOptionsFlow, "config_entry",
-        property(lambda _: SimpleNamespace(options={
-            "enabled": True, "feed_in": False, "grid_target_w": 20,
-        })),
+        flow_module.EMSEntryOptionsFlow,
+        "config_entry",
+        property(
+            lambda _: SimpleNamespace(
+                options={
+                    "enabled": True,
+                    "feed_in": False,
+                    "grid_target_w": 20,
+                }
+            )
+        ),
     )
     result = await options.async_step_init()
-    assert "grid_target_w" in [
-        key.schema for key in result["data_schema"].schema
-    ]
-    new = await options.async_step_init({
-        "enabled": True, "feed_in": False, "grid_target_w": 35,
-    })
+    assert "grid_target_w" in [key.schema for key in result["data_schema"].schema]
+    new = await options.async_step_init(
+        {
+            "enabled": True,
+            "feed_in": False,
+            "grid_target_w": 35,
+        }
+    )
     assert new["data"]["grid_target_w"] == 35
 
 
@@ -277,11 +294,13 @@ async def test_detected_inverters_are_offered_by_device_label(flow):
     flow._batteries = [{"device_id": "battery-1", "inverters": []}]
     result = await flow.async_step_inverters()
     choices = result["data_schema"].schema
-    fields = [schema for schema in choices.values() if
-              isinstance(schema, flow_module.selector.SelectSelector)]
+    fields = [
+        schema
+        for schema in choices.values()
+        if isinstance(schema, flow_module.selector.SelectSelector)
+    ]
     assert fields
-    assert any(option["label"] == "Deye inverter"
-               for option in fields[0].config["options"])
+    assert any(option["label"] == "Deye inverter" for option in fields[0].config["options"])
 
 
 @pytest.mark.asyncio
@@ -289,17 +308,15 @@ async def test_manual_inverter_fallback_keeps_unknown_brands(flow):
     flow._batteries = [{"device_id": "battery-1", "inverters": []}]
     result = await flow.async_step_inverters({"manual_inverters": True})
     assert result["step_id"] == "inverters_manual"
-    result = await flow.async_step_inverters_manual({
-        "inverters_1": ["number.inverter"]
-    })
+    result = await flow.async_step_inverters_manual({"inverters_1": ["number.inverter"]})
     assert result["step_id"] == "grid"
 
 
 @pytest.mark.asyncio
 async def test_reconfigure_safely_stops_old_controller_first(flow, monkeypatch):
-    entry = SimpleNamespace(entry_id="ems-existing", data={
-        "batteries": [], "grid": "sensor.grid", "invert_grid": False
-    })
+    entry = SimpleNamespace(
+        entry_id="ems-existing", data={"batteries": [], "grid": "sensor.grid", "invert_grid": False}
+    )
     controller = SimpleNamespace(
         async_stop=AsyncMock(),
         async_disable=AsyncMock(),
@@ -310,9 +327,11 @@ async def test_reconfigure_safely_stops_old_controller_first(flow, monkeypatch):
     monkeypatch.setattr(flow, "_get_reconfigure_entry", lambda: entry)
     monkeypatch.setattr(flow, "async_set_unique_id", AsyncMock())
     monkeypatch.setattr(flow, "_abort_if_unique_id_mismatch", lambda: None)
-    monkeypatch.setattr(flow, "async_update_reload_and_abort",
-                        lambda entry, *, data_updates: {"type": "abort",
-                        "reason": "reconfigure_successful"})
+    monkeypatch.setattr(
+        flow,
+        "async_update_reload_and_abort",
+        lambda entry, *, data_updates: {"type": "abort", "reason": "reconfigure_successful"},
+    )
     result = await flow.async_step_grid({"grid": "sensor.grid", "ack": True})
     controller.async_stop.assert_awaited_once()
     controller.async_disable.assert_awaited_once()
@@ -321,7 +340,8 @@ async def test_reconfigure_safely_stops_old_controller_first(flow, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_reconfigure_refuses_to_switch_if_old_inverter_cannot_stop(
-    flow, monkeypatch,
+    flow,
+    monkeypatch,
 ):
     entry = SimpleNamespace(entry_id="ems-existing", data={})
     controller = SimpleNamespace(
@@ -341,36 +361,32 @@ async def test_reconfigure_refuses_to_switch_if_old_inverter_cannot_stop(
 @pytest.mark.asyncio
 async def test_reject_number_entities_that_are_not_power_limits(flow):
     flow._batteries = [{"device_id": "battery-1", "inverters": []}]
-    flow.hass.states.get = lambda _: SimpleNamespace(
-        attributes={"unit_of_measurement": "Hz"}
-    )
-    result = await flow.async_step_inverters({
-        "inverters_1": ["number.inverter"]
-    })
+    flow.hass.states.get = lambda _: SimpleNamespace(attributes={"unit_of_measurement": "Hz"})
+    result = await flow.async_step_inverters({"inverters_1": ["number.inverter"]})
     assert result["errors"]["base"] == "invalid_inverter"
 
 
 @pytest.mark.asyncio
 async def test_feed_in_enabling_asks_for_missing_upper_limit(flow, monkeypatch):
     entry = SimpleNamespace(
-        data={"batteries": [{"device_id": "bk1", "soc": "sensor.soc",
-                              "lower": "number.lower", "inverters": []}]},
+        data={
+            "batteries": [
+                {"device_id": "bk1", "soc": "sensor.soc", "lower": "number.lower", "inverters": []}
+            ]
+        },
         options={"enabled": True, "feed_in": False},
     )
     options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
     monkeypatch.setattr(
-        flow_module.EMSEntryOptionsFlow, "config_entry",
+        flow_module.EMSEntryOptionsFlow,
+        "config_entry",
         property(lambda _: entry),
     )
     updates = []
     options.hass = SimpleNamespace(
-        config_entries=SimpleNamespace(
-            async_update_entry=lambda cfg, *, data: updates.append(data)
-        )
+        config_entries=SimpleNamespace(async_update_entry=lambda cfg, *, data: updates.append(data))
     )
-    result = await options.async_step_init(
-        {"enabled": True, "feed_in": True, "grid_target_w": 20}
-    )
+    result = await options.async_step_init({"enabled": True, "feed_in": True, "grid_target_w": 20})
     assert result["errors"]["base"] == "missing_upper"
     assert not updates
     result = await options.async_step_init(

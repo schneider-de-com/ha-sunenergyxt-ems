@@ -90,8 +90,8 @@ async def test_delayed_solarman_ack_does_not_accumulate_unsent_limits(
     for tick in range(1, 6):
         clock[0] = 1000.0 + tick * 5.0
         # Meter has a new sample, but the Deye number still shows 0%.
-        hass.states.get("sensor.grid").last_reported = (
-            datetime.now(UTC) + timedelta(milliseconds=tick)
+        hass.states.get("sensor.grid").last_reported = datetime.now(UTC) + timedelta(
+            milliseconds=tick
         )
         await runtime.async_update()
         assert hass.services.async_call.await_count == 1, (
@@ -237,10 +237,8 @@ async def test_main_swap_never_increases_support_before_previous_main_releases(
     commands = [call.args[2] for call in hass.services.async_call.await_args_list]
     assert {"entity_id": "number.main", "value": 0} in commands
     assert not any(
-        command["entity_id"] == "number.support" and command["value"] > 0
-        for command in commands
+        command["entity_id"] == "number.support" and command["value"] > 0 for command in commands
     ), "Do not increase the new main before previous inverter is confirmed at zero"
-
 
 
 @pytest.mark.asyncio
@@ -261,13 +259,9 @@ async def test_ack_and_new_grid_sample_allow_next_bounded_command(
 
     # The HA number integration reports the requested setpoint.
     hass.states.get("number.inverter").state = str(first)
-    hass.states.get("number.inverter").last_reported = (
-        datetime.now(UTC) + timedelta(milliseconds=1)
-    )
+    hass.states.get("number.inverter").last_reported = datetime.now(UTC) + timedelta(milliseconds=1)
     # The Shelly meter also reports a newer observation, after the write.
-    hass.states.get("sensor.grid").last_reported = (
-        datetime.now(UTC) + timedelta(milliseconds=2)
-    )
+    hass.states.get("sensor.grid").last_reported = datetime.now(UTC) + timedelta(milliseconds=2)
     clock[0] += 21.0  # 5 s settling and 20 s Deye increase interval have elapsed
     await runtime.async_update()
 

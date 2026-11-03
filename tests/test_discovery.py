@@ -11,10 +11,10 @@ from custom_components.sunenergyxt_ems.discovery import (
 def test_battery_roles_use_device_and_source_keys():
     entities = [
         Candidate("sensor.renamed_soc", "sensor", "dev_a", "sunEnergyXT", "wifi_soc", "%"),
-        Candidate("number.discharge", "number", "dev_a", "sunEnergyXT",
-                  "wifi_cnfg_disc_soc_min", "%"),
-        Candidate("number.charge", "number", "dev_a", "sunEnergyXT",
-                  "wifi_cnfg_chg_soc_max", "%"),
+        Candidate(
+            "number.discharge", "number", "dev_a", "sunEnergyXT", "wifi_cnfg_disc_soc_min", "%"
+        ),
+        Candidate("number.charge", "number", "dev_a", "sunEnergyXT", "wifi_cnfg_chg_soc_max", "%"),
         Candidate("sensor.not_a_battery", "sensor", "dev_b", "other", "wifi_soc", "%"),
     ]
     assert find_batteries(entities) == {
@@ -28,8 +28,9 @@ def test_battery_roles_use_device_and_source_keys():
 
 def test_inverter_suggestion_is_only_a_suggestion():
     items = [
-        Candidate("number.some_limit", "number", "inverter_a", "solarman",
-                  "active_power_regulation", "%")
+        Candidate(
+            "number.some_limit", "number", "inverter_a", "solarman", "active_power_regulation", "%"
+        )
     ]
     assert suggest_inverter_limit(items, "inverter_a") == "number.some_limit"
     assert suggest_inverter_limit(items, "unknown") is None
@@ -37,19 +38,26 @@ def test_inverter_suggestion_is_only_a_suggestion():
 
 def test_grid_uses_power_not_cumulative_energy():
     entities = [
-        Candidate("sensor.grid_total_kwh", "sensor", "meter_a",
-                  "shelly", "total_active_energy", "kWh"),
-        Candidate("sensor.grid_power", "sensor", "meter_a",
-                  "shelly", "total_active_power", "W"),
+        Candidate(
+            "sensor.grid_total_kwh", "sensor", "meter_a", "shelly", "total_active_energy", "kWh"
+        ),
+        Candidate("sensor.grid_power", "sensor", "meter_a", "shelly", "total_active_power", "W"),
     ]
     assert suggest_grid(entities) == "sensor.grid_power"
+
 
 def test_battery_discovery_survives_temporary_missing_state_units():
     """The configured BK215 must remain selectable even while disconnected."""
     entries = [
         Candidate("sensor.arbitrary_soc", "sensor", "bk_a", "sunEnergyXT", "wifi_soc", None),
-        Candidate("number.arbitrary_limit", "number", "bk_a", "sunEnergyXT",
-                  "wifi_cnfg_disc_soc_min", None),
+        Candidate(
+            "number.arbitrary_limit",
+            "number",
+            "bk_a",
+            "sunEnergyXT",
+            "wifi_cnfg_disc_soc_min",
+            None,
+        ),
     ]
     assert find_batteries(entries) == {
         "bk_a": {

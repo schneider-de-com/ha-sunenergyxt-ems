@@ -69,18 +69,26 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         suggestions = battery_suggestions(self.hass)
         if self._reconfigure:
             for battery in self._previous.get(CONF_BATTERIES, []):
-                suggestions.setdefault(battery[CONF_DEVICE], {
-                    key: value for key, value in battery.items()
-                    if key in (CONF_SOC, CONF_LOWER, CONF_UPPER, "charging")
-                })
+                suggestions.setdefault(
+                    battery[CONF_DEVICE],
+                    {
+                        key: value
+                        for key, value in battery.items()
+                        if key in (CONF_SOC, CONF_LOWER, CONF_UPPER, "charging")
+                    },
+                )
         if not suggestions:
             return await self.async_step_battery_manual()
         if user_input is not None:
             selected = user_input.get(CONF_BATTERIES, [])
             if selected and all(device in suggestions for device in selected):
                 self._batteries = [
-                    {CONF_DEVICE: device_id, "label": device_label(self.hass, device_id),
-                     **suggestions[device_id], CONF_INVERTERS: []}
+                    {
+                        CONF_DEVICE: device_id,
+                        "label": device_label(self.hass, device_id),
+                        **suggestions[device_id],
+                        CONF_INVERTERS: [],
+                    }
                     for device_id in selected
                 ]
                 if user_input.get("correct_values") or any(
@@ -102,12 +110,12 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_BATTERIES,
                         default=[b[CONF_DEVICE] for b in self._previous.get(CONF_BATTERIES, [])]
-                        if self._reconfigure else list(suggestions),
+                        if self._reconfigure
+                        else list(suggestions),
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(options=options, multiple=True)
                     ),
-                    vol.Optional("correct_values", default=False):
-                        selector.BooleanSelector(),
+                    vol.Optional("correct_values", default=False): selector.BooleanSelector(),
                 }
             ),
             errors=errors,
@@ -132,20 +140,20 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             lower_kwargs = {"default": battery[CONF_LOWER]} if battery.get(CONF_LOWER) else {}
             if battery.get(CONF_LOWER):
-                fields[vol.Required(f"lower_{index}", **lower_kwargs)] = (
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
+                fields[vol.Required(f"lower_{index}", **lower_kwargs)] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="number")
                 )
             else:
-                fields[vol.Required(f"lower_{index}", default=10)] = (
-                    vol.All(vol.Coerce(float), vol.Range(min=0, max=90))
+                fields[vol.Required(f"lower_{index}", default=10)] = vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=90)
                 )
             if battery.get(CONF_UPPER):
                 fields[vol.Required(f"upper_{index}", default=battery[CONF_UPPER])] = (
                     selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
                 )
             else:
-                fields[vol.Optional(f"upper_{index}")] = (
-                    vol.All(vol.Coerce(float), vol.Range(min=70, max=100))
+                fields[vol.Optional(f"upper_{index}")] = vol.All(
+                    vol.Coerce(float), vol.Range(min=70, max=100)
                 )
         return self.async_show_form(
             step_id="correct",
@@ -157,26 +165,31 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Allow setup when the upstream BK215 device is not registered."""
         if user_input is not None:
-            self._batteries = [{
-                CONF_DEVICE: "manual", CONF_SOC: user_input[CONF_SOC],
-                CONF_LOWER: user_input[CONF_LOWER],
-                CONF_UPPER: user_input.get(CONF_UPPER),
-                CONF_INVERTERS: [],
-            }]
+            self._batteries = [
+                {
+                    CONF_DEVICE: "manual",
+                    CONF_SOC: user_input[CONF_SOC],
+                    CONF_LOWER: user_input[CONF_LOWER],
+                    CONF_UPPER: user_input.get(CONF_UPPER),
+                    CONF_INVERTERS: [],
+                }
+            ]
             return await self.async_step_inverters()
         return self.async_show_form(
             step_id="battery_manual",
-            data_schema=vol.Schema({
-                vol.Required(CONF_SOC): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Required(CONF_LOWER, default=10): vol.All(
-                    vol.Coerce(float), vol.Range(min=0, max=90)
-                ),
-                vol.Optional(CONF_UPPER, default=90): vol.All(
-                    vol.Coerce(float), vol.Range(min=70, max=100)
-                ),
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SOC): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="sensor")
+                    ),
+                    vol.Required(CONF_LOWER, default=10): vol.All(
+                        vol.Coerce(float), vol.Range(min=0, max=90)
+                    ),
+                    vol.Optional(CONF_UPPER, default=90): vol.All(
+                        vol.Coerce(float), vol.Range(min=70, max=100)
+                    ),
+                }
+            ),
         )
 
     async def async_step_inverters_manual(
@@ -230,16 +243,21 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     for inverter_index, entity in enumerate(entities):
                         rating = device_rated_w(self.hass, entity)
                         if rating is None and self._reconfigure:
-                            rating = next((
-                                previous[CONF_RATED_W]
-                                for stored in self._previous.get(CONF_BATTERIES, [])
-                                for previous in stored.get(CONF_INVERTERS, [])
-                                if previous["entity_id"] == entity
-                            ), None)
-                        battery_inverters.append({
-                            "entity_id": entity,
-                            CONF_RATED_W: rating,
-                        })
+                            rating = next(
+                                (
+                                    previous[CONF_RATED_W]
+                                    for stored in self._previous.get(CONF_BATTERIES, [])
+                                    for previous in stored.get(CONF_INVERTERS, [])
+                                    if previous["entity_id"] == entity
+                                ),
+                                None,
+                            )
+                        battery_inverters.append(
+                            {
+                                "entity_id": entity,
+                                CONF_RATED_W: rating,
+                            }
+                        )
                         if rating is None:
                             self._pending_ratings.append((battery_index, inverter_index))
                     self._batteries[battery_index][CONF_INVERTERS] = battery_inverters
@@ -250,10 +268,14 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
         fields: dict[Any, Any] = {}
         for index, battery in enumerate(self._batteries, start=1):
-            old = next((
-                item for item in self._previous.get(CONF_BATTERIES, [])
-                if item[CONF_DEVICE] == battery[CONF_DEVICE]
-            ), {})
+            old = next(
+                (
+                    item
+                    for item in self._previous.get(CONF_BATTERIES, [])
+                    if item[CONF_DEVICE] == battery[CONF_DEVICE]
+                ),
+                {},
+            )
             defaults = [inv["entity_id"] for inv in old.get(CONF_INVERTERS, [])]
             marker = vol.Required(
                 f"{CONF_INVERTER_PREFIX}{index}",
@@ -265,16 +287,13 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             else:
                 options = [
-                    {"value": entity, "label": label}
-                    for entity, label in suggestions.items()
+                    {"value": entity, "label": label} for entity, label in suggestions.items()
                 ]
                 fields[marker] = selector.SelectSelector(
                     selector.SelectSelectorConfig(options=options, multiple=True)
                 )
         if not self._manual_inverters:
-            fields[vol.Optional("manual_inverters", default=False)] = (
-                selector.BooleanSelector()
-            )
+            fields[vol.Optional("manual_inverters", default=False)] = selector.BooleanSelector()
         return self.async_show_form(
             step_id="inverters_manual" if self._manual_inverters else "inverters",
             data_schema=vol.Schema(fields),
@@ -294,11 +313,14 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_grid()
         return self.async_show_form(
             step_id="ratings",
-            data_schema=vol.Schema({
-                vol.Required(f"{CONF_RATING_PREFIX}{battery_index}_{inverter_index}"):
-                    vol.All(vol.Coerce(float), vol.Range(min=1, max=3000))
-                for battery_index, inverter_index in self._pending_ratings
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(f"{CONF_RATING_PREFIX}{battery_index}_{inverter_index}"): vol.All(
+                        vol.Coerce(float), vol.Range(min=1, max=3000)
+                    )
+                    for battery_index, inverter_index in self._pending_ratings
+                }
+            ),
         )
 
     async def async_step_grid(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -321,9 +343,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if self._reconfigure:
                     self._abort_if_unique_id_mismatch()
                     entry = self._get_reconfigure_entry()
-                    runtime = getattr(self.hass, "data", {}).get(DOMAIN, {}).get(
-                        entry.entry_id
-                    )
+                    runtime = getattr(self.hass, "data", {}).get(DOMAIN, {}).get(entry.entry_id)
                     if runtime is not None:
                         # Reconfiguration is an explicit handover: do not leave
                         # a removed inverter running at an old EMS limit.
@@ -332,13 +352,9 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         if runtime.last_error:
                             errors["base"] = "inverter_stop_failed"
                         else:
-                            return self.async_update_reload_and_abort(
-                                entry, data_updates=data
-                            )
+                            return self.async_update_reload_and_abort(entry, data_updates=data)
                     else:
-                        return self.async_update_reload_and_abort(
-                            entry, data_updates=data
-                        )
+                        return self.async_update_reload_and_abort(entry, data_updates=data)
                 else:
                     self._abort_if_unique_id_configured()
                     return self.async_create_entry(
@@ -353,18 +369,17 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         suggestion = self._previous.get(CONF_GRID) or suggested_grid(self.hass)
         return self.async_show_form(
             step_id="grid",
-            data_schema=vol.Schema({
-                vol.Required(CONF_GRID, **(
-                    {"default": suggestion} if suggestion else {}
-                )): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional(
-                    CONF_GRID_INVERT,
-                    default=self._previous.get(CONF_GRID_INVERT, False)
-                ): selector.BooleanSelector(),
-                vol.Required(CONF_ACK, default=False): selector.BooleanSelector(),
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_GRID, **({"default": suggestion} if suggestion else {})
+                    ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+                    vol.Optional(
+                        CONF_GRID_INVERT, default=self._previous.get(CONF_GRID_INVERT, False)
+                    ): selector.BooleanSelector(),
+                    vol.Required(CONF_ACK, default=False): selector.BooleanSelector(),
+                }
+            ),
             errors=errors,
         )
 
@@ -396,16 +411,13 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     updated = dict(self.config_entry.data)
                     records = [dict(battery) for battery in existing]
                     for index, _ in missing:
-                        records[index - 1][CONF_UPPER] = float(
-                            requested.pop(f"upper_{index}")
-                        )
+                        records[index - 1][CONF_UPPER] = float(requested.pop(f"upper_{index}"))
                     updated[CONF_BATTERIES] = records
-                    self.hass.config_entries.async_update_entry(
-                        self.config_entry, data=updated
-                    )
+                    self.hass.config_entries.async_update_entry(self.config_entry, data=updated)
             if not errors:
                 settings = {
-                    key: value for key, value in requested.items()
+                    key: value
+                    for key, value in requested.items()
                     if key in (CONF_ENABLED, CONF_FEED_IN, "grid_target_w")
                 }
                 return self.async_create_entry(title="", data=settings)
@@ -420,9 +432,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             ): selector.BooleanSelector(),
             vol.Required(
                 "grid_target_w",
-                default=self.config_entry.options.get(
-                    "grid_target_w", DEFAULT_GRID_TARGET_W
-                ),
+                default=self.config_entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W),
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
         }
         for index, _ in missing:

@@ -18,18 +18,29 @@ from custom_components.sunenergyxt_ems.logic import (
 
 
 def pack(
-    key="a", soc=70, lower=10, upper=90,
-    *, inverter=None, charging=0.0, max_w=1920,
+    key="a",
+    soc=70,
+    lower=10,
+    upper=90,
+    *,
+    inverter=None,
+    charging=0.0,
+    max_w=1920,
 ):
     """Minimal BK215 fixture; tests never call real Home Assistant services."""
     return Battery(
-        key, soc, lower, upper,
+        key,
+        soc,
+        lower,
+        upper,
         (inverter or Inverter(f"{key}_inv", 800),),
-        charging, max_w,
+        charging,
+        max_w,
     )
 
 
 # Positive: valid values and useful outcomes.
+
 
 def test_positive_import_is_followed_with_small_grid_reserve():
     engine = Controller()
@@ -44,7 +55,10 @@ def test_positive_export_causes_power_reduction():
 
 def test_positive_two_inverters_respect_bk215_hard_limit_from_confirmed_baseline():
     battery = Battery(
-        "a", 70, 10, 90,
+        "a",
+        70,
+        10,
+        90,
         (Inverter("inv1", 1500), Inverter("inv2", 1500)),
     )
     engine = Controller(ControllerState(outputs={"inv1": 1400, "inv2": 500}))
@@ -76,6 +90,7 @@ def test_positive_zero_grid_reading_is_valid():
 
 # Negative: missing data, offline devices, and recovery logic.
 
+
 @pytest.mark.parametrize("bad", [None, -1, 101, nan, inf, -inf])
 def test_negative_invalid_soc_excludes_only_affected_battery(bad):
     cmd = Controller().update((pack("bad", soc=bad), pack("good")), 600, 1)
@@ -95,7 +110,10 @@ def test_negative_single_offline_inverter_excludes_battery():
 
 def test_negative_one_offline_inverter_does_not_disable_its_partner():
     paired = Battery(
-        "a", 70, 10, 90,
+        "a",
+        70,
+        10,
+        90,
         (Inverter("offline", 800, online=False), Inverter("working", 800)),
     )
     assert Controller().update((paired,), 600, 1) == {"working": 290}
@@ -129,6 +147,7 @@ def test_negative_no_batteries_return_no_commands():
 
 
 # Implausible: values a real entity should never provide. Fail closed.
+
 
 @pytest.mark.parametrize("bad", [nan, inf, -inf])
 def test_implausible_grid_meter_value_stops_control_after_grace(bad):
@@ -175,6 +194,7 @@ def test_implausible_unrelated_power_sensor_is_not_selected_as_grid_meter():
     items = [Candidate("sensor.heater", "sensor", "heater", "shelly", "power", "W")]
     assert suggest_grid(items) is None
 
+
 def test_negative_missing_soc_during_grid_grace_is_not_held_at_old_power():
     """Battery safety wins over the short grid-meter grace period."""
     engine = Controller()
@@ -184,7 +204,10 @@ def test_negative_missing_soc_during_grid_grace_is_not_held_at_old_power():
 
 def test_positive_configured_limit_cannot_override_bk215_hardware_cap():
     battery = Battery(
-        "a", 70, 10, 90,
+        "a",
+        70,
+        10,
+        90,
         (Inverter("inv1", 1500), Inverter("inv2", 1500)),
         output_limit_w=4000,
     )

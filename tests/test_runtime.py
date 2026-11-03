@@ -27,18 +27,24 @@ def configured(*, grid=420, soc=70, lower=10, inverter_unit="W", old=0):
     data = {
         "grid": "sensor.grid",
         "invert_grid": False,
-        "batteries": [{
-            "device_id": "battery-1", "soc": "sensor.soc",
-            "lower": "number.lower", "upper": "number.upper",
-            "inverters": [{"entity_id": "number.inverter", "rated_w": 800}],
-        }],
+        "batteries": [
+            {
+                "device_id": "battery-1",
+                "soc": "sensor.soc",
+                "lower": "number.lower",
+                "upper": "number.upper",
+                "inverters": [{"entity_id": "number.inverter", "rated_w": 800}],
+            }
+        ],
     }
     states = {
         "sensor.grid": sample(grid, "W", seconds_old=old),
         "sensor.soc": sample(soc),
         "number.lower": sample(lower),
         "number.upper": sample(90),
-        "number.inverter": sample(0, inverter_unit, min=0, max=100 if inverter_unit == "%" else 800, step=1),
+        "number.inverter": sample(
+            0, inverter_unit, min=0, max=100 if inverter_unit == "%" else 800, step=1
+        ),
     }
     hass = SimpleNamespace(
         states=SimpleNamespace(get=states.get),
@@ -134,7 +140,6 @@ async def test_negative_failed_write_is_reported():
     assert "number.inverter" in (runtime.last_error or "")
 
 
-
 @pytest.mark.asyncio
 async def test_implausible_rounding_cannot_exceed_inverter_maximum():
     hass, entry = configured(grid=804, inverter_unit="%")
@@ -159,7 +164,6 @@ async def test_implausible_future_meter_timestamp_is_rejected():
     hass.services.async_call.assert_not_awaited()
 
 
-
 @pytest.mark.asyncio
 async def test_negative_offline_inverter_is_reported_during_manual_stop():
     hass, entry = configured()
@@ -169,7 +173,6 @@ async def test_negative_offline_inverter_is_reported_during_manual_stop():
     hass.services.async_call.assert_not_awaited()
     assert runtime.status == "write_error"
     assert "number.inverter" in (runtime.last_error or "")
-
 
 
 @pytest.mark.asyncio
@@ -192,7 +195,6 @@ async def test_positive_emergency_reduction_bypasses_rate_limit(monkeypatch):
     runtime._sent_at["number.inverter"] = 1
     await runtime._apply({"number.inverter": 0}, now=11, emergency=True)
     assert hass.services.async_call.await_args.args[2]["value"] == 0
-
 
 
 @pytest.mark.asyncio
@@ -277,10 +279,9 @@ def test_negative_wrong_grid_unit_has_no_valid_sample():
 def test_positive_ap_systems_inverters_use_conservative_command_interval(monkeypatch):
     hass, entry = configured()
     monkeypatch.setattr(
-        module.er, "async_get",
-        lambda _: SimpleNamespace(
-            async_get=lambda entity: SimpleNamespace(platform="apsystems")
-        ),
+        module.er,
+        "async_get",
+        lambda _: SimpleNamespace(async_get=lambda entity: SimpleNamespace(platform="apsystems")),
     )
     runtime = EMSRuntime(hass, entry)
     assert runtime._minimum_interval("number.inverter") == 300
@@ -357,6 +358,7 @@ async def test_positive_reenabling_through_options_resumes_if_data_valid():
     assert runtime.controller.enabled
     hass.services.async_call.assert_awaited()
     assert runtime.status == "waiting_feedback"
+
 
 @pytest.mark.asyncio
 async def test_stale_soc_while_grid_is_fresh_stops_discharge():

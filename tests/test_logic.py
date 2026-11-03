@@ -47,9 +47,7 @@ def test_offline_first_of_two_inverters_keeps_second():
 
 
 def test_combined_output_respects_battery_limit():
-    b = Battery(
-        "a", 80, 10, 90, (Inverter("a_inv", 1600), Inverter("b_inv", 1600))
-    )
+    b = Battery("a", 80, 10, 90, (Inverter("a_inv", 1600), Inverter("b_inv", 1600)))
     outputs, _ = policy((b,), 4000, ControllerState(), 1)
     assert sum(outputs.values()) <= 1920
 
@@ -114,7 +112,6 @@ def test_near_full_input_can_prefer_charging_battery():
     )
     engine.update(batteries, 500, 1)
     assert engine.state.main == "b"
-
 
 
 def test_import_gain_uses_half_error_from_confirmed_limit():

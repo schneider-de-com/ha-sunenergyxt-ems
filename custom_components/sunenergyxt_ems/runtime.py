@@ -115,7 +115,7 @@ class EMSRuntime:
                     return None
                 try:
                     number = float(state.state)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     return None
         else:
             return None
@@ -145,28 +145,26 @@ class EMSRuntime:
                 if rated is None or rated <= 0:
                     continue
                 online = bool(
-                    state
-                    and state.state not in ("unknown", "unavailable")
-                    and unit in ("W", "%")
+                    state and state.state not in ("unknown", "unavailable") and unit in ("W", "%")
                 )
                 minimum = self._float(state.attributes.get("min", 0)) if state else 0
                 minimum = max(0.0, minimum or 0.0)
                 if unit == "%":
                     minimum = minimum / 100 * rated
                 inverters.append(
-                    Inverter(
-                        entity_id, rated_w=rated, minimum_w=minimum, online=online
-                    )
+                    Inverter(entity_id, rated_w=rated, minimum_w=minimum, online=online)
                 )
             charging = self._float(record.get("charging")) or 0
-            batteries.append(Battery(
-                key=record[CONF_DEVICE],
-                soc=self._fresh_soc(record.get(CONF_SOC)),
-                lower_soc=self._float(record.get(CONF_LOWER)),
-                upper_soc=self._float(record.get(CONF_UPPER)),
-                inverters=tuple(inverters),
-                charging_w=charging,
-            ))
+            batteries.append(
+                Battery(
+                    key=record[CONF_DEVICE],
+                    soc=self._fresh_soc(record.get(CONF_SOC)),
+                    lower_soc=self._float(record.get(CONF_LOWER)),
+                    upper_soc=self._float(record.get(CONF_UPPER)),
+                    inverters=tuple(inverters),
+                    charging_w=charging,
+                )
+            )
         return tuple(batteries)
 
     def _grid(self) -> tuple[float | None, object | None]:
@@ -213,8 +211,7 @@ class EMSRuntime:
             state = self.hass.states.get(entity_id)
             current = self._float(state.state) if state else None
             reported = (
-                (getattr(state, "last_reported", None) or state.last_updated)
-                if state else None
+                (getattr(state, "last_reported", None) or state.last_updated) if state else None
             )
             step = self._float(state.attributes.get("step", 1)) if state else None
             confirmed = (
@@ -247,9 +244,7 @@ class EMSRuntime:
         self.last_error = None
         return True
 
-    def _reserve_reductions(
-        self, batteries: tuple[Battery, ...]
-    ) -> dict[str, float]:
+    def _reserve_reductions(self, batteries: tuple[Battery, ...]) -> dict[str, float]:
         """Urgent reductions bypass normal acknowledgement waiting."""
         self.controller._eligible(batteries)
         observed = self._reported_outputs(batteries)
@@ -299,9 +294,9 @@ class EMSRuntime:
             if minimum is None or maximum is None or maximum < minimum:
                 continue
             value = max(minimum, min(maximum, value))
-            value = min(maximum, max(
-                minimum, round(round((value - minimum) / step) * step + minimum, 4)
-            ))
+            value = min(
+                maximum, max(minimum, round(round((value - minimum) / step) * step + minimum, 4))
+            )
             previous = self._last_sent.get(entity_id)
             # No-op writes on startup only create unnecessary communication
             # (and a fake pending acknowledgement) for already-correct limits.
@@ -324,13 +319,12 @@ class EMSRuntime:
                     required = max(interval, 20.0) if value > previous else interval
                     if elapsed < required:
                         continue
-            reported_before = (
-                getattr(state, "last_reported", None) or state.last_updated
-            )
+            reported_before = getattr(state, "last_reported", None) or state.last_updated
             _, grid_before = self._grid()
             try:
                 await self.hass.services.async_call(
-                    "number", "set_value",
+                    "number",
+                    "set_value",
                     {"entity_id": entity_id, "value": value},
                     blocking=True,
                 )
@@ -360,9 +354,9 @@ class EMSRuntime:
                 self._publish()
                 return
             now = monotonic()
-            self.controller.grid_target_w = float(self.entry.options.get(
-                "grid_target_w", DEFAULT_GRID_TARGET_W
-            ))
+            self.controller.grid_target_w = float(
+                self.entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W)
+            )
             grid, sequence = self._grid()
             batteries = self._batteries()
             if not self._seen_valid:
@@ -388,9 +382,7 @@ class EMSRuntime:
                 return
 
             if grid is None:
-                outputs = self.controller.update(
-                    batteries, grid, now, sequence=sequence
-                )
+                outputs = self.controller.update(batteries, grid, now, sequence=sequence)
                 self.status = "grid_unavailable"
                 await self._apply(outputs, now, emergency=True)
                 self._publish()
@@ -410,9 +402,7 @@ class EMSRuntime:
             # never speculative commands from earlier, rate-limited ticks.
             self.controller.state.outputs = self._reported_outputs(batteries)
             previous_main = self.controller.state.main
-            outputs = self.controller.update(
-                batteries, grid, now, sequence=sequence
-            )
+            outputs = self.controller.update(batteries, grid, now, sequence=sequence)
             self._last_processed_grid = sequence
 
             if previous_main and previous_main != self.controller.state.main:
@@ -465,7 +455,8 @@ class EMSRuntime:
             if unreachable:
                 self.last_error = (
                     (self.last_error + "; " if self.last_error else "")
-                    + "Cannot stop unavailable inverters: " + ", ".join(unreachable)
+                    + "Cannot stop unavailable inverters: "
+                    + ", ".join(unreachable)
                 )
             self.status = "disabled" if self.last_error is None else "write_error"
             self._publish()

@@ -120,20 +120,18 @@ class Controller:
                 and battery.upper_soc is not None
             ):
                 distance = battery.upper_soc - battery.soc
-                points += (
-                    3 if distance <= 3
-                    else 2 if distance <= 5
-                    else 1 if distance <= 10
-                    else 0
-                )
+                points += 3 if distance <= 3 else 2 if distance <= 5 else 1 if distance <= 10 else 0
             if battery.key == self.state.main:
                 points += 4
             elif battery.key == self.state.support:
                 points += 2
             return (
                 points,
-                2 if battery.key == self.state.main else
-                1 if battery.key == self.state.support else 0,
+                2
+                if battery.key == self.state.main
+                else 1
+                if battery.key == self.state.support
+                else 0,
                 sum(inv.rated_w for inv in battery.inverters if inv.online),
                 -original_order[battery.key],
             )
@@ -208,14 +206,8 @@ class Controller:
             correction = 0.0
         else:
             gain = 1.0 if grid_w < 0 else 0.5
-            step_cap = (
-                20.0 if abs(grid_w) < 30
-                else 120.0 if abs(grid_w) <= 150
-                else 520.0
-            )
-            correction = max(
-                -step_cap, min(step_cap, (grid_w - self.grid_target_w) * gain)
-            )
+            step_cap = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
+            correction = max(-step_cap, min(step_cap, (grid_w - self.grid_target_w) * gain))
         # Leaving a full-charge export override must not continue intentional
         # export merely to respect the ordinary rate limit.
         exiting_full = any(
@@ -249,15 +241,11 @@ class Controller:
             else:
                 self.state.full.discard(battery.key)
 
-            eligible_inverters = [
-                inv for inv in battery.inverters if self._valid_inverter(inv)
-            ]
+            eligible_inverters = [inv for inv in battery.inverters if self._valid_inverter(inv)]
             maximum_w = min(
                 1920, battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters)
             )
-            budget_w = (
-                maximum_w if battery.key in self.state.full else min(total_w, maximum_w)
-            )
+            budget_w = maximum_w if battery.key in self.state.full else min(total_w, maximum_w)
             for inverter in eligible_inverters:
                 power_w = min(inverter.rated_w, max(inverter.minimum_w, budget_w))
                 commands[inverter.key] = power_w

@@ -24,12 +24,12 @@ def objects():
         signal="ems_updated",
     )
     changes = []
+
     def change_entry(config_entry, *, options):
         config_entry.options = options
         changes.append(options.copy())
-    runtime.hass = SimpleNamespace(
-        config_entries=SimpleNamespace(async_update_entry=change_entry)
-    )
+
+    runtime.hass = SimpleNamespace(config_entries=SimpleNamespace(async_update_entry=change_entry))
     return entry, runtime, changes
 
 
@@ -76,9 +76,7 @@ def test_negative_status_sensor_exposes_write_failure(objects):
     runtime.last_error = "number.inverter: unavailable"
     entity = sensors.EMSStatus(entry, runtime)
     assert entity.native_value == "write_error"
-    assert entity.extra_state_attributes == {
-        "last_error": "number.inverter: unavailable"
-    }
+    assert entity.extra_state_attributes == {"last_error": "number.inverter: unavailable"}
 
 
 @pytest.mark.asyncio
@@ -88,9 +86,7 @@ async def test_positive_switch_setup_creates_two_entities(objects):
     created = []
     await switches.async_setup_entry(hass, entry, created.extend)
     assert len(created) == 2
-    assert {entity.unique_id for entity in created} == {
-        "ems-entry_enabled", "ems-entry_feed_in"
-    }
+    assert {entity.unique_id for entity in created} == {"ems-entry_enabled", "ems-entry_feed_in"}
 
 
 @pytest.mark.asyncio
@@ -103,7 +99,6 @@ async def test_positive_sensor_setup_creates_status(objects):
     assert created[0].unique_id == "ems-entry_status"
 
 
-
 @pytest.mark.asyncio
 async def test_positive_switch_receives_runtime_update_signals(objects, monkeypatch):
     entry, runtime, _ = objects
@@ -111,11 +106,11 @@ async def test_positive_switch_receives_runtime_update_signals(objects, monkeypa
     entity.hass = SimpleNamespace()
     added = []
     writes = []
+
     def cancel():
         return None
-    monkeypatch.setattr(
-        switches, "async_dispatcher_connect", lambda *args: cancel
-    )
+
+    monkeypatch.setattr(switches, "async_dispatcher_connect", lambda *args: cancel)
     monkeypatch.setattr(entity, "async_on_remove", added.append)
     monkeypatch.setattr(entity, "async_write_ha_state", lambda: writes.append(1))
     await entity.async_added_to_hass()
@@ -131,11 +126,11 @@ async def test_positive_status_sensor_receives_runtime_update_signals(objects, m
     entity.hass = SimpleNamespace()
     added = []
     writes = []
+
     def cancel():
         return None
-    monkeypatch.setattr(
-        sensors, "async_dispatcher_connect", lambda *args: cancel
-    )
+
+    monkeypatch.setattr(sensors, "async_dispatcher_connect", lambda *args: cancel)
     monkeypatch.setattr(entity, "async_on_remove", added.append)
     monkeypatch.setattr(entity, "async_write_ha_state", lambda: writes.append(1))
     await entity.async_added_to_hass()
@@ -143,33 +138,44 @@ async def test_positive_status_sensor_receives_runtime_update_signals(objects, m
     assert added == [cancel]
     assert writes == [1]
 
+
 @pytest.mark.asyncio
 async def test_batteries_have_separate_visible_status_entities(objects):
     entry, runtime, _ = objects
-    entry.data = {"batteries": [
-        {"device_id": "bk1", "inverters": [{"entity_id": "number.one"}]},
-        {"device_id": "bk2", "inverters": [{"entity_id": "number.two"}]},
-    ]}
+    entry.data = {
+        "batteries": [
+            {"device_id": "bk1", "inverters": [{"entity_id": "number.one"}]},
+            {"device_id": "bk2", "inverters": [{"entity_id": "number.two"}]},
+        ]
+    }
     runtime.controller = SimpleNamespace(
         enabled=True,
-        state=SimpleNamespace(
-            main="bk1", support="bk2", blocked=set(), outputs={}
-        ),
+        state=SimpleNamespace(main="bk1", support="bk2", blocked=set(), outputs={}),
     )
     runtime._batteries = lambda: (
-        SimpleNamespace(key="bk1", soc=75, lower_soc=10, upper_soc=100,
-                        inverters=(SimpleNamespace(key="number.one", online=True),)),
-        SimpleNamespace(key="bk2", soc=50, lower_soc=10, upper_soc=100,
-                        inverters=(SimpleNamespace(key="number.two", online=True),)),
+        SimpleNamespace(
+            key="bk1",
+            soc=75,
+            lower_soc=10,
+            upper_soc=100,
+            inverters=(SimpleNamespace(key="number.one", online=True),),
+        ),
+        SimpleNamespace(
+            key="bk2",
+            soc=50,
+            lower_soc=10,
+            upper_soc=100,
+            inverters=(SimpleNamespace(key="number.two", online=True),),
+        ),
     )
-    runtime.hass = SimpleNamespace(
-        data={"sunenergyxt_ems": {"ems-entry": runtime}}
-    )
+    runtime.hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     added = []
     await sensors.async_setup_entry(runtime.hass, entry, added.extend)
     assert len(added) == 3
     assert {entity.unique_id for entity in added} == {
-        "ems-entry_status", "ems-entry_battery_bk1", "ems-entry_battery_bk2"
+        "ems-entry_status",
+        "ems-entry_battery_bk1",
+        "ems-entry_battery_bk2",
     }
     assert added[1].native_value == "main"
     assert added[2].native_value == "support"

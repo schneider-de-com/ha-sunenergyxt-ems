@@ -18,10 +18,12 @@ async def async_setup_entry(
 ) -> None:
     """Create user toggles for the single EMS configuration."""
     runtime: EMSRuntime = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([
-        EMSToggle(entry, runtime, CONF_ENABLED, "EMS control"),
-        EMSToggle(entry, runtime, CONF_FEED_IN, "Feed-in after full charge"),
-    ])
+    async_add_entities(
+        [
+            EMSToggle(entry, runtime, CONF_ENABLED, "EMS control"),
+            EMSToggle(entry, runtime, CONF_FEED_IN, "Feed-in after full charge"),
+        ]
+    )
 
 
 class EMSToggle(SwitchEntity):
@@ -30,9 +32,7 @@ class EMSToggle(SwitchEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
 
-    def __init__(
-        self, entry: ConfigEntry, runtime: EMSRuntime, key: str, name: str
-    ) -> None:
+    def __init__(self, entry: ConfigEntry, runtime: EMSRuntime, key: str, name: str) -> None:
         self._entry = entry
         self._runtime = runtime
         self._key = key

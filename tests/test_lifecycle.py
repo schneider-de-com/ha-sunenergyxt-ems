@@ -19,7 +19,8 @@ from custom_components.sunenergyxt_ems import runtime as runtime_module  # noqa:
 @pytest.fixture
 def lifecycle(monkeypatch):
     controller = SimpleNamespace(
-        async_start=AsyncMock(), async_stop=AsyncMock(),
+        async_start=AsyncMock(),
+        async_stop=AsyncMock(),
         async_change_options=AsyncMock(),
     )
     monkeypatch.setattr(runtime_module, "EMSRuntime", lambda hass, entry: controller)
