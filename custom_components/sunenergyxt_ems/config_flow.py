@@ -161,6 +161,12 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 fields[vol.Optional(f"upper_{index}")] = vol.All(
                     vol.Coerce(float), vol.Range(min=70, max=100)
                 )
+            fields[
+                vol.Optional(
+                    f"dc_output_{index}",
+                    **({"default": battery["dc_output"]} if battery.get("dc_output") else {}),
+                )
+            ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
         return self.async_show_form(
             step_id="correct",
             data_schema=vol.Schema(fields),
