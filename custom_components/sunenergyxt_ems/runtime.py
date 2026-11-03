@@ -23,6 +23,7 @@ from .const import (
     CONF_ENABLED,
     CONF_FEED_IN,
     CONF_FEED_IN_MODE,
+    CONF_FEED_IN_HYSTERESIS,
     FEED_IN_MODE_PV,
     CONF_GRID,
     CONF_GRID_INVERT,
@@ -66,6 +67,9 @@ class EMSRuntime:
         self.controller = Controller()
         self.controller.enabled = bool(entry.options.get(CONF_ENABLED, True))
         self.controller.feed_in = bool(entry.options.get(CONF_FEED_IN, False)) and entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
+        self.controller.full_hysteresis_pct = float(
+            entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
+        )
         self.status = "waiting"
         self.last_error: str | None = None
         self._unsubscribe: Any = None
