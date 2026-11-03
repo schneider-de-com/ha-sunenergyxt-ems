@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from math import isfinite
 from time import monotonic
@@ -38,6 +39,18 @@ UPDATE_PERIOD = timedelta(seconds=5)
 MAX_GRID_AGE = timedelta(seconds=30)
 MAX_SOC_AGE = timedelta(seconds=45)
 MIN_OUTPUT_CHANGE_W = 10.0
+FEEDBACK_SETTLE_SECONDS = 5.0
+FEEDBACK_TIMEOUT_SECONDS = 30.0
+
+
+@dataclass(frozen=True, slots=True)
+class PendingCommand:
+    """A service call is pending until HA reports the requested limit."""
+
+    target: float
+    entity_reported_before: datetime
+    sent_at: float
+    grid_reported_before: datetime | None
 
 
 class EMSRuntime:
@@ -55,6 +68,8 @@ class EMSRuntime:
         self._lock = asyncio.Lock()
         self._last_sent: dict[str, float] = {}
         self._sent_at: dict[str, float] = {}
+        self._pending: dict[str, PendingCommand] = {}
+        self._last_processed_grid: datetime | None = None
         self._running = False
         self._seen_valid = False
 
