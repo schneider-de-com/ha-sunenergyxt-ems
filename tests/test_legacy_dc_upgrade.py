@@ -24,7 +24,10 @@ def state(value, unit="W"):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("dc,expected", [(2077, "hardware_limit"), ("unavailable", "dc_unavailable"), (0, "waiting_feedback")])
+@pytest.mark.parametrize(
+    "dc,expected",
+    [(2077, "hardware_limit"), ("unavailable", "dc_unavailable"), (0, "waiting_feedback")],
+)
 async def test_legacy_entry_recovers_dc_sensor(monkeypatch, dc, expected):
     states = {
         "sensor.grid": state(500),
@@ -37,19 +40,30 @@ async def test_legacy_entry_recovers_dc_sensor(monkeypatch, dc, expected):
     hass = SimpleNamespace(
         states=SimpleNamespace(get=states.get),
         services=SimpleNamespace(async_call=AsyncMock()),
-        config_entries=SimpleNamespace(async_update_entry=lambda entry, *, options: setattr(entry, "options", options)),
+        config_entries=SimpleNamespace(
+            async_update_entry=lambda entry, *, options: setattr(entry, "options", options)
+        ),
     )
     entry = SimpleNamespace(
         entry_id="legacy",
         options={"enabled": True, "feed_in": False},
-        data={"grid": "sensor.grid", "batteries": [{
-            "device_id": "bk1", "soc": "sensor.soc",
-            "lower": "number.lower", "upper": "number.upper",
-            "inverters": [{"entity_id": "number.m200", "rated_w": 2000}],
-        }]},
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc",
+                    "lower": "number.lower",
+                    "upper": "number.upper",
+                    "inverters": [{"entity_id": "number.m200", "rated_w": 2000}],
+                }
+            ],
+        },
     )
     monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
-    monkeypatch.setattr(module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None, entities={}))
+    monkeypatch.setattr(
+        module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None, entities={})
+    )
     monkeypatch.setattr(module, "registered_dc_output", lambda hass, device: "sensor.bk_dc")
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
