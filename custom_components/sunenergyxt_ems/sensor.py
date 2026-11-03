@@ -33,6 +33,7 @@ async def async_setup_entry(
             runtime,
             record["device_id"],
             record.get("label", f"BK215 {index}"),
+            controller_device.id,
         )
         for index, record in enumerate(entry.data["batteries"], start=1)
     )
