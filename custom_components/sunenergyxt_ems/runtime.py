@@ -500,7 +500,8 @@ class EMSRuntime:
             self._pending.clear()
             observed = self._reported_outputs(self._batteries())
             missed = [
-                key for key, target in commands.items()
+                key
+                for key, target in commands.items()
                 if key not in self._shutdown_pending and observed.get(key, 0) > target + 10
             ]
             if missed:
@@ -512,8 +513,11 @@ class EMSRuntime:
                     + ", ".join(unreachable)
                 )
             self.status = (
-                "write_error" if self.last_error is not None else
-                "shutdown_pending" if self._shutdown_pending else "disabled"
+                "write_error"
+                if self.last_error is not None
+                else "shutdown_pending"
+                if self._shutdown_pending
+                else "disabled"
             )
             self._publish()
 
