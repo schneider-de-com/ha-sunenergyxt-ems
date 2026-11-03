@@ -600,6 +600,9 @@ class EMSRuntime:
     async def async_change_options(self) -> None:
         """Apply an options-flow update without restarting the control loop."""
         enabled = bool(self.entry.options.get(CONF_ENABLED, True))
+        if not enabled:
+            # A deliberate reset in Configure is permitted only while EMS is off.
+            self._overload_latched = set(self.entry.options.get(CONF_DC_TRIPPED, ()))
         self.controller.feed_in = (
             bool(self.entry.options.get(CONF_FEED_IN, False))
             and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
