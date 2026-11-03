@@ -18,3 +18,4 @@ BK215_MAX_AC_W = 1920.0
 CONF_FEED_IN_MODE = "feed_in_mode"
 FEED_IN_MODE_HOUSEHOLD = "household"
 FEED_IN_MODE_PV = "pv"
+CONF_FEED_IN_HYSTERESIS = "feed_in_hysteresis_pct"
