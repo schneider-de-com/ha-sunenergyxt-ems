@@ -496,7 +496,10 @@ class EMSRuntime:
                     + "Cannot stop unavailable inverters: "
                     + ", ".join(unreachable)
                 )
-            self.status = "disabled" if self.last_error is None else "write_error"
+            self.status = (
+                "write_error" if self.last_error is not None else
+                "shutdown_pending" if self._shutdown_pending else "disabled"
+            )
             self._publish()
 
     async def async_change_options(self) -> None:
