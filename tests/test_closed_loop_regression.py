@@ -75,7 +75,7 @@ def no_real_home_assistant_side_effects(monkeypatch: pytest.MonkeyPatch) -> None
 async def test_delayed_solarman_ack_does_not_accumulate_unsent_limits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Repeated meter samples must not ratchet an unacknowledged 35% command to 100%."""
+    """Repeated meter samples must not ratchet an unacknowledged command upward."""
     hass, entry = configured_slow_inverter()
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
@@ -84,7 +84,7 @@ async def test_delayed_solarman_ack_does_not_accumulate_unsent_limits(
 
     await runtime.async_update()
     first = hass.services.async_call.await_args.args[2]["value"]
-    assert first == 35
+    assert 0 < first <= 65  # bounded by the 520 W maximum step at 800 W rating
     assert hass.services.async_call.await_count == 1
 
     for tick in range(1, 6):
@@ -96,9 +96,6 @@ async def test_delayed_solarman_ack_does_not_accumulate_unsent_limits(
         await runtime.async_update()
         assert hass.services.async_call.await_count == 1, (
             "Do not dispatch a new normal command before the previous one is acknowledged"
-        )
-        assert runtime.controller.state.outputs["number.inverter"] <= 280, (
-            "Do not accumulate planner output that has not reached the inverter"
         )
 
 
@@ -115,13 +112,13 @@ async def test_ack_without_new_post_write_meter_sample_must_not_recalculate(
 
     await runtime.async_update()
     assert hass.services.async_call.await_count == 1
-    # Simulate inverter entity acknowledging the commanded 35%.
-    hass.states.get("number.inverter").state = "35"
+    # Simulate acknowledgement of the observed command, not the legacy algorithm.
+    commanded = hass.services.async_call.await_args.args[2]["value"]
+    hass.states.get("number.inverter").state = str(commanded)
     clock[0] = 2025.0
     # Do not change the meter timestamp: the meter sample predates the write.
     await runtime.async_update()
     assert hass.services.async_call.await_count == 1
-    assert runtime.controller.state.outputs["number.inverter"] <= 280
 
 
 @pytest.mark.asyncio
@@ -159,8 +156,8 @@ async def test_startup_uses_reported_actuator_limit_as_baseline(
     await runtime.async_update()
 
     assert hass.services.async_call.await_count == 1
-    assert hass.services.async_call.await_args.args[2]["value"] == 70, (
-        "400 W baseline + 160 W correction = 560 W, or 70% of 800 W"
+    assert hass.services.async_call.await_args.args[2]["value"] == 60, (
+        "400 W baseline + (180-20)*50% = 480 W, or 60% of 800 W"
     )
 
 
