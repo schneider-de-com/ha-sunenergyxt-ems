@@ -156,3 +156,35 @@ async def test_genuine_parent_task_cancellation_is_not_swallowed(
     runtime._running = True
     with pytest.raises(asyncio.CancelledError):
         await runtime.async_update()
+
+
+@pytest.mark.asyncio
+async def test_manual_disable_writes_safe_minimum_to_all_reachable_inverters() -> None:
+    """User disable must command both inverters, including one already reporting zero."""
+    hass, entry = configured_two_bk215()
+    runtime = EMSRuntime(hass, entry)
+    await runtime.async_disable()
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert {command["entity_id"] for command in commands} == {
+        "number.m200",
+        "number.m80",
+    }
+    assert all(command["value"] == 0 for command in commands)
+    assert runtime.status == "shutdown_pending"
+
+
+@pytest.mark.asyncio
+async def test_stop_does_not_erase_other_inverter_failure_when_ack_is_pending() -> None:
+    """One reachable inverter cannot hide a second inverter's shutdown failure."""
+    hass, entry = configured_two_bk215()
+    hass.states.get("number.m200").state = "unavailable"
+    runtime = EMSRuntime(hass, entry)
+    await runtime.async_disable()
+    assert runtime.status == "write_error"
+    assert "number.m200" in (runtime.last_error or "")
+    entry.options["enabled"] = False
+    runtime._running = True
+    await runtime.async_update()
+    assert runtime.status == "write_error"
+    assert "number.m200" in (runtime.last_error or "")
+
