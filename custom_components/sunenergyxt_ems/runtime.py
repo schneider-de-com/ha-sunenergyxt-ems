@@ -312,7 +312,7 @@ class EMSRuntime:
             if previous is not None:
                 if abs(value - previous) < max(
                     step, MIN_OUTPUT_CHANGE_W * (100 / rating if unit == "%" else 1)
-                ):
+                ) and not (emergency and reported_value is not None and value < reported_value):
                     continue
                 elapsed = now - self._sent_at.get(entity_id, 0)
                 # Safety fallback and deliberate shutdown may bypass the normal interval.
