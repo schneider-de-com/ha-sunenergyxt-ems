@@ -240,3 +240,38 @@ async def test_main_swap_never_increases_support_before_previous_main_releases(
         command["entity_id"] == "number.support" and command["value"] > 0
         for command in commands
     ), "Do not increase the new main before previous inverter is confirmed at zero"
+
+
+
+@pytest.mark.asyncio
+async def test_ack_and_new_grid_sample_allow_next_bounded_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify recovery after real (simulated) entity ACK plus a fresh meter sample."""
+    hass, entry = configured_slow_inverter()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [8000.0]
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: clock[0])
+
+    await runtime.async_update()
+    first = hass.services.async_call.await_args.args[2]["value"]
+    assert hass.services.async_call.await_count == 1
+    assert runtime.status == "waiting_feedback"
+
+    # The HA number integration reports the requested setpoint.
+    hass.states.get("number.inverter").state = str(first)
+    hass.states.get("number.inverter").last_reported = (
+        datetime.now(UTC) + timedelta(milliseconds=1)
+    )
+    # The Shelly meter also reports a newer observation, after the write.
+    hass.states.get("sensor.grid").last_reported = (
+        datetime.now(UTC) + timedelta(milliseconds=2)
+    )
+    clock[0] += 21.0  # 5 s settling and 20 s Deye increase interval have elapsed
+    await runtime.async_update()
+
+    assert hass.services.async_call.await_count == 2
+    second = hass.services.async_call.await_args.args[2]["value"]
+    assert first < second <= 100
+    assert runtime.status == "waiting_feedback"
