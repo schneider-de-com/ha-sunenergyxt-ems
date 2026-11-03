@@ -355,7 +355,8 @@ async def test_positive_reenabling_through_options_resumes_if_data_valid():
     entry.options["enabled"] = True
     await runtime.async_change_options()
     assert runtime.controller.enabled
-    assert runtime.status == "running"
+    hass.services.async_call.assert_awaited()
+    assert runtime.status == "waiting_feedback"
 
 @pytest.mark.asyncio
 async def test_stale_soc_while_grid_is_fresh_stops_discharge():
