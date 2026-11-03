@@ -464,6 +464,10 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 )
             ),
             vol.Required(
+                CONF_FEED_IN_HYSTERESIS,
+                default=self.config_entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0),
+            ): vol.All(vol.Coerce(float), vol.Range(min=1, max=10)),
+            vol.Required(
                 "grid_target_w",
                 default=self.config_entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W),
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
