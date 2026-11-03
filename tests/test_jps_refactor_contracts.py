@@ -87,6 +87,7 @@ def test_diagnostics_distinguish_pid_terms_from_measured_output() -> None:
     assert state.pid_i_w == 0
     assert isinstance(state.pid_d_w, float)
 
+
 def test_pid_does_not_integrate_while_an_inverter_is_starting() -> None:
     """The 30-second startup hold must not silently build an integral backlog."""
     controller = logic.Controller(logic.ControllerState(outputs={"a_inverter": 200}))
@@ -108,6 +109,7 @@ def test_ev3600_charging_clears_stale_full_charge_bypass_state() -> None:
     controller.update((pack("a", soc=90, ev3600_charging=True),), 200, 2)
     assert "a" not in controller.state.full
     assert "a" in controller.state.ev3600_active
+
 
 def test_derivative_is_damped_but_not_accidentally_clamped_to_fraction_of_a_watt() -> None:
     """Real 5-second meter changes should produce a measurable bounded D term."""
