@@ -49,6 +49,9 @@ def configured(*, grid=420, soc=70, lower=10, inverter_unit="W", old=0):
     hass = SimpleNamespace(
         states=SimpleNamespace(get=states.get),
         services=SimpleNamespace(async_call=AsyncMock()),
+        config_entries=SimpleNamespace(
+            async_update_entry=lambda entry, *, options: setattr(entry, "options", options)
+        ),
     )
     entry = SimpleNamespace(
         data=data,
