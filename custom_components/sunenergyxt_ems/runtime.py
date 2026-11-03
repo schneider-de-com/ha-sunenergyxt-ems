@@ -295,7 +295,7 @@ class EMSRuntime:
         return 5.0
 
     async def _apply(
-        self, targets: dict[str, float], now: float, *, emergency: bool = False
+        self, targets: dict[str, float], now: float, *, emergency: bool = False, force: bool = False
     ) -> None:
         for entity_id, target in targets.items():
             state = self.hass.states.get(entity_id)
@@ -329,20 +329,22 @@ class EMSRuntime:
             reported_value = self._float(state.state)
             pending = self._pending.get(entity_id)
             if (
-                emergency
+                not force
+                and emergency
                 and pending is not None
                 and abs(pending.target - value) < 0.01
                 and now - pending.sent_at < FEEDBACK_TIMEOUT_SECONDS
             ):
                 continue
             if (
-                previous is None
+                not force
+                and previous is None
                 and reported_value is not None
                 and abs(reported_value - value) <= max(step / 2, 0.01)
             ):
                 continue
             interval = self._minimum_interval(entity_id)
-            if previous is not None:
+            if previous is not None and not force:
                 if abs(value - previous) < max(
                     step, MIN_OUTPUT_CHANGE_W * (100 / rating if unit == "%" else 1)
                 ) and not (emergency and reported_value is not None and value < reported_value):
@@ -410,6 +412,8 @@ class EMSRuntime:
                 failures.append(entity_id)
         if failures:
             self.last_error = "Shutdown not acknowledged: " + ", ".join(failures)
+            self.status = "write_error"
+        elif self.last_error is not None:
             self.status = "write_error"
         elif self._shutdown_pending:
             self.status = "shutdown_pending"
@@ -557,7 +561,7 @@ class EMSRuntime:
                 for inverter in battery[CONF_INVERTERS]
             }
             unreachable = sorted(configured - commands.keys())
-            await self._apply(commands, monotonic(), emergency=True)
+            await self._apply(commands, monotonic(), emergency=True, force=True)
             self._shutdown_pending = dict(self._pending)
             self._pending.clear()
             observed = self._reported_outputs(self._batteries())
