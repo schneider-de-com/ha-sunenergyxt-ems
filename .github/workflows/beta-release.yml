@@ -1,0 +1,75 @@
+name: Publish tagged beta after validated main CI
+
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  beta:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Verify target is still the tested main revision
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$remote_main" = "$SOURCE_SHA" || {
+            echo "::notice::A newer main revision supersedes this one."
+            exit 0
+          }
+      - name: Require the HACS and CodeQL workflow results for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          for attempt in $(seq 1 60); do
+            status="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&per_page=100" --jq '
+              [
+                (.workflow_runs | map(select(.name == "HACS Validation")) | sort_by(.created_at) | last | .conclusion // "pending"),
+                (.workflow_runs | map(select(.name == "CodeQL")) | sort_by(.created_at) | last | .conclusion // "pending")
+              ] | join(" ")
+            ')"
+            if [ "$status" = "success success" ]; then
+              echo "Both validation workflows passed."
+              exit 0
+            fi
+            if echo "$status" | grep -Eq 'failure|cancelled|timed_out'; then
+              echo "::error::Release blocked by HACS/CodeQL: $status"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::HACS/CodeQL did not both pass before release gate timed out."
+          exit 1
+      - name: Publish a prerelease, never a stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          version="$(python -c 'import json; print(json.load(open("custom_components/sunenergyxt_ems/manifest.json", encoding="utf-8"))["version"])')"
+          case "$version" in
+            *b[0-9]*|*rc[0-9]*) ;;
+            *) echo "::error::Non-prerelease version forbidden by this workflow."; exit 1 ;;
+          esac
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::notice::Release $tag already exists; no overwrite."
+            exit 0
+          fi
+          gh release create "$tag" \
+            --target "$SOURCE_SHA" \
+            --title "SunEnergyXT EMS $version — experimental MVP beta" \
+            --notes-file "RELEASE_NOTES_$version.md" \
+            --prerelease
