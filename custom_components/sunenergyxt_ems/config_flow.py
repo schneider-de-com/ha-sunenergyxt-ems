@@ -38,7 +38,6 @@ from .registry import (
     device_label,
     device_rated_w,
     inverter_device_suggestions,
-    registered_dc_output,
     suggested_grid,
 )
 
