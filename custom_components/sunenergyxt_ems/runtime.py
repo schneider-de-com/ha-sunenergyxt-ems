@@ -37,6 +37,7 @@ from .const import (
     FEED_IN_MODE_PV,
 )
 from .logic import Battery, Controller, Inverter
+from .registry import battery_suggestions
 
 _LOGGER = logging.getLogger(__name__)
 UPDATE_PERIOD = timedelta(seconds=5)
