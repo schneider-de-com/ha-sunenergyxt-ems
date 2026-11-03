@@ -429,5 +429,7 @@ async def test_reported_bk215_dc_overlimit_latches_safety_shutdown() -> None:
     hass.services.async_call.reset_mock()
     hass.states.get("sensor.grid").last_reported = datetime.now(UTC) + timedelta(seconds=1)
     await runtime.async_update()
-    assert runtime.status == "hardware_limit", "A transient low reading must not auto-release a DC trip"
+    assert runtime.status == "hardware_limit", (
+        "A transient low reading must not auto-release a DC trip"
+    )
     hass.services.async_call.assert_not_awaited()
