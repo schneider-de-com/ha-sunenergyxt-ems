@@ -102,9 +102,10 @@ async def test_disable_waits_for_ack_instead_of_announcing_success() -> None:
     assert runtime.status != "disabled", "Shutdown without fresh readback is unconfirmed"
     assert "number.m80" in runtime._shutdown_pending
 
-    inverter = hass.states.get("number.m80")
-    inverter.state = "0"
-    inverter.last_reported += timedelta(seconds=1)
+    for entity_id in ("number.m200", "number.m80"):
+        inverter = hass.states.get(entity_id)
+        inverter.state = "0"
+        inverter.last_reported += timedelta(seconds=1)
     entry.options["enabled"] = False
     runtime._running = True
     await runtime.async_update()
