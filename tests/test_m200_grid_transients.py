@@ -62,9 +62,7 @@ def configured_runtime() -> tuple[SimpleNamespace, SimpleNamespace]:
 @pytest.fixture(autouse=True)
 def no_external_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
-    monkeypatch.setattr(
-        module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None)
-    )
+    monkeypatch.setattr(module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None))
     monkeypatch.setattr(module, "registered_dc_output", lambda *_: None)
 
 
@@ -105,6 +103,6 @@ async def test_persistent_measured_export_still_reduces_to_zero(
         meter.state = str(watts)
         meter.last_reported = base + timedelta(milliseconds=100 * (i + 1))
         await runtime.async_update()
-    assert any(
-        call.args[2]["value"] == 0 for call in hass.services.async_call.await_args_list
-    ), "Repeated export must still lower the power limit promptly"
+    assert any(call.args[2]["value"] == 0 for call in hass.services.async_call.await_args_list), (
+        "Repeated export must still lower the power limit promptly"
+    )
