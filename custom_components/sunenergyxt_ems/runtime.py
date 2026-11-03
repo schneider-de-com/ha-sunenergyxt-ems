@@ -377,7 +377,7 @@ class EMSRuntime:
             self.controller.feed_in = bool(self.entry.options.get(CONF_FEED_IN, False))
             self.controller.enabled = bool(self.entry.options.get(CONF_ENABLED, True))
             if not self.controller.enabled:
-                self.status = "disabled"
+                self._verify_shutdown(monotonic())
                 self._publish()
                 return
             now = monotonic()
