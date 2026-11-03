@@ -43,7 +43,6 @@ def bounded_pid(
     Time dependence is applied only by the caller on a distinct meter sample.
     """
     gains = gains or PIDGains()
-    gains = gains or PIDGains()
     strength = min(1.0, max(0.0, abs(error) - 200.0) / 600.0)
     kp = gains.kp_export if error < -20 else gains.kp_min + (gains.kp_max - gains.kp_min) * strength
     p = kp * error
