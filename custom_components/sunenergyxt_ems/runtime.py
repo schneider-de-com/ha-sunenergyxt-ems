@@ -303,6 +303,15 @@ class EMSRuntime:
                 minimum, round(round((value - minimum) / step) * step + minimum, 4)
             ))
             previous = self._last_sent.get(entity_id)
+            # No-op writes on startup only create unnecessary communication
+            # (and a fake pending acknowledgement) for already-correct limits.
+            reported_value = self._float(state.state)
+            if (
+                previous is None
+                and reported_value is not None
+                and abs(reported_value - value) <= max(step / 2, 0.01)
+            ):
+                continue
             interval = self._minimum_interval(entity_id)
             if previous is not None:
                 if abs(value - previous) < max(
@@ -315,6 +324,10 @@ class EMSRuntime:
                     required = max(interval, 20.0) if value > previous else interval
                     if elapsed < required:
                         continue
+            reported_before = (
+                getattr(state, "last_reported", None) or state.last_updated
+            )
+            _, grid_before = self._grid()
             try:
                 await self.hass.services.async_call(
                     "number", "set_value",
@@ -328,6 +341,12 @@ class EMSRuntime:
                 continue
             self._last_sent[entity_id] = value
             self._sent_at[entity_id] = now
+            self._pending[entity_id] = PendingCommand(
+                target=value,
+                entity_reported_before=reported_before,
+                sent_at=now,
+                grid_reported_before=grid_before,
+            )
 
     async def async_update(self) -> None:
         """One serialized update; never trust stale meter readings."""
