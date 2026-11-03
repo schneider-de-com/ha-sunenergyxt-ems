@@ -27,7 +27,6 @@ jobs:
       - run: ruff check custom_components tests
       - name: PEP 8 formatting audit
         run: ruff format --check custom_components tests
-        continue-on-error: true
       - name: Security audit (Bandit)
         run: python -m bandit -q -r custom_components/sunenergyxt_ems
       - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/logic.py custom_components/sunenergyxt_ems/discovery.py
