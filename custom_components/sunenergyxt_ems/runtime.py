@@ -40,6 +40,8 @@ _LOGGER = logging.getLogger(__name__)
 UPDATE_PERIOD = timedelta(seconds=5)
 MAX_GRID_AGE = timedelta(seconds=30)
 MAX_SOC_AGE = timedelta(seconds=45)
+MAX_DC_AGE = timedelta(seconds=90)
+MAX_BK215_DC_W = 1920.0
 MIN_OUTPUT_CHANGE_W = 10.0
 FEEDBACK_SETTLE_SECONDS = 5.0
 FEEDBACK_TIMEOUT_SECONDS = 30.0
@@ -72,6 +74,7 @@ class EMSRuntime:
         self._sent_at: dict[str, float] = {}
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
+        self._overload_latched: set[str] = set()
         self._last_processed_grid: datetime | None = None
         self._running = False
         self._seen_valid = False
