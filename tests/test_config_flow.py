@@ -426,9 +426,7 @@ async def test_tripped_dc_output_cannot_be_reset_while_enabled(monkeypatch):
         data={"batteries": [{"device_id": "bk1", "dc_output": "sensor.dc"}]},
         options={"enabled": False, "dc_tripped_batteries": ["bk1"]},
     )
-    monkeypatch.setattr(
-        flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry)
-    )
+    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
     result = await options.async_step_init(
         {"enabled": True, "feed_in": False, "reset_dc_trip": True}
     )
@@ -442,9 +440,7 @@ async def test_tripped_dc_output_reset_requires_fresh_zero_watts(monkeypatch):
         data={"batteries": [{"device_id": "bk1", "dc_output": "sensor.dc"}]},
         options={"enabled": False, "dc_tripped_batteries": ["bk1"]},
     )
-    monkeypatch.setattr(
-        flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry)
-    )
+    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
     state = SimpleNamespace(
         state="0",
         attributes={"unit_of_measurement": "W"},
