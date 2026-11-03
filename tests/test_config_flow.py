@@ -481,6 +481,7 @@ async def test_tripped_dc_output_reset_requires_fresh_zero_watts(monkeypatch):
     assert saved["type"] == "create_entry"
     assert saved["data"]["dc_tripped_batteries"] == []
 
+
 @pytest.mark.asyncio
 async def test_legacy_entry_can_reset_dc_trip_with_registered_sensor(monkeypatch):
     """A migrated entry has no dc_output field but the official device still does."""
