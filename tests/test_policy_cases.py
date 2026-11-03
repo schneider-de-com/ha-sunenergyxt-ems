@@ -12,6 +12,7 @@ from custom_components.sunenergyxt_ems.discovery import (
 from custom_components.sunenergyxt_ems.logic import (
     Battery,
     Controller,
+    ControllerState,
     Inverter,
 )
 
@@ -32,29 +33,30 @@ def pack(
 
 def test_positive_import_is_followed_with_small_grid_reserve():
     engine = Controller()
-    assert engine.update((pack(),), 600, 1) == {"a_inv": 580}
+    assert engine.update((pack(),), 600, 1) == {"a_inv": 290}  # 50% of (600 - 20 W)
 
 
 def test_positive_export_causes_power_reduction():
     engine = Controller()
     engine.update((pack(),), 600, 1)
-    assert engine.update((pack(),), -400, 2) == {"a_inv": 160}
+    assert engine.update((pack(),), -400, 2) == {"a_inv": 0}  # decrease 290 W by up to 420 W
 
 
-def test_positive_two_inverters_share_bk215_limit():
+def test_positive_two_inverters_respect_bk215_hard_limit_from_confirmed_baseline():
     battery = Battery(
         "a", 70, 10, 90,
         (Inverter("inv1", 1500), Inverter("inv2", 1500)),
     )
-    cmd = Controller().update((battery,), 3000, 1)
-    assert cmd["inv1"] <= 1500
-    assert cmd["inv2"] <= 1500
-    assert sum(cmd.values()) == 1920
+    engine = Controller(ControllerState(outputs={"inv1": 1400, "inv2": 500}))
+    cmd = engine.update((battery,), 3000, 1)
+    assert 0 <= cmd["inv1"] <= 1500
+    assert 0 <= cmd["inv2"] <= 1500
+    assert sum(cmd.values()) == 1920  # 1,920 W combined BK215 hard limit
 
 
 def test_positive_multiple_batteries_keep_operating_if_one_is_unavailable():
     cmd = Controller().update((pack("a", soc=None), pack("b")), 600, 1)
-    assert cmd == {"a_inv": 0, "b_inv": 580}
+    assert cmd == {"a_inv": 0, "b_inv": 290}
 
 
 def test_positive_full_charge_is_opt_in_and_has_soc_hysteresis():
@@ -69,7 +71,7 @@ def test_positive_full_charge_is_opt_in_and_has_soc_hysteresis():
 def test_positive_zero_grid_reading_is_valid():
     engine = Controller()
     engine.update((pack(),), 100, 1)
-    assert engine.update((pack(),), 0, 2)["a_inv"] == 60
+    assert engine.update((pack(),), 0, 2)["a_inv"] == 40  # 0 W is not missing data
 
 
 # Negative: missing data, offline devices, and recovery logic.
@@ -96,13 +98,13 @@ def test_negative_one_offline_inverter_does_not_disable_its_partner():
         "a", 70, 10, 90,
         (Inverter("offline", 800, online=False), Inverter("working", 800)),
     )
-    assert Controller().update((paired,), 600, 1) == {"working": 580}
+    assert Controller().update((paired,), 600, 1) == {"working": 290}
 
 
 def test_negative_grid_loss_lowers_inverter_after_grace():
     engine = Controller()
     engine.update((pack(),), 600, 1)
-    assert engine.update((pack(),), None, 4)["a_inv"] == 580
+    assert engine.update((pack(),), None, 4)["a_inv"] == 290
     assert engine.update((pack(),), None, 20)["a_inv"] == 0
 
 
@@ -180,11 +182,12 @@ def test_negative_missing_soc_during_grid_grace_is_not_held_at_old_power():
     assert engine.update((pack(soc=None),), None, 3)["a_inv"] == 0
 
 
-def test_positive_larger_configured_limit_still_respects_bk215_hardware_cap():
+def test_positive_configured_limit_cannot_override_bk215_hardware_cap():
     battery = Battery(
         "a", 70, 10, 90,
         (Inverter("inv1", 1500), Inverter("inv2", 1500)),
         output_limit_w=4000,
     )
-    outputs = Controller().update((battery,), 5000, 1)
+    engine = Controller(ControllerState(outputs={"inv1": 1400, "inv2": 500}))
+    outputs = engine.update((battery,), 5000, 1)
     assert sum(outputs.values()) == 1920
