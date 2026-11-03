@@ -123,6 +123,7 @@ async def test_unconfirmed_shutdown_timeout_remains_visible(
     monkeypatch.setattr(module, "monotonic", lambda: clock[0])
     await runtime.async_disable()
     clock[0] += 35
+    runtime._running = True
     await runtime.async_update()
     assert runtime.status == "write_error"
     assert "number.m80" in (runtime.last_error or "")
