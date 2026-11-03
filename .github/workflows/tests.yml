@@ -31,6 +31,28 @@ jobs:
         run: python -m bandit -q -r custom_components/sunenergyxt_ems
       - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/logic.py custom_components/sunenergyxt_ems/discovery.py
 
+      # Temporary PR-only formatter bootstrap; remove after applying results.
+      - name: Export Ruff-formatted files for review
+        if: failure()
+        shell: bash
+        run: |
+          ruff format custom_components tests
+          python - <<'PY'
+          import base64
+          import pathlib
+          import subprocess
+          print("FORMAT_COMMIT:" + subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
+          names = subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines()
+          for name in names:
+              if not name.endswith(".py"):
+                  continue
+              encoded = base64.b64encode(pathlib.Path(name).read_bytes()).decode("ascii")
+              print("FORMAT_BEGIN:" + name)
+              for offset in range(0, len(encoded), 900):
+                  print("FORMAT_CHUNK:" + encoded[offset:offset + 900])
+              print("FORMAT_END:" + name)
+          PY
+
   hassfest:
     name: Home Assistant hassfest
     runs-on: ubuntu-latest
