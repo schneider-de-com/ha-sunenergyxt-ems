@@ -139,6 +139,20 @@ class EMSRuntime:
                 return None
         return self._float(source)
 
+    def _fresh_dc_output(self, source: str | None) -> float | None:
+        """Read recent BK215 DC output watts or return no usable measurement."""
+        if not source:
+            return None
+        state = self.hass.states.get(source)
+        if state is None or state.attributes.get("unit_of_measurement") != "W":
+            return None
+        stamp = getattr(state, "last_reported", None) or state.last_updated
+        age = datetime.now(UTC) - stamp
+        if age < timedelta(seconds=-5) or age > MAX_DC_AGE:
+            return None
+        value = self._float(state.state)
+        return value if value is not None and 0 <= value <= 10000 else None
+
     def _batteries(self) -> tuple[Battery, ...]:
         batteries = []
         for record in self.entry.data[CONF_BATTERIES]:
