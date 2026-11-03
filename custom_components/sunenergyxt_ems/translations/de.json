@@ -128,9 +128,10 @@
           "upper_2": "Speicher 2: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_3": "Speicher 3: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_4": "Speicher 4: Ladegrenze (nur für Vollladungseinspeisung)",
-          "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)"
+          "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)",
+          "feed_in_mode": "Einspeiseverhalten"
         },
-        "description": "**EMS aktivieren** schaltet die aktive Hauslastregelung ein oder aus. Der **Netzbezug-Zielwert** ist ein kleiner positiver Sicherheitspuffer in Watt (z. B. 20 W), keine Kaufstrategie. **Einspeisung nach Vollladung** ist optional und kann gespeicherte Akkuenergie ins Netz abgeben; bis zur Klärung des gewünschten Verhaltens deaktiviert lassen."
+        "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
       }
     },
     "error": {
