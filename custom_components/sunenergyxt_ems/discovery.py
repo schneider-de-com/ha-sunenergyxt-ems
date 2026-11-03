@@ -34,7 +34,7 @@ def find_batteries(entities: Iterable[Candidate]) -> dict[str, dict[str, str]]:
         role = _BK_ROLES.get(item.translation_key or "")
         if (
             role
-            and item.unit in (None, "W" if role == "charging" else "%")
+            and item.unit in (None, "W" if role in ("charging", "dc_output") else "%")
             and item.platform == ("number" if role in ("lower", "upper") else "sensor")
         ):
             devices.setdefault(item.device_id, {})[role] = item.entity_id
