@@ -47,6 +47,7 @@ class Controller:
         self.state = deepcopy(state) if state else ControllerState()
         self.enabled = True
         self.feed_in = False
+        self.full_hysteresis_pct = 2.0
         self.grid_target_w = 20
         self.grid_grace_seconds = 8
         self.recovery_samples = 3
@@ -218,7 +219,7 @@ class Controller:
                 or (
                     battery.soc is not None
                     and battery.upper_soc is not None
-                    and battery.soc <= battery.upper_soc - 2
+                    and battery.soc <= battery.upper_soc - self.full_hysteresis_pct
                 )
             )
             for battery in ranked
@@ -237,7 +238,7 @@ class Controller:
             ):
                 if battery.soc >= battery.upper_soc:
                     self.state.full.add(battery.key)
-                elif battery.soc <= battery.upper_soc - 2:
+                elif battery.soc <= battery.upper_soc - self.full_hysteresis_pct:
                     self.state.full.discard(battery.key)
             else:
                 self.state.full.discard(battery.key)
