@@ -356,12 +356,8 @@ class Controller:
                 correction = 0.0
             else:
                 gain = 1.0 if grid_w < 0 else 0.5
-                step_cap = (
-                    20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
-                )
-                correction = max(
-                    -step_cap, min(step_cap, (grid_w - self.grid_target_w) * gain)
-                )
+                step_cap = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
+                correction = max(-step_cap, min(step_cap, (grid_w - self.grid_target_w) * gain))
             self.state.pid_error_w = grid_w - self.grid_target_w
             self.state.pid_p_w = correction
             self.state.pid_i_w = 0.0
