@@ -508,9 +508,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                         records[index - 1][CONF_UPPER] = float(requested.pop(f"upper_{index}"))
                     updated[CONF_BATTERIES] = records
                     self.hass.config_entries.async_update_entry(self.config_entry, data=updated)
-            if float(requested.get("pid_kp_max", 0.9)) < float(
-                requested.get("pid_kp_min", 0.5)
-            ):
+            if float(requested.get("pid_kp_max", 0.9)) < float(requested.get("pid_kp_min", 0.5)):
                 errors["base"] = "invalid_pid_gains"
             if not errors:
                 settings = {
@@ -574,13 +572,22 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 default=self.config_entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W),
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
         }
-        fields[vol.Optional("adaptive_pid", default=self.config_entry.options.get("adaptive_pid", False))] = selector.BooleanSelector()
-        fields[vol.Optional("start_hold_seconds", default=self.config_entry.options.get("start_hold_seconds", 30))] = vol.All(vol.Coerce(float), vol.Range(min=5, max=60))
-        fields[vol.Optional("pid_kp_min", default=self.config_entry.options.get("pid_kp_min", 0.5))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=2))
-        fields[vol.Optional("pid_kp_max", default=self.config_entry.options.get("pid_kp_max", 0.9))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=2))
-        fields[vol.Optional("pid_kp_export", default=self.config_entry.options.get("pid_kp_export", 1))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=2))
-        fields[vol.Optional("pid_ki", default=self.config_entry.options.get("pid_ki", 0.02))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=0.5))
-        fields[vol.Optional("pid_kd", default=self.config_entry.options.get("pid_kd", 0.12))] = vol.All(vol.Coerce(float), vol.Range(min=0, max=1))
+        fields[
+            vol.Optional(
+                "adaptive_pid", default=self.config_entry.options.get("adaptive_pid", False)
+            )
+        ] = selector.BooleanSelector()
+        for key, default, minimum, maximum in (
+            ("start_hold_seconds", 30, 5, 60),
+            ("pid_kp_min", 0.5, 0, 2),
+            ("pid_kp_max", 0.9, 0, 2),
+            ("pid_kp_export", 1.0, 0, 2),
+            ("pid_ki", 0.02, 0, 0.5),
+            ("pid_kd", 0.12, 0, 1),
+        ):
+            fields[
+                vol.Optional(key, default=self.config_entry.options.get(key, default))
+            ] = vol.All(vol.Coerce(float), vol.Range(min=minimum, max=maximum))
         for index, battery in enumerate(existing, start=1):
             device = battery[CONF_DEVICE]
             pv = self.config_entry.options.get("pv_input", {}).get(device)
@@ -593,17 +600,13 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     f"{prefix}_{index}",
                     **({"default": source} if source else {}),
                 )
-                fields[key] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain=domain)
-                )
-            fields[vol.Optional(f"pv_input_{index}", **({"default": pv} if pv else {}))] = selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
+                fields[key] = selector.EntitySelector(selector.EntitySelectorConfig(domain=domain))
+            fields[vol.Optional(f"pv_input_{index}", **({"default": pv} if pv else {}))] = (
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
             )
         for i, battery in enumerate(existing, 1):
             for j, inverter in enumerate(battery.get(CONF_INVERTERS, ()), 1):
-                source = self.config_entry.options.get("ac_power", {}).get(
-                    inverter["entity_id"]
-                )
+                source = self.config_entry.options.get("ac_power", {}).get(inverter["entity_id"])
                 key = vol.Optional(f"ac_{i}_{j}", **({"default": source} if source else {}))
                 fields[key] = selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
