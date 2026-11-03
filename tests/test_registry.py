@@ -54,6 +54,7 @@ def registry(monkeypatch):
             "sunEnergyXT",
             config="entry_a",
         ),
+        item("sensor.changed_dc", "entry_a_wifi_outputpower_total", "bk1", "sunEnergyXT", config="entry_a"),
         item("sensor.other_bk_soc", "entry_b_wifi_soc", "bk2", "sunEnergyXT", config="entry_b"),
         item(
             "sensor.grid_renamed",
@@ -75,6 +76,7 @@ def registry(monkeypatch):
         "number.changed_low": "%",
         "number.changed_high": "%",
         "sensor.changed_input": "W",
+        "sensor.changed_dc": "W",
         "sensor.other_bk_soc": "%",
         "sensor.grid_renamed": "W",
         "number.changed_inverter": "%",
@@ -106,6 +108,7 @@ def test_live_derived_battery_roles_still_work_after_renames(registry):
             "lower": "number.changed_low",
             "upper": "number.changed_high",
             "charging": "sensor.changed_input",
+            "dc_output": "sensor.changed_dc",
         },
         "bk2": {"soc": "sensor.other_bk_soc"},
     }
@@ -225,3 +228,11 @@ def test_missing_inverter_state_gives_no_inferred_rating(registry):
     original = hass.states.get
     hass.states.get = lambda key: None if key == "number.changed_inverter" else original(key)
     assert module.device_rated_w(hass, "number.changed_inverter") is None
+
+
+def test_legacy_dc_lookup_requires_matching_device_and_official_unique_id(registry):
+    hass, values = registry
+    assert module.registered_dc_output(hass, "bk1") == "sensor.changed_dc"
+    assert module.registered_dc_output(hass, "bk2") is None
+    values["sensor.changed_dc"].unique_id = "wrong_source_wifi_outputpower_total"
+    assert module.registered_dc_output(hass, "bk1") is None
