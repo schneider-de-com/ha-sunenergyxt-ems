@@ -106,5 +106,5 @@ def test_fixture_retains_original_inverter_telemetry_not_simulated_success() -> 
     assert max(observed_percent) == 100
     assert any(
         abs(next_value - value) >= 50
-        for value, next_value in zip(observed_percent, observed_percent[1:])
+        for value, next_value in zip(observed_percent, observed_percent[1:], strict=False)
     )
