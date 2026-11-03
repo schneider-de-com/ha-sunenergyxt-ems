@@ -471,6 +471,8 @@ class EMSRuntime:
         async with self._lock:
             self.controller.enabled = False
             self.last_error = None
+            self._pending.clear()
+            self._shutdown_pending.clear()
             commands = self.controller.disable(self._batteries())
             configured = {
                 inverter["entity_id"]
