@@ -17,7 +17,7 @@ def fresh_power(hass, source: str | None) -> float | None:
     unit = state.attributes.get("unit_of_measurement")
     try:
         raw = float(state.state)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if not isfinite(raw) or unit not in ("W", "kW"):
         return None
