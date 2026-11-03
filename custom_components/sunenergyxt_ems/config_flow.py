@@ -428,10 +428,11 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 else:
                     tripped = set(self.config_entry.options.get(CONF_DC_TRIPPED, ()))
                     records = self.config_entry.data.get(CONF_BATTERIES, ())
-                    safe_to_reset = True
-                    for battery in records:
-                        if battery.get(CONF_DEVICE) not in tripped:
-                            continue
+                    matching = [
+                        battery for battery in records if battery.get(CONF_DEVICE) in tripped
+                    ]
+                    safe_to_reset = bool(tripped) and len(matching) == len(tripped)
+                    for battery in matching:
                         state = self.hass.states.get(battery.get("dc_output"))
                         report = getattr(state, "last_reported", None) or getattr(
                             state, "last_updated", None
@@ -444,6 +445,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                             state is None
                             or state.attributes.get("unit_of_measurement") != "W"
                             or not isinstance(report, datetime)
+                            or report.tzinfo is None
                             or not 0 <= (datetime.now(UTC) - report).total_seconds() <= 90
                             or not 0 <= watts <= 100
                         ):
