@@ -343,6 +343,32 @@ class EMSRuntime:
                 grid_reported_before=grid_before,
             )
 
+    def _verify_shutdown(self, now: float) -> None:
+        """Confirm each zero-limit actuator report; never assume service success."""
+        failures = []
+        for entity_id, pending in list(self._shutdown_pending.items()):
+            state = self.hass.states.get(entity_id)
+            current = self._float(state.state) if state else None
+            reported = (getattr(state, "last_reported", None) or state.last_updated) if state else None
+            step = self._float(state.attributes.get("step", 1)) if state else None
+            if (
+                current is not None
+                and isinstance(reported, datetime)
+                and reported > pending.entity_reported_before
+                and abs(current - pending.target) <= max((step or 1) / 2, 0.01)
+            ):
+                self._shutdown_pending.pop(entity_id, None)
+            elif now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
+                failures.append(entity_id)
+        if failures:
+            self.last_error = "Shutdown not acknowledged: " + ", ".join(failures)
+            self.status = "write_error"
+        elif self._shutdown_pending:
+            self.status = "shutdown_pending"
+        elif self.status != "write_error":
+            self.last_error = None
+            self.status = "disabled"
+
     async def async_update(self) -> None:
         """One serialized update; never trust stale meter readings."""
         if not self._running or self._lock.locked():
