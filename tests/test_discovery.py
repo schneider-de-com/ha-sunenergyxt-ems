@@ -73,3 +73,19 @@ def test_multiple_grid_meters_are_not_selected_automatically():
         Candidate("sensor.two", "sensor", "b", "energy", "net_power", "W"),
     ]
     assert suggest_grid(entries) is None
+
+
+def test_bk215_t34_dc_output_is_discovered_in_watts():
+    entries = [
+        Candidate("sensor.soc", "sensor", "bk", "sunEnergyXT", "wifi_soc", "%"),
+        Candidate("sensor.output", "sensor", "bk", "sunEnergyXT", "wifi_outputpower_total", "W"),
+    ]
+    assert find_batteries(entries)["bk"]["dc_output"] == "sensor.output"
+
+
+def test_invalid_dc_unit_is_not_treated_as_watts():
+    entries = [
+        Candidate("sensor.soc", "sensor", "bk", "sunEnergyXT", "wifi_soc", "%"),
+        Candidate("sensor.output", "sensor", "bk", "sunEnergyXT", "wifi_outputpower_total", "kWh"),
+    ]
+    assert "dc_output" not in find_batteries(entries)["bk"]
