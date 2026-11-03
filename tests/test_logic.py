@@ -141,3 +141,13 @@ def test_large_import_step_is_capped_at_520_w():
     engine = Controller()
     result = engine.update((b,), 1200, 1)
     assert result["a_inv"] == 520
+
+
+def test_pv_feed_in_hysteresis_is_user_configurable():
+    """90/88 in the source screenshot is an example, not a fixed hardware value."""
+    engine = Controller()
+    engine.feed_in = True
+    engine.full_hysteresis_pct = 5
+    assert engine.update((battery(soc=90),), 0, 1)["a_inv"] == 800
+    assert engine.update((battery(soc=88),), 0, 2)["a_inv"] == 800
+    assert engine.update((battery(soc=85),), -800, 3)["a_inv"] == 0
