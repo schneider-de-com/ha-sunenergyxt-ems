@@ -501,7 +501,7 @@ async def test_legacy_entry_can_reset_dc_trip_with_registered_sensor(monkeypatch
         property(lambda _: SimpleNamespace(states=SimpleNamespace(get=lambda key: state))),
     )
     monkeypatch.setattr(
-        flow_module, "registered_dc_output", lambda hass, key: "sensor.dc", raising=False
+        flow_module, "battery_suggestions", lambda hass: {"bk1": {"dc_output": "sensor.dc"}}
     )
     result = await options.async_step_init(
         {"enabled": False, "feed_in": False, "reset_dc_trip": True}
