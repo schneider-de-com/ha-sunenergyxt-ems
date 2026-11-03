@@ -22,6 +22,8 @@ from .const import (
     CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
+    CONF_FEED_IN_MODE,
+    FEED_IN_MODE_PV,
     CONF_GRID,
     CONF_GRID_INVERT,
     CONF_INVERTERS,
@@ -61,7 +63,7 @@ class EMSRuntime:
         self.entry = entry
         self.controller = Controller()
         self.controller.enabled = bool(entry.options.get(CONF_ENABLED, True))
-        self.controller.feed_in = bool(entry.options.get(CONF_FEED_IN, False))
+        self.controller.feed_in = bool(entry.options.get(CONF_FEED_IN, False)) and entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
         self.status = "waiting"
         self.last_error: str | None = None
         self._unsubscribe: Any = None
