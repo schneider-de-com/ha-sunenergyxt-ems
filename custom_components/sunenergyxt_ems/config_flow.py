@@ -135,6 +135,9 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 upper = user_input.get(f"upper_{index}")
                 if upper:
                     battery[CONF_UPPER] = upper
+                dc_output = user_input.get(f"dc_output_{index}")
+                if dc_output:
+                    battery["dc_output"] = dc_output
             return await self.async_step_inverters()
         fields: dict[Any, Any] = {}
         for index, battery in enumerate(self._batteries, start=1):
