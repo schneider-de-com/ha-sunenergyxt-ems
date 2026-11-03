@@ -424,7 +424,8 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 and requested.get(
                     CONF_FEED_IN_MODE,
                     self.config_entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV),
-                ) == FEED_IN_MODE_PV
+                )
+                == FEED_IN_MODE_PV
                 and missing
             ):
                 if any(f"upper_{index}" not in requested for index, _ in missing):
@@ -440,7 +441,14 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 settings = {
                     key: value
                     for key, value in requested.items()
-                    if key in (CONF_ENABLED, CONF_FEED_IN, CONF_FEED_IN_MODE, CONF_FEED_IN_HYSTERESIS, "grid_target_w")
+                    if key
+                    in (
+                        CONF_ENABLED,
+                        CONF_FEED_IN,
+                        CONF_FEED_IN_MODE,
+                        CONF_FEED_IN_HYSTERESIS,
+                        "grid_target_w",
+                    )
                 }
                 return self.async_create_entry(title="", data=settings)
         fields: dict[Any, Any] = {
@@ -458,8 +466,14 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
-                        {"value": FEED_IN_MODE_HOUSEHOLD, "label": "Household load / Haushaltslast"},
-                        {"value": FEED_IN_MODE_PV, "label": "Full charge then max inverter / PV-Erzeugung"},
+                        {
+                            "value": FEED_IN_MODE_HOUSEHOLD,
+                            "label": "Household load / Haushaltslast",
+                        },
+                        {
+                            "value": FEED_IN_MODE_PV,
+                            "label": "Full charge then max inverter / PV-Erzeugung",
+                        },
                     ]
                 )
             ),
