@@ -131,7 +131,7 @@ jobs:
           path.write_text(content.replace(old, "if False:", 1))
           PY
           set +e
-          python -m pytest -q tests/test_closed_loop_regression.py::test_delayed_solarman_ack_does_not_accumulate_unsent_limits > /tmp/mutation.log 2>&1
+          python -m pytest -q tests/test_closed_loop_regression.py::test_new_load_does_not_override_unacknowledged_command > /tmp/mutation.log 2>&1
           result=$?
           set -e
           cat /tmp/mutation.log
