@@ -408,7 +408,14 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             requested = dict(user_input)
-            if requested.get(CONF_FEED_IN) and missing:
+            if (
+                requested.get(CONF_FEED_IN)
+                and requested.get(
+                    CONF_FEED_IN_MODE,
+                    self.config_entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV),
+                ) == FEED_IN_MODE_PV
+                and missing
+            ):
                 if any(f"upper_{index}" not in requested for index, _ in missing):
                     errors["base"] = "missing_upper"
                 else:
