@@ -27,22 +27,31 @@ def configured(*, grid=420, soc=70, lower=10, inverter_unit="W", old=0):
     data = {
         "grid": "sensor.grid",
         "invert_grid": False,
-        "batteries": [{
-            "device_id": "battery-1", "soc": "sensor.soc",
-            "lower": "number.lower", "upper": "number.upper",
-            "inverters": [{"entity_id": "number.inverter", "rated_w": 800}],
-        }],
+        "batteries": [
+            {
+                "device_id": "battery-1",
+                "soc": "sensor.soc",
+                "lower": "number.lower",
+                "upper": "number.upper",
+                "inverters": [{"entity_id": "number.inverter", "rated_w": 800}],
+            }
+        ],
     }
     states = {
         "sensor.grid": sample(grid, "W", seconds_old=old),
         "sensor.soc": sample(soc),
         "number.lower": sample(lower),
         "number.upper": sample(90),
-        "number.inverter": sample(0, inverter_unit, min=0, max=100 if inverter_unit == "%" else 800, step=1),
+        "number.inverter": sample(
+            0, inverter_unit, min=0, max=100 if inverter_unit == "%" else 800, step=1
+        ),
     }
     hass = SimpleNamespace(
         states=SimpleNamespace(get=states.get),
         services=SimpleNamespace(async_call=AsyncMock()),
+        config_entries=SimpleNamespace(
+            async_update_entry=lambda entry, *, options: setattr(entry, "options", options)
+        ),
     )
     entry = SimpleNamespace(
         data=data,
@@ -68,7 +77,7 @@ async def test_positive_watts_are_sent_through_number_integration():
     await runtime.async_update()
     hass.services.async_call.assert_awaited_once()
     assert hass.services.async_call.await_args.args[:2] == ("number", "set_value")
-    assert hass.services.async_call.await_args.args[2]["value"] == 400
+    assert hass.services.async_call.await_args.args[2]["value"] == 200
 
 
 @pytest.mark.asyncio
@@ -77,7 +86,7 @@ async def test_positive_percent_limit_is_converted_from_watts():
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
-    assert hass.services.async_call.await_args.args[2]["value"] == 50
+    assert hass.services.async_call.await_args.args[2]["value"] == 25
 
 
 @pytest.mark.asyncio
@@ -134,7 +143,6 @@ async def test_negative_failed_write_is_reported():
     assert "number.inverter" in (runtime.last_error or "")
 
 
-
 @pytest.mark.asyncio
 async def test_implausible_rounding_cannot_exceed_inverter_maximum():
     hass, entry = configured(grid=804, inverter_unit="%")
@@ -159,7 +167,6 @@ async def test_implausible_future_meter_timestamp_is_rejected():
     hass.services.async_call.assert_not_awaited()
 
 
-
 @pytest.mark.asyncio
 async def test_negative_offline_inverter_is_reported_during_manual_stop():
     hass, entry = configured()
@@ -169,7 +176,6 @@ async def test_negative_offline_inverter_is_reported_during_manual_stop():
     hass.services.async_call.assert_not_awaited()
     assert runtime.status == "write_error"
     assert "number.inverter" in (runtime.last_error or "")
-
 
 
 @pytest.mark.asyncio
@@ -192,7 +198,6 @@ async def test_positive_emergency_reduction_bypasses_rate_limit(monkeypatch):
     runtime._sent_at["number.inverter"] = 1
     await runtime._apply({"number.inverter": 0}, now=11, emergency=True)
     assert hass.services.async_call.await_args.args[2]["value"] == 0
-
 
 
 @pytest.mark.asyncio
@@ -277,10 +282,9 @@ def test_negative_wrong_grid_unit_has_no_valid_sample():
 def test_positive_ap_systems_inverters_use_conservative_command_interval(monkeypatch):
     hass, entry = configured()
     monkeypatch.setattr(
-        module.er, "async_get",
-        lambda _: SimpleNamespace(
-            async_get=lambda entity: SimpleNamespace(platform="apsystems")
-        ),
+        module.er,
+        "async_get",
+        lambda _: SimpleNamespace(async_get=lambda entity: SimpleNamespace(platform="apsystems")),
     )
     runtime = EMSRuntime(hass, entry)
     assert runtime._minimum_interval("number.inverter") == 300
@@ -355,7 +359,9 @@ async def test_positive_reenabling_through_options_resumes_if_data_valid():
     entry.options["enabled"] = True
     await runtime.async_change_options()
     assert runtime.controller.enabled
-    assert runtime.status == "running"
+    hass.services.async_call.assert_awaited()
+    assert runtime.status == "waiting_feedback"
+
 
 @pytest.mark.asyncio
 async def test_stale_soc_while_grid_is_fresh_stops_discharge():
@@ -378,4 +384,81 @@ async def test_advanced_grid_target_option_changes_output():
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
-    assert hass.services.async_call.await_args.args[2]["value"] == 380
+    assert hass.services.async_call.await_args.args[2]["value"] == 190
+
+
+@pytest.mark.asyncio
+async def test_household_feed_in_mode_ignores_upper_soc_for_normal_demand() -> None:
+    """The source screenshot says household mode is independent of full charge."""
+    hass, entry = configured(grid=100, soc=95)
+    entry.options.update({"feed_in": True, "feed_in_mode": "household"})
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] == 40
+
+
+@pytest.mark.asyncio
+async def test_pv_feed_in_mode_uses_maximum_only_at_upper_soc() -> None:
+    """The PV mode can release maximum power after reaching the upper SoC."""
+    hass, entry = configured(grid=100, soc=95)
+    entry.options.update({"feed_in": True, "feed_in_mode": "pv"})
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] == 800
+
+
+@pytest.mark.asyncio
+async def test_reported_bk215_dc_overlimit_latches_safety_shutdown() -> None:
+    """The manufacturer specifies 1920 W DC, not 1920 W of inverter AC setpoints."""
+    hass, entry = configured(grid=3000, soc=85)
+    entry.data["batteries"][0]["dc_output"] = "sensor.bk_dc"
+    original_get = hass.states.get
+    dc_state = sample(2077, "W")
+    hass.states.get = lambda entity: dc_state if entity == "sensor.bk_dc" else original_get(entity)
+    inverter = hass.states.get("number.inverter")
+    inverter.state = "500"
+    runtime = EMSRuntime(hass, entry)
+    runtime._last_sent["number.inverter"] = 500
+    runtime._running = True
+
+    await runtime.async_update()
+    assert runtime.status == "hardware_limit"
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+    dc_state.state = "0"
+    dc_state.last_reported = datetime.now(UTC) + timedelta(seconds=1)
+    hass.services.async_call.reset_mock()
+    hass.states.get("sensor.grid").last_reported = datetime.now(UTC) + timedelta(seconds=1)
+    await runtime.async_update()
+    assert runtime.status == "hardware_limit", (
+        "A transient low reading must not auto-release a DC trip"
+    )
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bk215_dc_hardware_trip_persists_across_runtime_recreation() -> None:
+    """The emergency trip must survive integration reloads and HA restarts."""
+    hass, entry = configured(grid=3000, soc=85)
+    entry.data["batteries"][0]["dc_output"] = "sensor.bk_dc"
+    original_get = hass.states.get
+    dc_state = sample(2077, "W")
+    hass.states.get = lambda entity: dc_state if entity == "sensor.bk_dc" else original_get(entity)
+
+    def store_options(target, *, options):
+        target.options = options
+
+    hass.config_entries = SimpleNamespace(async_update_entry=store_options)
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    assert entry.options["dc_tripped_batteries"] == ["battery-1"]
+
+    restarted = EMSRuntime(hass, entry)
+    assert restarted._overload_latched == {"battery-1"}
+    dc_state.state = "0"
+    restarted._running = True
+    await restarted.async_update()
+    assert restarted.status == "hardware_limit"

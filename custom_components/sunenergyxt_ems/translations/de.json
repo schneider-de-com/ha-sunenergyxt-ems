@@ -128,13 +128,18 @@
           "upper_2": "Speicher 2: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_3": "Speicher 3: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_4": "Speicher 4: Ladegrenze (nur für Vollladungseinspeisung)",
-          "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)"
+          "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)",
+          "feed_in_mode": "Einspeiseverhalten",
+          "feed_in_hysteresis_pct": "PV-Modus: SoC-Hysterese (Prozentpunkte)",
+          "reset_dc_trip": "Gespeicherte DC-Schutzsperre zurücksetzen (EMS aus, frische BK215-Ausgangsleistung höchstens 100 W)"
         },
-        "description": "**EMS aktivieren** schaltet die aktive Hauslastregelung ein oder aus. Der **Netzbezug-Zielwert** ist ein kleiner positiver Sicherheitspuffer in Watt (z. B. 20 W), keine Kaufstrategie. **Einspeisung nach Vollladung** ist optional und kann gespeicherte Akkuenergie ins Netz abgeben; bis zur Klärung des gewünschten Verhaltens deaktiviert lassen."
+        "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
       }
     },
     "error": {
-      "missing_upper": "Bitte die obere SoC-Grenze für alle Speicher ohne entsprechende Entität eintragen."
+      "missing_upper": "Bitte die obere SoC-Grenze für alle Speicher ohne entsprechende Entität eintragen.",
+      "disable_before_trip_reset": "Vor dem Zurücksetzen der DC-Schutzsperre zuerst EMS deaktivieren.",
+      "trip_reset_unconfirmed": "Zurücksetzen verweigert: BK215-DC-Ausgangsleistung fehlt, ist veraltet oder liegt über 100 W."
     }
   },
   "entity": {

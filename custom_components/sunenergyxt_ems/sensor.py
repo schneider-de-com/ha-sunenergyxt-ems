@@ -5,6 +5,7 @@ from __future__ import annotations
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -18,11 +19,21 @@ async def async_setup_entry(
 ) -> None:
     """Add an easy-to-read EMS status entity."""
     runtime: EMSRuntime = hass.data[DOMAIN][entry.entry_id]
+    controller_device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "controller")},
+        name="SunEnergyXT EMS",
+        manufacturer="Community",
+        model="Energy management",
+    )
     entities: list[SensorEntity] = [EMSStatus(entry, runtime)]
     entities.extend(
         BatteryStatus(
-            entry, runtime, record["device_id"],
+            entry,
+            runtime,
+            record["device_id"],
             record.get("label", f"BK215 {index}"),
+            controller_device.id,
         )
         for index, record in enumerate(entry.data["batteries"], start=1)
     )
@@ -74,15 +85,19 @@ class BatteryStatus(SensorEntity):
     _attr_should_poll = False
 
     def __init__(
-        self, entry: ConfigEntry, runtime: EMSRuntime,
-        device_id: str, label: str = "BK215",
+        self,
+        entry: ConfigEntry,
+        runtime: EMSRuntime,
+        device_id: str,
+        label: str = "BK215",
+        parent_device_id: str | None = None,
     ) -> None:
         self._runtime = runtime
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_battery_{device_id}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"battery_{device_id}")},
-            via_device=(DOMAIN, "controller"),
+            via_device_id=parent_device_id,
             name=f"{label} (EMS)",
             manufacturer="Community",
             model="BK215 EMS controller",
@@ -90,8 +105,7 @@ class BatteryStatus(SensorEntity):
 
     def _battery(self):
         return next(
-            (battery for battery in self._runtime._batteries()
-             if battery.key == self._device_id),
+            (battery for battery in self._runtime._batteries() if battery.key == self._device_id),
             None,
         )
 
@@ -124,8 +138,7 @@ class BatteryStatus(SensorEntity):
             "inverters_online": sum(inv.online for inv in battery.inverters),
             "inverters_total": len(battery.inverters),
             "requested_power_w": sum(
-                self._runtime.controller.state.outputs.get(inv.key, 0)
-                for inv in battery.inverters
+                self._runtime.controller.state.outputs.get(inv.key, 0) for inv in battery.inverters
             ),
         }
 

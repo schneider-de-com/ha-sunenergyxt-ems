@@ -24,6 +24,7 @@ class Battery:
     inverters: tuple[Inverter, ...]
     charging_w: float = 0
     output_limit_w: float = 1920
+    dc_output_w: float | None = None
 
 
 @dataclass(slots=True)
@@ -46,6 +47,7 @@ class Controller:
         self.state = deepcopy(state) if state else ControllerState()
         self.enabled = True
         self.feed_in = False
+        self.full_hysteresis_pct = 2.0
         self.grid_target_w = 20
         self.grid_grace_seconds = 8
         self.recovery_samples = 3
@@ -120,20 +122,18 @@ class Controller:
                 and battery.upper_soc is not None
             ):
                 distance = battery.upper_soc - battery.soc
-                points += (
-                    3 if distance <= 3
-                    else 2 if distance <= 5
-                    else 1 if distance <= 10
-                    else 0
-                )
+                points += 3 if distance <= 3 else 2 if distance <= 5 else 1 if distance <= 10 else 0
             if battery.key == self.state.main:
                 points += 4
             elif battery.key == self.state.support:
                 points += 2
             return (
                 points,
-                2 if battery.key == self.state.main else
-                1 if battery.key == self.state.support else 0,
+                2
+                if battery.key == self.state.main
+                else 1
+                if battery.key == self.state.support
+                else 0,
                 sum(inv.rated_w for inv in battery.inverters if inv.online),
                 -original_order[battery.key],
             )
@@ -201,7 +201,32 @@ class Controller:
             for inv in battery.inverters
             if self._valid_inverter(inv)
         )
-        total_w = max(0, current + grid_w - self.grid_target_w)
+        # One step of the agreed proportional controller; never use the full
+        # grid error as an unrestricted actuator change.
+        in_deadband = 0 <= grid_w < 30
+        if in_deadband:
+            correction = 0.0
+        else:
+            gain = 1.0 if grid_w < 0 else 0.5
+            step_cap = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
+            correction = max(-step_cap, min(step_cap, (grid_w - self.grid_target_w) * gain))
+        # Leaving a full-charge export override must not continue intentional
+        # export merely to respect the ordinary rate limit.
+        exiting_full = any(
+            battery.key in self.state.full
+            and (
+                not self.feed_in
+                or (
+                    battery.soc is not None
+                    and battery.upper_soc is not None
+                    and battery.soc <= battery.upper_soc - self.full_hysteresis_pct
+                )
+            )
+            for battery in ranked
+        )
+        if exiting_full and grid_w < 0:
+            correction = grid_w - self.grid_target_w
+        total_w = max(0, current + correction)
         commands = safe.copy()
         for battery in ranked:
             if battery.soc is None:
@@ -213,20 +238,16 @@ class Controller:
             ):
                 if battery.soc >= battery.upper_soc:
                     self.state.full.add(battery.key)
-                elif battery.soc <= battery.upper_soc - 2:
+                elif battery.soc <= battery.upper_soc - self.full_hysteresis_pct:
                     self.state.full.discard(battery.key)
             else:
                 self.state.full.discard(battery.key)
 
-            eligible_inverters = [
-                inv for inv in battery.inverters if self._valid_inverter(inv)
-            ]
+            eligible_inverters = [inv for inv in battery.inverters if self._valid_inverter(inv)]
             maximum_w = min(
                 1920, battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters)
             )
-            budget_w = (
-                maximum_w if battery.key in self.state.full else min(total_w, maximum_w)
-            )
+            budget_w = maximum_w if battery.key in self.state.full else min(total_w, maximum_w)
             for inverter in eligible_inverters:
                 power_w = min(inverter.rated_w, max(inverter.minimum_w, budget_w))
                 commands[inverter.key] = power_w

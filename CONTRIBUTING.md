@@ -18,6 +18,36 @@ Every MVP feature must:
 - Provide clear user-facing labels and translations, setup and troubleshooting docs.
 - Pass CI. Obtain real hardware evidence before claiming a device/firmware combination is hardware-validated.
 
+## Behavioral acceptance gate
+
+Every user-facing acceptance criterion needs a test that can fail if the user
+behavior is missing. Code coverage and mocked method invocations alone are
+not evidence of a working Home Assistant integration.
+
+- For installation and config-flow changes, test the supported HA version's
+  setup/entry lifecycle, correct integration category, device/entity registration,
+  options and translations. Finish with an actual UI smoke check of
+  **Settings → Devices & Services → Integrations** before calling it validated.
+- For inverter control, test *sequences*, not only isolated updates: stale
+  sensor data, delayed acknowledgements, out-of-order values, changing
+  household load, grid sign changes, simultaneous battery systems, partial
+  failures and state after restarts.
+- Model the real contract: a successful `number.set_value` service call is
+  not inverter acknowledgement; a new meter sample must represent a time
+  after the last command and its settling period. Emergency safety limits
+  must remain effective while normal control is gated.
+- Store deterministic replay fixtures for any production incident before
+  altering controller behavior. Compare command count, overshoot, recovery
+  and reserve behavior with the pre-fix baseline.
+- Demonstrate **RED → GREEN → REFACTOR** in the PR: include the initial
+  failing test output and the final passing result. Do not label a bug
+  resolved merely because an unrelated unit suite or static validator is green.
+- Treat all required lint, format, type, security, HA compatibility and test
+  steps as blocking, not `continue-on-error`. If the existing repository
+  still violates a gate, call it out and fix it before claiming full compliance.
+- Do not release a build for unattended hardware control based solely on CI.
+  Document hardware validation and a safe rollback/update path separately.
+
 Do not merge incomplete or untested control code into a production-ready release.
 
 ## Commit messages

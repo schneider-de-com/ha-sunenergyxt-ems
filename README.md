@@ -1,6 +1,6 @@
 # SunEnergyXT EMS for Home Assistant
 
-> **Pre-alpha. Not production-ready. No stable release yet.**
+> **Experimental MVP beta 0.1.0b3. Not hardware-validated; not approved for unattended inverter control.**
 >
 > Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
@@ -13,8 +13,8 @@ It does **not** speak directly to batteries or inverters.
 - Auto-detect the existing [SunEnergyXT BK integration](https://github.com/SunEnergyXT/SunEnergyXT-BK) and suggest its SoC and charge/discharge limits. Manual corrections are possible.
 - One or two independently controllable microinverters per BK215, in watts or percent.
 - One grid meter for all batteries and SoC-based main/support coordination.
-- Battery reserve protection, grid-meter failure fallback, and safe manual disable.
-- Optional feed-in after full charge, **off by default**.
+- Battery reserve protection, grid-meter failure fallback, and manual disable with per-inverter shutdown readbacks and visible failures.
+- Optional household-load or upper-SoC-triggered PV-generation feed-in modes; **feed-in is off by default**. The PV mode can export stored energy.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ It does **not** speak directly to batteries or inverters.
 > This is a custom repository, not a default Marketplace catalog entry.
 
 1. On **Home Assistant 2026.11 or later**, go to **Settings → Marketplace**. Earlier versions (including 2026.10.4) use **HACS**.
-2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). The Marketplace requires a GitHub account connection for custom repositories.
+2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.0b3` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
 3. Install **SunEnergyXT EMS** from the Marketplace or HACS. Restart Home Assistant if requested. Adding files does not start inverter control.
 4. Ensure your inverter controls and grid meter are ready before setup.
 5. For a live setup: **turn off all existing automations writing to the selected inverter power-limit entities before completing the EMS config flow.** Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
@@ -45,13 +45,13 @@ The new Marketplace uses the same `hacs.json` and GitHub release layout as HACS.
 ## Safety and limitations
 
 - Home Assistant service-call success does not prove that a disconnected inverter changed its physical output.
-- Disabling the EMS sends one minimum-safe limit to reachable inverters. Unreachable inverters cannot be stopped reliably.
+- Disabling the EMS sends a minimum-safe command to **each reachable configured inverter** and requires fresh HA limit readbacks before claiming confirmed shutdown. A limit readback still does not prove actual AC zero injection. Unreachable inverters cannot be stopped reliably.
 - If the grid sensor fails, the controller briefly holds and then reduces reachable inverters. It resumes after several fresh samples.
-- A bad SoC reading disables only the affected battery; healthy batteries can continue.
+- A bad SoC reading disables only the affected battery; healthy batteries can continue. A BK215 DC-output reading above 1,920 W latches a protective shutdown; the trip is saved across HA restarts. To reset it, turn off EMS and use **Configure → Reset DC safety trip** only with recent BK215 DC output at or below 100 W. This is a software safety fallback, not a measurement certification.
 - Some Deye inverters report a known nonfatal diagnostic fault at 0% limit.
 - Feed-in after full charge may export stored battery energy. Use it knowingly.
 - A physically failed controller or Home Assistant shutdown cannot issue a final safety command.
-- Current automated tests are not a replacement for real inverter and BK215 hardware validation.
+- Current automated tests are not a replacement for real inverter and BK215 hardware validation. The BK215 combined **DC** 1,920 W limit is **not** equivalent to the sum of AC inverter setpoints. Avoid unattended live operation until actual DC/AC behavior is confirmed (#31).
 
 ## Development
 
@@ -62,3 +62,5 @@ Every commit should reference its relevant issue.
 ## License
 
 [Apache License 2.0](LICENSE).
+
+Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.0b3.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.

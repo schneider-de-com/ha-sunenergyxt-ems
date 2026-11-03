@@ -15,6 +15,7 @@ BK_REGISTRY_SUFFIXES = {
     "wifi_cnfg_disc_soc_min",
     "wifi_cnfg_chg_soc_max",
     "wifi_inputpower_total",
+    "wifi_outputpower_total",
 }
 
 
@@ -25,7 +26,7 @@ def _source_key(entry: er.RegistryEntry) -> str | None:
     if platform == "sunenergyxt" and entry.config_entry_id:
         prefix = f"{entry.config_entry_id}_"
         if unique_id.startswith(prefix):
-            suffix = unique_id[len(prefix):]
+            suffix = unique_id[len(prefix) :]
             return suffix if suffix in BK_REGISTRY_SUFFIXES else None
         return None
     if (
@@ -114,7 +115,8 @@ def inverter_device_suggestions(hass: HomeAssistant) -> dict[str, str]:
     found: dict[str, str] = {}
     for device_id, entries in by_device.items():
         matches = [
-            entry for entry in entries
+            entry
+            for entry in entries
             if suggest_inverter_limit((entry,), device_id) == entry.entity_id
         ]
         if len(matches) == 1:
