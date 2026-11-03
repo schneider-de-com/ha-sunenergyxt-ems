@@ -198,7 +198,7 @@ class EMSRuntime:
                     upper_soc=self._float(record.get(CONF_UPPER)),
                     inverters=tuple(inverters),
                     charging_w=charging,
-                    dc_output_w=self._fresh_dc_output(record.get("dc_output")),
+                    dc_output_w=self._fresh_dc_output(dc_source),
                 )
             )
         return tuple(batteries)
