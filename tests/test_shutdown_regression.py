@@ -211,3 +211,17 @@ async def test_disabled_ems_sends_deferred_zero_when_offline_m80_recovers() -> N
         c["entity_id"] == "number.m80" and c["value"] == 0 for c in commands
     ), "A delayed zero must be sent once communication returns"
     assert runtime.controller.enabled is False
+
+@pytest.mark.asyncio
+async def test_unconfirmed_offline_shutdown_blocks_controller_reenable() -> None:
+    """Do not increase an unrelated inverter while another shutdown is unresolved."""
+    hass, entry = configured_two_bk215()
+    hass.states.get("number.m80").state = "unavailable"
+    runtime = EMSRuntime(hass, entry)
+    await runtime.async_disable()
+    hass.services.async_call.reset_mock()
+    entry.options["enabled"] = True
+    runtime._running = True
+    await runtime.async_update()
+    assert runtime.status == "write_error"
+    hass.services.async_call.assert_not_awaited()
