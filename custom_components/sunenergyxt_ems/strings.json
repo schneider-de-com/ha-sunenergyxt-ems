@@ -128,9 +128,10 @@
           "upper_2": "Battery 2: upper SoC limit (feed-in only)",
           "upper_3": "Battery 3: upper SoC limit (feed-in only)",
           "upper_4": "Battery 4: upper SoC limit (feed-in only)",
-          "upper_5": "Battery 5: upper SoC limit (feed-in only)"
+          "upper_5": "Battery 5: upper SoC limit (feed-in only)",
+          "feed_in_mode": "Feed-in behavior"
         },
-        "description": "**EMS control** turns the live household-load regulator on or off. **Grid import target** is a small positive buffer in watts (for example 20 W), not a grid-purchase schedule. **Feed-in after full charge** is optional and may export stored battery energy; keep it disabled until the desired behavior is understood."
+        "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. The displayed SoC hysteresis is an EMS software choice, not a universal manufacturer value. Leave feed-in off until hardware-tested."
       }
     },
     "error": {
