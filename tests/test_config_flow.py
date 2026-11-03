@@ -395,3 +395,24 @@ async def test_feed_in_enabling_asks_for_missing_upper_limit(flow, monkeypatch):
     assert result["type"] == "create_entry"
     assert updates[0]["batteries"][0]["upper"] == 90
     assert "upper_1" not in result["data"]
+
+
+@pytest.mark.asyncio
+async def test_options_display_household_and_pv_modes(flow, monkeypatch):
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    monkeypatch.setattr(
+        flow_module.EMSEntryOptionsFlow,
+        "config_entry",
+        property(
+            lambda _: SimpleNamespace(
+                data={"batteries": []},
+                options={"enabled": False, "feed_in": False, "grid_target_w": 20},
+            )
+        ),
+    )
+    result = await options.async_step_init()
+    assert "feed_in_mode" in [key.schema for key in result["data_schema"].schema]
+    saved = await options.async_step_init(
+        {"enabled": False, "feed_in": True, "feed_in_mode": "household", "grid_target_w": 20}
+    )
+    assert saved["data"]["feed_in_mode"] == "household"
