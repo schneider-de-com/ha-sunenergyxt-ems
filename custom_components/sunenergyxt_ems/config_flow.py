@@ -585,9 +585,9 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             ("pid_ki", 0.02, 0, 0.5),
             ("pid_kd", 0.12, 0, 1),
         ):
-            fields[
-                vol.Optional(key, default=self.config_entry.options.get(key, default))
-            ] = vol.All(vol.Coerce(float), vol.Range(min=minimum, max=maximum))
+            fields[vol.Optional(key, default=self.config_entry.options.get(key, default))] = (
+                vol.All(vol.Coerce(float), vol.Range(min=minimum, max=maximum))
+            )
         for index, battery in enumerate(existing, start=1):
             device = battery[CONF_DEVICE]
             pv = self.config_entry.options.get("pv_input", {}).get(device)
