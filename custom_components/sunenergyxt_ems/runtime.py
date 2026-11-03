@@ -20,6 +20,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import (
     CONF_BATTERIES,
     CONF_DEVICE,
+    CONF_DC_TRIPPED,
     CONF_ENABLED,
     CONF_FEED_IN,
     CONF_FEED_IN_HYSTERESIS,
@@ -79,7 +80,7 @@ class EMSRuntime:
         self._sent_at: dict[str, float] = {}
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
-        self._overload_latched: set[str] = set()
+        self._overload_latched: set[str] = set(entry.options.get(CONF_DC_TRIPPED, ()))
         self._last_processed_grid: datetime | None = None
         self._running = False
         self._seen_valid = False
@@ -444,11 +445,20 @@ class EMSRuntime:
             )
             grid, sequence = self._grid()
             batteries = self._batteries()
-            self._overload_latched.update(
+            detected_trips = {
                 battery.key
                 for battery in batteries
                 if battery.dc_output_w is not None and battery.dc_output_w > MAX_BK215_DC_W
-            )
+            }
+            if detected_trips - self._overload_latched:
+                self._overload_latched.update(detected_trips)
+                self.hass.config_entries.async_update_entry(
+                    self.entry,
+                    options={
+                        **self.entry.options,
+                        CONF_DC_TRIPPED: sorted(self._overload_latched),
+                    },
+                )
             if self._overload_latched:
                 safe = {
                     inv.key: inv.minimum_w
