@@ -600,6 +600,7 @@ class EMSRuntime:
                 for inverter in battery[CONF_INVERTERS]
             }
             unreachable = sorted(configured - commands.keys())
+            self._deferred_shutdown.update(unreachable)
             await self._apply(commands, monotonic(), emergency=True, force=True)
             self._shutdown_pending = dict(self._pending)
             self._pending.clear()
