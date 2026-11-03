@@ -423,6 +423,9 @@ class EMSRuntime:
         async with self._lock:
             self.controller.feed_in = bool(self.entry.options.get(CONF_FEED_IN, False)) and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
             self.controller.enabled = bool(self.entry.options.get(CONF_ENABLED, True))
+            self.controller.full_hysteresis_pct = float(
+                self.entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
+            )
             if not self.controller.enabled:
                 self._verify_shutdown(monotonic())
                 self._publish()
