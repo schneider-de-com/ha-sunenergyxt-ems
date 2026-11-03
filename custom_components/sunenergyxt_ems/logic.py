@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass, field
 from math import ceil, isfinite
+from statistics import median
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +40,34 @@ class ControllerState:
     grid_outage: bool = False
     recovery_count: int = 0
     last_sequence: object | None = None
+
+
+class GridMedianFilter:
+    """Median of five distinct signed grid samples; never manufacture samples.
+
+    Protects the load-following regulator against brief measured transients.
+    Persistent export (at least three recent negative values) still reaches
+    the controller. This does not suppress an urgent battery safety stop.
+    """
+
+    def __init__(self) -> None:
+        self._samples: deque[float] = deque(maxlen=5)
+        self._last_sequence: object | None = None
+
+    def observe(self, grid_w: float, sequence: object) -> float:
+        """Filter a new plausible meter sample, identified by its report time."""
+        if not isfinite(grid_w) or abs(grid_w) > 100_000:
+            self.reset()
+            return grid_w
+        if not self._samples or sequence != self._last_sequence:
+            self._samples.append(grid_w)
+            self._last_sequence = sequence
+        return float(median(self._samples))
+
+    def reset(self) -> None:
+        """Discard old meter samples after disable, restart or data loss."""
+        self._samples.clear()
+        self._last_sequence = None
 
 
 class Controller:
