@@ -87,12 +87,9 @@ async def test_disable_reissues_zero_when_cached_zero_but_m80_reports_100() -> N
     runtime._last_sent.update({"number.m200": 0, "number.m80": 0})
     runtime._sent_at.update({"number.m200": 100, "number.m80": 100})
     await runtime.async_disable()
-    commands = [
-        call.args[2] for call in hass.services.async_call.await_args_list
-    ]
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
     assert any(
-        command["entity_id"] == "number.m80" and command["value"] == 0
-        for command in commands
+        command["entity_id"] == "number.m80" and command["value"] == 0 for command in commands
     ), "A cached zero must not suppress a real emergency shutdown of M80"
 
 
