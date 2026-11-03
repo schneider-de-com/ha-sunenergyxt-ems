@@ -115,6 +115,7 @@ async def test_ack_without_new_post_write_meter_sample_must_not_recalculate(
     # Simulate acknowledgement of the observed command, not the legacy algorithm.
     commanded = hass.services.async_call.await_args.args[2]["value"]
     hass.states.get("number.inverter").state = str(commanded)
+    hass.states.get("number.inverter").last_reported = datetime.now(UTC)
     clock[0] = 2025.0
     # Do not change the meter timestamp: the meter sample predates the write.
     await runtime.async_update()
