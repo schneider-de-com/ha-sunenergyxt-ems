@@ -90,13 +90,14 @@ class BatteryStatus(SensorEntity):
         runtime: EMSRuntime,
         device_id: str,
         label: str = "BK215",
+        parent_device_id: str | None = None,
     ) -> None:
         self._runtime = runtime
         self._device_id = device_id
         self._attr_unique_id = f"{entry.entry_id}_battery_{device_id}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"battery_{device_id}")},
-            via_device=(DOMAIN, "controller"),
+            via_device_id=parent_device_id,
             name=f"{label} (EMS)",
             manufacturer="Community",
             model="BK215 EMS controller",
