@@ -36,7 +36,7 @@ from .const import (
     DOMAIN,
     FEED_IN_MODE_PV,
 )
-from .logic import Battery, Controller, Inverter
+from .logic import Battery, Controller, GridMedianFilter, Inverter
 from .registry import registered_dc_output
 
 _LOGGER = logging.getLogger(__name__)
@@ -85,6 +85,7 @@ class EMSRuntime:
         self._overload_latched: set[str] = set(entry.options.get(CONF_DC_TRIPPED, ()))
         self._dc_monitored: dict[str, str] = {}
         self._last_processed_grid: datetime | None = None
+        self._grid_filter = GridMedianFilter()
         self._running = False
         self._seen_valid = False
 
@@ -480,6 +481,10 @@ class EMSRuntime:
                 self.entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W)
             )
             grid, sequence = self._grid()
+            if grid is None or sequence is None:
+                self._grid_filter.reset()
+            else:
+                grid = self._grid_filter.observe(grid, sequence)
             batteries = self._batteries()
             detected_trips = {
                 battery.key
@@ -616,6 +621,7 @@ class EMSRuntime:
         """One-shot safe command when the user deliberately disables EMS."""
         async with self._lock:
             self.controller.enabled = False
+            self._grid_filter.reset()
             self.last_error = None
             self._pending.clear()
             self._shutdown_pending.clear()
@@ -667,6 +673,7 @@ class EMSRuntime:
             await self.async_disable()
         elif enabled and not self.controller.enabled:
             self.controller.enabled = True
+            self._grid_filter.reset()
             self._seen_valid = False
             self.status = "waiting"
             await self.async_update()
