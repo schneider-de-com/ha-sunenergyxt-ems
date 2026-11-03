@@ -114,3 +114,33 @@ def test_near_full_input_can_prefer_charging_battery():
     )
     engine.update(batteries, 500, 1)
     assert engine.state.main == "b"
+
+
+
+def test_import_gain_uses_half_error_from_confirmed_limit():
+    """Match the previously agreed EMS rule: 50% gain for grid import."""
+    engine = Controller(ControllerState(outputs={"a_inv": 400}))
+    result = engine.update((battery(),), 180, 1)
+    assert result["a_inv"] == 480
+
+
+def test_export_gain_uses_full_error_up_to_step_cap():
+    """React faster to export than import, without unlimited corrections."""
+    engine = Controller(ControllerState(outputs={"a_inv": 400}))
+    result = engine.update((battery(),), -200, 1)
+    assert result["a_inv"] == 180
+
+
+def test_zero_feed_in_deadband_holds_previous_confirmed_limit():
+    """A 25 W net import lies inside the explicitly agreed 0..30 W band."""
+    engine = Controller(ControllerState(outputs={"a_inv": 400}))
+    result = engine.update((battery(),), 25, 1)
+    assert result["a_inv"] == 400
+
+
+def test_large_import_step_is_capped_at_520_w():
+    """One correction cannot leap from 0 to 1,180 W at a large load step."""
+    b = Battery("a", 80, 10, 90, (Inverter("a_inv", 2000),))
+    engine = Controller()
+    result = engine.update((b,), 1200, 1)
+    assert result["a_inv"] == 520
