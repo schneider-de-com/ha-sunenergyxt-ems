@@ -69,6 +69,7 @@ class EMSRuntime:
         self._last_sent: dict[str, float] = {}
         self._sent_at: dict[str, float] = {}
         self._pending: dict[str, PendingCommand] = {}
+        self._shutdown_pending: dict[str, PendingCommand] = {}
         self._last_processed_grid: datetime | None = None
         self._running = False
         self._seen_valid = False
