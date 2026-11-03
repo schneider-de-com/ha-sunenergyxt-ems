@@ -1,6 +1,6 @@
 # SunEnergyXT EMS for Home Assistant
 
-> **Experimental MVP beta 0.1.0b3. Not hardware-validated; not approved for unattended inverter control.**
+> **Experimental MVP beta 0.1.0b4. Not hardware-validated; not approved for unattended inverter control.**
 >
 > Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
@@ -26,11 +26,11 @@ It does **not** speak directly to batteries or inverters.
 
 ## Install with Home Assistant Marketplace or HACS (experimental)
 
-> **Pre-alpha test build.** Take a Proxmox snapshot or Home Assistant backup first.
+> **Experimental beta.** Take a Proxmox snapshot or Home Assistant backup first.
 > This is a custom repository, not a default Marketplace catalog entry.
 
 1. On **Home Assistant 2026.11 or later**, go to **Settings → Marketplace**. Earlier versions (including 2026.10.4) use **HACS**.
-2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.0b3` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
+2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.0b4` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
 3. Install **SunEnergyXT EMS** from the Marketplace or HACS. Restart Home Assistant if requested. Adding files does not start inverter control.
 4. Ensure your inverter controls and grid meter are ready before setup.
 5. For a live setup: **turn off all existing automations writing to the selected inverter power-limit entities before completing the EMS config flow.** Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
@@ -63,4 +63,4 @@ Every commit should reference its relevant issue.
 
 [Apache License 2.0](LICENSE).
 
-Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.0b3.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.
+Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.0b4.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.
