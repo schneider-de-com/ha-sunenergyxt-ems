@@ -105,6 +105,7 @@ async def test_disable_waits_for_ack_instead_of_announcing_success() -> None:
     inverter = hass.states.get("number.m80")
     inverter.state = "0"
     inverter.last_reported += timedelta(seconds=1)
+    entry.options["enabled"] = False
     runtime._running = True
     await runtime.async_update()
     assert "number.m80" not in runtime._shutdown_pending
@@ -121,6 +122,7 @@ async def test_unconfirmed_shutdown_timeout_remains_visible(
     monkeypatch.setattr(module, "monotonic", lambda: clock[0])
     await runtime.async_disable()
     clock[0] += 35
+    entry.options["enabled"] = False
     runtime._running = True
     await runtime.async_update()
     assert runtime.status == "write_error"
