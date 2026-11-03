@@ -486,6 +486,25 @@ class EMSRuntime:
                     )
                 self._publish()
                 return
+            missing_dc = sorted(
+                self._dc_monitored[battery.key]
+                for battery in batteries
+                if battery.key in self._dc_monitored and battery.dc_output_w is None
+            )
+            if missing_dc:
+                safe = {
+                    inv.key: inv.minimum_w
+                    for battery in batteries
+                    for inv in battery.inverters
+                    if inv.online
+                }
+                self.last_error = None
+                await self._apply(safe, now, emergency=True)
+                if self.last_error is None:
+                    self.status = "dc_unavailable"
+                    self.last_error = "BK215 DC sensor not current: " + ", ".join(missing_dc)
+                self._publish()
+                return
             if not self._seen_valid:
                 if grid is None or not any(
                     battery.soc is not None
