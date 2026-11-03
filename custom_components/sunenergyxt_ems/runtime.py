@@ -446,6 +446,25 @@ class EMSRuntime:
                 self.entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
             )
             if not self.controller.enabled:
+                if self._deferred_shutdown:
+                    recovered = {
+                        inverter.key: inverter.minimum_w
+                        for battery in self._batteries()
+                        for inverter in battery.inverters
+                        if inverter.key in self._deferred_shutdown and inverter.online
+                    }
+                    if recovered:
+                        await self._apply(recovered, monotonic(), emergency=True, force=True)
+                        sent = self._deferred_shutdown.intersection(self._pending)
+                        self._deferred_shutdown.difference_update(sent)
+                        self._shutdown_pending.update(self._pending)
+                        self._pending.clear()
+                        if (
+                            not self._deferred_shutdown
+                            and self.last_error
+                            and self.last_error.startswith("Cannot stop unavailable inverters:")
+                        ):
+                            self.last_error = None
                 self._verify_shutdown(monotonic())
                 self._publish()
                 return
