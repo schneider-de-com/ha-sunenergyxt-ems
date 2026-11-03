@@ -142,3 +142,103 @@ async def test_reserve_shutdown_bypasses_pending_feedback_gate(
     await runtime.async_update()
     assert hass.services.async_call.await_count == 2
     assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_startup_uses_reported_actuator_limit_as_baseline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With a 400 W reported limit and 180 W import, never reset the baseline to zero."""
+    hass, entry = configured_slow_inverter()
+    hass.states.get("number.inverter").state = "50"  # 400 W of the 800 W rating
+    hass.states.get("sensor.grid").state = "180"
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: 4000.0)
+
+    await runtime.async_update()
+
+    assert hass.services.async_call.await_count == 1
+    assert hass.services.async_call.await_args.args[2]["value"] == 70, (
+        "400 W baseline + 160 W correction = 560 W, or 70% of 800 W"
+    )
+
+
+@pytest.mark.asyncio
+async def test_small_positive_grid_error_keeps_existing_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not chase 5 W above a 20 W grid target when 0..30 W is acceptable."""
+    hass, entry = configured_slow_inverter()
+    hass.states.get("number.inverter").state = "50"
+    hass.states.get("sensor.grid").state = "25"
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: 5000.0)
+
+    await runtime.async_update()
+
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_large_load_step_is_bounded_to_old_controller_step_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 1,200 W import must not instantly produce a 1,180 W setpoint jump."""
+    hass, entry = configured_slow_inverter()
+    hass.states.get("sensor.grid").state = "1200"
+    entry.data["batteries"][0]["inverters"][0]["rated_w"] = 2000
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: 6000.0)
+
+    await runtime.async_update()
+
+    assert hass.services.async_call.await_count == 1
+    # The previous automation caps a large correction to 520 W.
+    assert 0 < hass.services.async_call.await_args.args[2]["value"] <= 26
+
+
+@pytest.mark.asyncio
+async def test_main_swap_never_increases_support_before_previous_main_releases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Main-first transfer is break-before-make, even near the SoC reserve."""
+    hass, entry = configured_slow_inverter()
+    entry.data["batteries"][0]["soc"] = "sensor.soc_main"
+    entry.data["batteries"][0]["inverters"][0]["entity_id"] = "number.main"
+    entry.data["batteries"].append(
+        {
+            "device_id": "bk215-support",
+            "soc": "sensor.soc_support",
+            "lower": "number.lower",
+            "upper": "number.upper",
+            "inverters": [{"entity_id": "number.support", "rated_w": 800}],
+        }
+    )
+    original_states = {
+        "sensor.grid": hass.states.get("sensor.grid"),
+        "number.lower": hass.states.get("number.lower"),
+        "number.upper": hass.states.get("number.upper"),
+        "sensor.soc_main": sample(80, "%"),
+        "sensor.soc_support": sample(70, "%"),
+        "number.main": sample(0, "%", min=0, max=100, step=1),
+        "number.support": sample(0, "%", min=0, max=100, step=1),
+    }
+    hass.states.get = original_states.get
+    clock = [7000.0]
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: clock[0])
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    # Force an urgent role switch before the previous main acknowledges its limit.
+    original_states["sensor.soc_main"].state = "10"
+    clock[0] = 7001.0
+    await runtime.async_update()
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert {"entity_id": "number.main", "value": 0} in commands
+    assert not any(
+        command["entity_id"] == "number.support" and command["value"] > 0
+        for command in commands
+    ), "Do not increase the new main before previous inverter is confirmed at zero"
