@@ -51,11 +51,7 @@ async def test_setup_registers_real_integration_devices_and_controls(
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
 
-    devices = [
-        device
-        for device in dr.async_get(hass).devices.values()
-        if entry.entry_id in device.config_entries
-    ]
+    devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
     assert len(devices) == 2, "Expected EMS hub and one BK215 child device"
     assert any(device.name == "SunEnergyXT EMS" for device in devices)
     assert any("BK215" in (device.name or "") for device in devices)
