@@ -433,3 +433,29 @@ async def test_reported_bk215_dc_overlimit_latches_safety_shutdown() -> None:
         "A transient low reading must not auto-release a DC trip"
     )
     hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_bk215_dc_hardware_trip_persists_across_runtime_recreation() -> None:
+    """The emergency trip must survive integration reloads and HA restarts."""
+    hass, entry = configured(grid=3000, soc=85)
+    entry.data["batteries"][0]["dc_output"] = "sensor.bk_dc"
+    original_get = hass.states.get
+    dc_state = sample(2077, "W")
+    hass.states.get = lambda entity: dc_state if entity == "sensor.bk_dc" else original_get(entity)
+
+    def store_options(target, *, options):
+        target.options = options
+
+    hass.config_entries = SimpleNamespace(async_update_entry=store_options)
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    await runtime.async_update()
+    assert entry.options["dc_tripped_batteries"] == ["battery-1"]
+
+    restarted = EMSRuntime(hass, entry)
+    assert restarted._overload_latched == {"battery-1"}
+    dc_state.state = "0"
+    restarted._running = True
+    await restarted.async_update()
+    assert restarted.status == "hardware_limit"
