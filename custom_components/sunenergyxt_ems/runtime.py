@@ -66,10 +66,11 @@ class EMSRuntime:
         self.entry = entry
         self.controller = Controller()
         self.controller.enabled = bool(entry.options.get(CONF_ENABLED, True))
-        self.controller.feed_in = bool(entry.options.get(CONF_FEED_IN, False)) and entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
-        self.controller.full_hysteresis_pct = float(
-            entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
+        self.controller.feed_in = (
+            bool(entry.options.get(CONF_FEED_IN, False))
+            and entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
         )
+        self.controller.full_hysteresis_pct = float(entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0))
         self.status = "waiting"
         self.last_error: str | None = None
         self._unsubscribe: Any = None
@@ -421,7 +422,10 @@ class EMSRuntime:
         if not self._running or self._lock.locked():
             return
         async with self._lock:
-            self.controller.feed_in = bool(self.entry.options.get(CONF_FEED_IN, False)) and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
+            self.controller.feed_in = (
+                bool(self.entry.options.get(CONF_FEED_IN, False))
+                and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
+            )
             self.controller.enabled = bool(self.entry.options.get(CONF_ENABLED, True))
             self.controller.full_hysteresis_pct = float(
                 self.entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
@@ -582,7 +586,10 @@ class EMSRuntime:
     async def async_change_options(self) -> None:
         """Apply an options-flow update without restarting the control loop."""
         enabled = bool(self.entry.options.get(CONF_ENABLED, True))
-        self.controller.feed_in = bool(self.entry.options.get(CONF_FEED_IN, False)) and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
+        self.controller.feed_in = (
+            bool(self.entry.options.get(CONF_FEED_IN, False))
+            and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
+        )
         if not enabled and self.controller.enabled:
             await self.async_disable()
         elif enabled and not self.controller.enabled:
