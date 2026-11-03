@@ -183,6 +183,13 @@ class EMSRuntime:
                     Inverter(entity_id, rated_w=rated, minimum_w=minimum, online=online)
                 )
             charging = self._float(record.get("charging")) or 0
+            dc_source = (
+                record.get("dc_output")
+                or self._dc_monitored.get(record[CONF_DEVICE])
+                or registered_dc_output(self.hass, record[CONF_DEVICE])
+            )
+            if dc_source:
+                self._dc_monitored[record[CONF_DEVICE]] = dc_source
             batteries.append(
                 Battery(
                     key=record[CONF_DEVICE],
