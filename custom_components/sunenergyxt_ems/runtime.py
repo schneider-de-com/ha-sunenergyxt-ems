@@ -329,7 +329,15 @@ class EMSRuntime:
                     {"entity_id": entity_id, "value": value},
                     blocking=True,
                 )
-            except (HomeAssistantError, ValueError) as exc:
+            except asyncio.CancelledError:
+                task = asyncio.current_task()
+                if task is not None and task.cancelling():
+                    raise
+                self.last_error = f"{entity_id}: Solarman request was cancelled"
+                self.status = "write_error"
+                _LOGGER.warning("Inverter command cancelled: %s", entity_id)
+                continue
+            except (HomeAssistantError, TimeoutError, OSError, ValueError) as exc:
                 self.last_error = f"{entity_id}: {exc}"
                 self.status = "write_error"
                 _LOGGER.warning("Unable to set %s limit: %s", entity_id, exc)
