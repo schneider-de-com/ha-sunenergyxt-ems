@@ -188,6 +188,84 @@ class EMSRuntime:
             number = -number
         return number, sample_time
 
+    def _reported_outputs(self, batteries: tuple[Battery, ...]) -> dict[str, float]:
+        """Read reported inverter limit entities, not unexecuted planned outputs."""
+        observed: dict[str, float] = {}
+        for battery in batteries:
+            for inverter in battery.inverters:
+                if not inverter.online:
+                    continue
+                state = self.hass.states.get(inverter.key)
+                value = self._float(state.state) if state else None
+                if value is None or state is None:
+                    continue
+                unit = state.attributes.get("unit_of_measurement")
+                power_w = value * inverter.rated_w / 100 if unit == "%" else value
+                if unit in ("%", "W") and 0 <= power_w <= inverter.rated_w:
+                    observed[inverter.key] = power_w
+        return observed
+
+    def _feedback_ready(self, now: float, grid_seq: datetime | None) -> bool:
+        """Wait for a changed reported limit and a later, settled meter sample."""
+        if not self._pending:
+            return True
+        for entity_id, pending in self._pending.items():
+            state = self.hass.states.get(entity_id)
+            current = self._float(state.state) if state else None
+            reported = (
+                (getattr(state, "last_reported", None) or state.last_updated)
+                if state else None
+            )
+            step = self._float(state.attributes.get("step", 1)) if state else None
+            confirmed = (
+                current is not None
+                and isinstance(reported, datetime)
+                and reported > pending.entity_reported_before
+                and abs(current - pending.target) <= max((step or 1) / 2, 0.01)
+            )
+            if not confirmed:
+                if now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
+                    self.status = "write_error"
+                    self.last_error = (
+                        f"{entity_id}: command was not acknowledged within "
+                        f"{FEEDBACK_TIMEOUT_SECONDS:g} seconds"
+                    )
+                else:
+                    self.status = "waiting_feedback"
+                return False
+            if (
+                now - pending.sent_at < FEEDBACK_SETTLE_SECONDS
+                or grid_seq is None
+                or (
+                    pending.grid_reported_before is not None
+                    and grid_seq <= pending.grid_reported_before
+                )
+            ):
+                self.status = "waiting_meter"
+                return False
+        self._pending.clear()
+        self.last_error = None
+        return True
+
+    def _reserve_reductions(
+        self, batteries: tuple[Battery, ...]
+    ) -> dict[str, float]:
+        """Urgent reductions bypass normal acknowledgement waiting."""
+        self.controller._eligible(batteries)
+        observed = self._reported_outputs(batteries)
+        reductions: dict[str, float] = {}
+        for battery in batteries:
+            if battery.key not in self.controller.state.blocked:
+                continue
+            for inverter in battery.inverters:
+                if not inverter.online:
+                    continue
+                requested = self._last_sent.get(inverter.key, 0.0)
+                current = observed.get(inverter.key, 0.0)
+                if max(requested, current) > inverter.minimum_w:
+                    reductions[inverter.key] = inverter.minimum_w
+        return reductions
+
     def _minimum_interval(self, entity_id: str) -> float:
         """Prefer conservative intervals for APsystems flash-based controls."""
         entry = er.async_get(self.hass).async_get(entity_id)
