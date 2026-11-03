@@ -470,9 +470,8 @@ class EMSRuntime:
                 return
             if self._deferred_shutdown:
                 self.status = "write_error"
-                self.last_error = (
-                    "Incomplete previous inverter shutdown: "
-                    + ", ".join(sorted(self._deferred_shutdown))
+                self.last_error = "Incomplete previous inverter shutdown: " + ", ".join(
+                    sorted(self._deferred_shutdown)
                 )
                 self._publish()
                 return
