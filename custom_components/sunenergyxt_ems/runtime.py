@@ -376,16 +376,77 @@ class EMSRuntime:
                     self._publish()
                     return
                 self._seen_valid = True
+            # Protect the battery independently of normal feedback settling.
+            # Do not increase another inverter until an earlier required
+            # reduction has been written and acknowledged.
+            reserve_stop = self._reserve_reductions(batteries)
+            if reserve_stop:
+                await self._apply(reserve_stop, now, emergency=True)
+                if self.last_error is None:
+                    self.status = "reserve_safety"
+                self._publish()
+                return
+
+            if grid is None:
+                outputs = self.controller.update(
+                    batteries, grid, now, sequence=sequence
+                )
+                self.status = "grid_unavailable"
+                await self._apply(outputs, now, emergency=True)
+                self._publish()
+                return
+
+            if not self._feedback_ready(now, sequence):
+                self._publish()
+                return
+
+            # A 5 s scheduler tick does not imply a new meter observation.
+            if sequence == self._last_processed_grid:
+                self.status = "waiting_meter"
+                self._publish()
+                return
+
+            # The policy uses the reported, acknowledged actuator limits,
+            # never speculative commands from earlier, rate-limited ticks.
+            self.controller.state.outputs = self._reported_outputs(batteries)
+            previous_main = self.controller.state.main
             outputs = self.controller.update(
                 batteries, grid, now, sequence=sequence
             )
+            self._last_processed_grid = sequence
+
+            if previous_main and previous_main != self.controller.state.main:
+                old_system = next(
+                    (battery for battery in batteries if battery.key == previous_main),
+                    None,
+                )
+                if old_system is not None:
+                    old_limits = self._reported_outputs((old_system,))
+                    release = {
+                        inv.key: inv.minimum_w
+                        for inv in old_system.inverters
+                        if inv.online
+                        and (
+                            old_limits.get(inv.key, 0) > inv.minimum_w
+                            or self._last_sent.get(inv.key, 0) > inv.minimum_w
+                        )
+                    }
+                    if release:
+                        await self._apply(release, now, emergency=True)
+                        if self.last_error is None:
+                            self.status = "switching_main"
+                        self._publish()
+                        return
+
             self.last_error = None
-            self.status = "running" if grid is not None else "grid_unavailable"
-            await self._apply(
-                outputs,
-                now,
-                emergency=grid is None or bool(self.controller.state.blocked),
-            )
+            self.status = "running"
+            await self._apply(outputs, now)
+            if self.last_error is None and self._pending:
+                self.status = "waiting_feedback"
+            # Show requested limits only when actually sent. If a write was
+            # rate-limited, keep the confirmed baseline in public diagnostics.
+            if not self._pending:
+                self.controller.state.outputs = self._reported_outputs(batteries)
             self._publish()
 
     async def async_disable(self) -> None:
