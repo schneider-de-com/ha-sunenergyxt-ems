@@ -40,7 +40,7 @@ from .const import (
 from .inputs import ev3600_charging, fresh_power
 from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
 from .pid import PIDGains
-from .registry import registered_dc_output
+from .registry import registered_connection, registered_dc_output
 
 _LOGGER = logging.getLogger(__name__)
 UPDATE_PERIOD = timedelta(seconds=5)
@@ -237,8 +237,15 @@ class EMSRuntime:
                 rated = self._float(definition[CONF_RATED_W])
                 if rated is None or rated <= 0:
                     continue
+                connection_id = registered_connection(self.hass, entity_id)
+                connection = self.hass.states.get(connection_id) if connection_id else None
                 online = bool(
-                    state and state.state not in ("unknown", "unavailable") and unit in ("W", "%")
+                    state
+                    and state.state not in ("unknown", "unavailable")
+                    and unit in ("W", "%")
+                    # The M80's limit remained readable even through a
+                    # 2026-11-03 Solarman disconnect. Trust the actual link.
+                    and (not connection_id or (connection and connection.state == "on"))
                 )
                 minimum = self._float(state.attributes.get("min", 0)) if state else 0
                 minimum = max(0.0, minimum or 0.0)
