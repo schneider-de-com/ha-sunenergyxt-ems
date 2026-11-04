@@ -84,9 +84,17 @@ async def test_setup_registers_real_integration_devices_and_controls(
             "pid_derivative",
             "controller_target",
         )
-    } | {f"{entry.entry_id}_{key}" for key in (
-        "start_hold_seconds", "pid_kp_min", "pid_kp_max", "pid_kp_export", "pid_ki", "pid_kd"
-    )}
+    } | {
+        f"{entry.entry_id}_{key}"
+        for key in (
+            "start_hold_seconds",
+            "pid_kp_min",
+            "pid_kp_max",
+            "pid_kp_export",
+            "pid_ki",
+            "pid_kd",
+        )
+    }
     assert all(hass.states.get(entity.entity_id) is not None for entity in entities)
 
     assert await hass.config_entries.async_unload(entry.entry_id)
