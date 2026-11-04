@@ -7,11 +7,14 @@ CI job with pytest-homeassistant-custom-component; no skip-on-missing-plugin.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util.file import WriteError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sunenergyxt_ems.const import DOMAIN
@@ -104,7 +107,10 @@ async def test_setup_registers_real_integration_devices_and_controls(
 
 
 @pytest.mark.asyncio
-async def test_offline_shutdown_survives_runtime_reload_in_real_ha(hass: HomeAssistant) -> None:
+@pytest.mark.parametrize("failed_write", [False, True])
+async def test_offline_shutdown_survives_runtime_reload_in_real_ha(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch, failed_write: bool
+) -> None:
     """Real HA storage must retain a failed safe-off until a fresh readback."""
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -131,8 +137,15 @@ async def test_offline_shutdown_survives_runtime_reload_in_real_ha(hass: HomeAss
 
     hass.services.async_register("number", "set_value", set_value)
     first = EMSRuntime(hass, entry)
+    if failed_write:
+        monkeypatch.setattr(
+            first._shutdown_store, "_async_write_data", AsyncMock(side_effect=WriteError("disk"))
+        )
     await first.async_disable()
     assert not commands
+    if failed_write:
+        assert "did not confirm" in (first.last_error or "")
+        return
     recovered = EMSRuntime(hass, entry)
     await recovered._load_shutdown_obligations()
     assert recovered._shutdown_obligations == {"number.m80"}
