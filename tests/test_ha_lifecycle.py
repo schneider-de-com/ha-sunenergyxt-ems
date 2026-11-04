@@ -17,6 +17,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util.file import WriteError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.sunenergyxt_ems import runtime as runtime_module
 from custom_components.sunenergyxt_ems.const import DOMAIN
 from custom_components.sunenergyxt_ems.runtime import EMSRuntime
 
@@ -161,3 +162,59 @@ async def test_offline_shutdown_survives_runtime_reload_in_real_ha(
     )
     await recovered.async_update()
     assert (await recovered._shutdown_store.async_load())["pending"] == []
+
+
+@pytest.mark.asyncio
+async def test_real_ha_captures_sub_five_second_solarman_link_flap(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Replay 4.83 s M80 outage/reconnect entirely between 5 s poll ticks."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk215-2",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [{"entity_id": "number.m80", "rated_w": 800}],
+                }
+            ],
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    monkeypatch.setattr(
+        runtime_module,
+        "registered_connection",
+        lambda _hass, key: "binary_sensor.m80_connection" if key == "number.m80" else None,
+    )
+    attrs = {"unit_of_measurement": "%", "min": 0, "max": 100, "step": 0.1}
+    hass.states.async_set("number.m80", "0", attrs)
+    hass.states.async_set("binary_sensor.m80_connection", "on")
+    commands = []
+
+    async def set_value(call):
+        commands.append(dict(call.data))
+
+    hass.services.async_register("number", "set_value", set_value)
+    runtime = EMSRuntime(hass, entry)
+    await runtime._shutdown_store.async_save({"pending": []})
+    await runtime.async_start()
+    assert runtime.status == "disabled"
+    assert not commands
+
+    # These two link events occur faster than the normal polling interval.
+    hass.states.async_set("binary_sensor.m80_connection", "off")
+    await hass.async_block_till_done()
+    hass.states.async_set("binary_sensor.m80_connection", "on")
+    hass.states.async_set("number.m80", "100", attrs)
+    await hass.async_block_till_done()
+
+    assert any(
+        command["entity_id"] == "number.m80" and command["value"] == 0 for command in commands
+    ), "A 4.83 s offline/on cycle must reissue zero before the next scheduled poll"
+    assert "number.m80" in runtime._shutdown_obligations
+    await runtime.async_stop()
