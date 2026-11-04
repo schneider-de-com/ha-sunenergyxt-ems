@@ -106,3 +106,25 @@ async def test_persistent_measured_export_still_reduces_to_zero(
     assert any(call.args[2]["value"] == 0 for call in hass.services.async_call.await_args_list), (
         "Repeated export must still lower the power limit promptly"
     )
+
+
+@pytest.mark.asyncio
+async def test_measured_startup_export_bypasses_hold(monkeypatch):
+    """Replay Shelly samples from the supervised run on 2026-11-04 11:19 CET."""
+    hass, entry = configured_runtime()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    hass.states.get("number.m200").state = "6.3"
+    runtime._start_hold.record("number.m200", before_w=0, after_w=126, now=1000)
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    meter = hass.states.get("sensor.grid")
+    base = datetime.now(UTC) - timedelta(seconds=1)
+    for i, watts in enumerate((273.132, 270.591, 225.843, -56.642, -522.527)):
+        clock[0] += 5
+        meter.state = str(watts)
+        meter.last_reported = base + timedelta(milliseconds=100 * (i + 1))
+        await runtime.async_update()
+    hass.services.async_call.assert_awaited_once()
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+    assert "Excess grid export" in (runtime.last_error or "")
