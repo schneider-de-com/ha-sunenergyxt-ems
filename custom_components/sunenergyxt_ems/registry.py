@@ -85,7 +85,7 @@ def registered_connection(hass: HomeAssistant, inverter_entity_id: str) -> str |
     if (
         inverter is None
         or inverter.platform.lower() != "solarman"
-        or inverter.domain != "number"
+        or getattr(inverter, "domain", "number") != "number"
         or not inverter.device_id
     ):
         return None
