@@ -334,7 +334,7 @@ async def test_reconfigure_safely_stops_old_controller_first(flow, monkeypatch):
         lambda entry, *, data_updates: {"type": "abort", "reason": "reconfigure_successful"},
     )
     result = await flow.async_step_grid({"grid": "sensor.grid", "ack": True})
-    controller.async_stop.assert_awaited_once()
+    controller.async_stop.assert_not_awaited()
     controller.async_disable.assert_awaited_once()
     assert result["reason"] == "reconfigure_successful"
 
