@@ -56,9 +56,12 @@ MIN_OUTPUT_CHANGE_W = 10.0
 MAX_POSITIVE_COMMAND_STEP_W = 20.0
 FEEDBACK_SETTLE_SECONDS = 5.0
 FEEDBACK_TIMEOUT_SECONDS = 30.0
-# Conservative software-only export emergency threshold, based on the
-# 2026-11-04 supervised -203 W / -696 W hardware events. Not a device rating.
-STARTUP_EXPORT_TRIP_W = -200.0
+# Conservative software-only startup export trip. On 2026-11-04 the
+# M200 produced -188.632 W signed-grid export after a *nominal* 20 W
+# command; the old -200 W threshold missed this observed unsafe sample.
+# -100 W is an operational fail-closed threshold, NOT a device rating
+# or a claim about the actual AC power output of the inverter.
+STARTUP_EXPORT_TRIP_W = -100.0
 
 
 @dataclass(frozen=True, slots=True)
