@@ -131,6 +131,25 @@ async def test_unconfirmed_shutdown_timeout_remains_visible(
 
 
 @pytest.mark.asyncio
+async def test_shutdown_ack_timeout_retries_once_and_preserves_interlock(monkeypatch):
+    """Retry a missed acknowledgement without flooding a reachable inverter."""
+    hass, entry = configured_two_bk215()
+    runtime = EMSRuntime(hass, entry)
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    await runtime.async_disable()
+    runtime._running = True
+    for _ in range(4):
+        clock[0] += 35
+        await runtime.async_update()
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert len(commands) == 4
+    assert all(command["value"] == 0 for command in commands)
+    assert runtime.status == "write_error"
+    assert runtime._shutdown_obligations == {"number.m200", "number.m80"}
+
+
+@pytest.mark.asyncio
 async def test_non_task_solarman_cancellation_is_reported_and_does_not_ack() -> None:
     """Solarman's cancelled request is not a successful inverter write."""
     hass, entry = configured_two_bk215()
@@ -277,6 +296,9 @@ async def test_failed_shutdown_write_is_persisted_for_retry() -> None:
     class Store:
         async def async_save(self, data):
             store_data.update(data)
+
+        async def async_load(self):
+            return dict(store_data)
 
     runtime = EMSRuntime(hass, entry)
     runtime._shutdown_store = Store()
