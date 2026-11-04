@@ -11,7 +11,7 @@ from time import monotonic
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CoreState, Event, HomeAssistant
+from homeassistant.core import CoreState, Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -158,6 +158,7 @@ class EMSRuntime:
                 await self._save_shutdown_obligations()
         self._deferred_shutdown = set(self._shutdown_obligations)
 
+    @callback
     def _on_connection_event(self, event: Event) -> None:
         """Latch even very short outages; immediately check safe-off on return."""
         if not self._running:
