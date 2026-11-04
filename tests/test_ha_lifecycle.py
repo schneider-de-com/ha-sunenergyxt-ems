@@ -66,6 +66,13 @@ async def test_setup_registers_real_integration_devices_and_controls(
         f"{entry.entry_id}_battery_bk215-1",
         f"{entry.entry_id}_enabled",
         f"{entry.entry_id}_feed_in",
+        f"{entry.entry_id}_adaptive_pid",
+        f"{entry.entry_id}_startup_hold_remaining",
+        f"{entry.entry_id}_battery_bk215-1_ev3600_state",
+        f"{entry.entry_id}_battery_bk215-1_bypass_state",
+        f"{entry.entry_id}_inverter_number.dummy_inverter_requested",
+        f"{entry.entry_id}_inverter_number.dummy_inverter_reported",
+        f"{entry.entry_id}_inverter_number.dummy_inverter_measured_ac",
     } | {
         f"{entry.entry_id}_{key}"
         for key in (
@@ -77,7 +84,9 @@ async def test_setup_registers_real_integration_devices_and_controls(
             "pid_derivative",
             "controller_target",
         )
-    }
+    } | {f"{entry.entry_id}_{key}" for key in (
+        "start_hold_seconds", "pid_kp_min", "pid_kp_max", "pid_kp_export", "pid_ki", "pid_kd"
+    )}
     assert all(hass.states.get(entity.entity_id) is not None for entity in entities)
 
     assert await hass.config_entries.async_unload(entry.entry_id)
