@@ -112,8 +112,8 @@ def solarman_pair(monkeypatch: pytest.MonkeyPatch):
 async def test_optimistic_zero_never_clears_shutdown_obligation(solarman_pair) -> None:
     runtime, hardware, _, states = solarman_pair
     await runtime.async_disable()
-    assert states["number.m200"].state == "0"
-    assert states["number.m80"].state == "0"
+    assert float(states["number.m200"].state) == 0
+    assert float(states["number.m80"].state) == 0
     await runtime._verify_shutdown(module.monotonic())
     assert runtime._shutdown_obligations == {"number.m200", "number.m80"}
     assert runtime.status != "disabled"
