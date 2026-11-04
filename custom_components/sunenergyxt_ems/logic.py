@@ -125,7 +125,6 @@ class Controller:
         self.pid_gains = PIDGains()
         self.adaptive_pid = False
         self.pid_hold = False
-        self.pid_hold = False
 
     def _reset_pid(self) -> None:
         self.state.pid_p_w = 0.0
@@ -235,11 +234,9 @@ class Controller:
             if battery.ev3600_charging is True:
                 self.state.full.discard(battery.key)
                 self.state.ev3600_active.add(battery.key)
-                self.state.full.discard(battery.key)
             elif battery.ev3600_charging is None:
                 self.state.full.discard(battery.key)
                 self.state.ev3600_unknown.add(battery.key)
-                self.state.full.discard(battery.key)
             elif battery.key not in self.state.blocked:
                 eligible.append(battery)
         return eligible
