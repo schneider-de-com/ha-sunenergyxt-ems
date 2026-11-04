@@ -157,7 +157,6 @@ async def test_direct_severe_export_from_positive_import_trips_during_startup_ho
     assert runtime._startup_export_trip is True
     assert "Excess grid export" in (runtime.last_error or "")
     assert any(
-        call.args[2]["entity_id"] == "number.m200"
-        and call.args[2]["value"] == 0
+        call.args[2]["entity_id"] == "number.m200" and call.args[2]["value"] == 0
         for call in hass.services.async_call.await_args_list
     ), "One fresh severe export during startup must immediately request zero"
