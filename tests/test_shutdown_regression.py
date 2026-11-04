@@ -439,3 +439,50 @@ async def test_reconnect_reissues_zero_even_if_optimistic_entity_reports_zero() 
     assert any(
         command["entity_id"] == "number.m80" and command["value"] == 0 for command in commands
     ), "Reconnect requires a new write/readback even with optimistic 0%"
+
+
+@pytest.mark.asyncio
+async def test_solarman_connection_off_on_reconnect_is_safe_when_number_never_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replay 2026-11-03 14:40:17-22: connection off/on; M80 0 -> 100%."""
+    hass, entry = configured_two_bk215()
+    entry.options["enabled"] = False
+    old_state = hass.states.get
+    connection = sample("on", "boolean")
+    hass.states.get = lambda key: (
+        connection if key == "binary_sensor.link" else old_state(key)
+    )
+    monkeypatch.setattr(
+        module,
+        "registered_connection",
+        lambda _hass, entity: "binary_sensor.link" if entity == "number.m80" else None,
+        raising=False,
+    )
+    runtime = EMSRuntime(hass, entry)
+    await runtime._shutdown_store.async_save({"pending": []})
+    await runtime._load_shutdown_obligations()
+    runtime._running = True
+
+    m80 = hass.states.get("number.m80")
+    m80.state = "0"
+    await runtime.async_update()
+    hass.services.async_call.assert_not_awaited()
+
+    connection.state = "off"
+    connection.last_reported += timedelta(seconds=1)
+    # Actual 2026-11-03 M80 number never became unavailable.
+    await runtime.async_update()
+    hass.services.async_call.assert_not_awaited()
+
+    connection.state = "on"
+    connection.last_reported += timedelta(seconds=1)
+    m80.state = "100"
+    m80.last_reported += timedelta(seconds=1)
+    await runtime.async_update()
+
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert any(
+        command["entity_id"] == "number.m80" and command["value"] == 0 for command in commands
+    ), "A Solarman connection off/on must not leave a restored 100% limit"
+    assert "number.m80" in runtime._shutdown_obligations
