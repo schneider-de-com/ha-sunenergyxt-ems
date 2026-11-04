@@ -187,6 +187,7 @@ async def test_batteries_have_separate_visible_status_entities(objects):
             main="bk1",
             support="bk2",
             blocked=set(),
+            full=set(),
             outputs={},
             ev3600_active=set(),
             ev3600_unknown=set(),
