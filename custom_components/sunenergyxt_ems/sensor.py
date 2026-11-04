@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from time import monotonic
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
@@ -293,6 +293,7 @@ class BatteryModeStatus(SensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
 
     def __init__(
         self,
@@ -306,6 +307,21 @@ class BatteryModeStatus(SensorEntity):
         self._runtime = runtime
         self._device_id = device_id
         self._kind = kind
+        self._attr_options = (
+            ["not_configured", "idle", "charging", "unavailable"]
+            if kind == "ev3600_state"
+            else [
+                "disabled",
+                "household_load",
+                "ems_disabled",
+                "unavailable",
+                "ev3600_charging",
+                "ev3600_unavailable",
+                "blocked",
+                "active",
+                "waiting_for_upper_soc",
+            ]
+        )
         self._attr_translation_key = kind
         self._attr_unique_id = f"{entry.entry_id}_battery_{device_id}_{kind}"
         self._attr_device_info = DeviceInfo(
