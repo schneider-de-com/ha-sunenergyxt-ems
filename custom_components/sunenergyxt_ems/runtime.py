@@ -49,6 +49,11 @@ MAX_SOC_AGE = timedelta(seconds=45)
 MAX_DC_AGE = timedelta(seconds=90)
 MAX_BK215_DC_W = 1920.0
 MIN_OUTPUT_CHANGE_W = 10.0
+# Live 2026-11-04: an initial 520 W / 26% M200 command produced
+# -646 W net export after a transient 2.5 kW household load. Bound each
+# upward *actuator* step to the project's existing 20 W smallest step.
+# This is a conservative software ramp, not a device/hardware power cap.
+MAX_POSITIVE_COMMAND_STEP_W = 20.0
 FEEDBACK_SETTLE_SECONDS = 5.0
 FEEDBACK_TIMEOUT_SECONDS = 30.0
 # Conservative software-only export emergency threshold, based on the
@@ -506,6 +511,24 @@ class EMSRuntime:
             )
             if not 0 < rating <= 5000 or unit not in ("W", "%"):
                 continue
+            if not emergency and not force:
+                # Rate-limit the *actually dispatched* actuator command, not
+                # the speculative pure-controller target. The latter may be
+                # hundreds of watts after a single short-lived load spike.
+                # A missing numeric baseline cannot authorize an increase.
+                reported = self._float(state.state)
+                if reported is None:
+                    continue
+                baseline_w = reported * rating / 100 if unit == "%" else reported
+                previous_command = self._last_sent.get(entity_id)
+                if previous_command is not None:
+                    previous_w = (
+                        previous_command * rating / 100
+                        if unit == "%"
+                        else previous_command
+                    )
+                    baseline_w = min(baseline_w, previous_w)
+                target = min(target, baseline_w + MAX_POSITIVE_COMMAND_STEP_W)
             value = target * 100 / rating if unit == "%" else target
             minimum = self._float(state.attributes.get("min", 0))
             maximum = self._float(state.attributes.get("max", 100 if unit == "%" else rating))
@@ -516,6 +539,11 @@ class EMSRuntime:
             value = min(
                 maximum, max(minimum, round(round((value - minimum) / step) * step + minimum, 4))
             )
+            if not emergency and not force:
+                # A coarse device step must not round above the ramp budget.
+                value_w = value * rating / 100 if unit == "%" else value
+                if value_w > baseline_w + MAX_POSITIVE_COMMAND_STEP_W + 0.001:
+                    continue
             previous = self._last_sent.get(entity_id)
             if not emergency and not force and self._start_hold.active(entity_id, now):
                 # Sustained negative signed-grid readings still permit reductions.
