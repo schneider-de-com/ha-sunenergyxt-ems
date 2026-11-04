@@ -13,7 +13,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import CONF_FEED_IN, CONF_FEED_IN_MODE, DOMAIN, FEED_IN_MODE_PV
 from .inputs import fresh_power
 from .runtime import EMSRuntime
 
@@ -52,6 +52,20 @@ async def async_setup_entry(
         )
         for index, record in enumerate(entry.data["batteries"], start=1)
     )
+    entities.append(EMSStartupHoldRemaining(entry, runtime))
+    for record in entry.data["batteries"]:
+        key = record["device_id"]
+        name = record.get("label", "BK215")
+        for kind in ("ev3600_state", "bypass_state"):
+            entities.append(BatteryModeStatus(entry, runtime, key, name, controller_device.id, kind))
+        for inverter in record.get("inverters", ()):
+            for kind in ("requested", "reported", "measured_ac"):
+                entities.append(
+                    InverterLimitValue(
+                        entry, runtime, key, name, controller_device.id,
+                        inverter["entity_id"], kind
+                    )
+                )
     async_add_entities(entities)
 
 
@@ -223,6 +237,194 @@ class BatteryStatus(SensorEntity):
             "requested_power_w": sum(
                 self._runtime.controller.state.outputs.get(inv.key, 0) for inv in battery.inverters
             ),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._runtime.signal, self._refresh)
+        )
+
+    @callback
+    def _refresh(self) -> None:
+        self.async_write_ha_state()
+
+
+class EMSStartupHoldRemaining(SensorEntity):
+    """Expose the active startup hold in seconds, not a buried status attribute."""
+
+    _attr_translation_key = "startup_hold_remaining"
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "s"
+
+    def __init__(self, entry: ConfigEntry, runtime: EMSRuntime) -> None:
+        self._runtime = runtime
+        self._attr_unique_id = f"{entry.entry_id}_startup_hold_remaining"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, "controller")},
+            name="SunEnergyXT EMS",
+            manufacturer="Community",
+            model="Energy management",
+        )
+
+    @property
+    def native_value(self) -> float:
+        now = monotonic()
+        return round(
+            max((self._runtime._start_hold.remaining(key, now)
+                 for key in self._runtime._last_sent), default=0.0),
+            1,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._runtime.signal, self._refresh)
+        )
+
+    @callback
+    def _refresh(self) -> None:
+        self.async_write_ha_state()
+
+
+class BatteryModeStatus(SensorEntity):
+    """Show EV3600 auto-charging and full-charge bypass on each BK215 device."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        runtime: EMSRuntime,
+        device_id: str,
+        label: str,
+        parent_device_id: str | None,
+        kind: str,
+    ) -> None:
+        self._runtime = runtime
+        self._device_id = device_id
+        self._kind = kind
+        self._attr_translation_key = kind
+        self._attr_unique_id = f"{entry.entry_id}_battery_{device_id}_{kind}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"battery_{device_id}")},
+            via_device_id=parent_device_id,
+            name=f"{label} (EMS)",
+            manufacturer="Community",
+            model="BK215 EMS controller",
+        )
+
+    @property
+    def native_value(self) -> str:
+        batteries = self._runtime._batteries()
+        battery = next((b for b in batteries if b.key == self._device_id), None)
+        if self._kind == "ev3600_state":
+            config = self._runtime.entry.options.get("ev3600", {}).get(self._device_id)
+            if not config:
+                return "not_configured"
+            if battery is None or battery.ev3600_charging is None:
+                return "unavailable"
+            return "charging" if battery.ev3600_charging else "idle"
+        if not self._runtime.entry.options.get(CONF_FEED_IN, False):
+            return "disabled"
+        if self._runtime.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) != FEED_IN_MODE_PV:
+            return "household_load"
+        if not self._runtime.controller.enabled:
+            return "ems_disabled"
+        if battery is None or battery.upper_soc is None or battery.soc is None:
+            return "unavailable"
+        if self._device_id in self._runtime.controller.state.ev3600_active:
+            return "ev3600_charging"
+        if self._device_id in self._runtime.controller.state.ev3600_unknown:
+            return "ev3600_unavailable"
+        if self._device_id in self._runtime.controller.state.blocked:
+            return "blocked"
+        if self._device_id in self._runtime.controller.state.full:
+            return "active"
+        return "waiting_for_upper_soc"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        battery = next(
+            (b for b in self._runtime._batteries() if b.key == self._device_id), None
+        )
+        return {
+            "upper_limit_pct": battery.upper_soc if battery else None,
+            "current_soc_pct": battery.soc if battery else None,
+            "configured_ev3600": bool(
+                self._runtime.entry.options.get("ev3600", {}).get(self._device_id)
+            ),
+            "configured_pv_input": bool(
+                self._runtime.entry.options.get("pv_input", {}).get(self._device_id)
+            ),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._runtime.signal, self._refresh)
+        )
+
+    @callback
+    def _refresh(self) -> None:
+        self.async_write_ha_state()
+
+
+class InverterLimitValue(SensorEntity):
+    """Keep requested, reported and independently measured AC clearly separate."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "W"
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        runtime: EMSRuntime,
+        device_id: str,
+        label: str,
+        parent_device_id: str | None,
+        inverter_entity_id: str,
+        kind: str,
+    ) -> None:
+        self._runtime = runtime
+        self._device_id = device_id
+        self._inverter_entity_id = inverter_entity_id
+        self._kind = kind
+        self._attr_translation_key = f"inverter_{kind}"
+        self._attr_unique_id = f"{entry.entry_id}_inverter_{inverter_entity_id}_{kind}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"battery_{device_id}")},
+            via_device_id=parent_device_id,
+            name=f"{label} (EMS)",
+            manufacturer="Community",
+            model="BK215 EMS controller",
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        if self._kind == "requested":
+            return self._runtime.controller.state.outputs.get(self._inverter_entity_id)
+        if self._kind == "measured_ac":
+            return fresh_power(
+                self._runtime.hass,
+                self._runtime.entry.options.get("ac_power", {}).get(self._inverter_entity_id),
+            )
+        batteries = tuple(
+            battery for battery in self._runtime._batteries() if battery.key == self._device_id
+        )
+        return self._runtime._reported_outputs(batteries).get(self._inverter_entity_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        return {
+            "inverter_limit_entity": self._inverter_entity_id,
+            "value_type": self._kind,
+            "measured_ac_source": self._runtime.entry.options.get("ac_power", {}).get(
+                self._inverter_entity_id
+            ) if self._kind == "measured_ac" else None,
         }
 
     async def async_added_to_hass(self) -> None:
