@@ -450,9 +450,7 @@ async def test_solarman_connection_off_on_reconnect_is_safe_when_number_never_un
     entry.options["enabled"] = False
     old_state = hass.states.get
     connection = sample("on", "boolean")
-    hass.states.get = lambda key: (
-        connection if key == "binary_sensor.link" else old_state(key)
-    )
+    hass.states.get = lambda key: connection if key == "binary_sensor.link" else old_state(key)
     monkeypatch.setattr(
         module,
         "registered_connection",
