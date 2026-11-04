@@ -378,5 +378,7 @@ async def test_confirmed_disabled_handover_does_not_override_manual_limit():
     await runtime._shutdown_store.async_save({"pending": []})
     await runtime._load_shutdown_obligations()
     runtime._running = True
+    runtime.status = "write_error"
     await runtime.async_update()
     hass.services.async_call.assert_not_awaited()
+    assert runtime.status == "disabled"
