@@ -411,8 +411,7 @@ async def test_offline_then_reconnected_after_confirmed_handover_reissues_safe_z
 
     commands = [call.args[2] for call in hass.services.async_call.await_args_list]
     assert any(
-        command["entity_id"] == "number.m80" and command["value"] == 0
-        for command in commands
+        command["entity_id"] == "number.m80" and command["value"] == 0 for command in commands
     ), "Reconnection must initiate a fresh, verified emergency minimum"
     assert "number.m80" in runtime._shutdown_obligations
     assert runtime.status == "shutdown_pending"
@@ -438,6 +437,5 @@ async def test_reconnect_reissues_zero_even_if_optimistic_entity_reports_zero() 
 
     commands = [call.args[2] for call in hass.services.async_call.await_args_list]
     assert any(
-        command["entity_id"] == "number.m80" and command["value"] == 0
-        for command in commands
+        command["entity_id"] == "number.m80" and command["value"] == 0 for command in commands
     ), "Reconnect requires a new write/readback even with optimistic 0%"
