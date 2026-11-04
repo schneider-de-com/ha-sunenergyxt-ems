@@ -157,8 +157,9 @@ async def test_startup_uses_reported_actuator_limit_as_baseline(
     await runtime.async_update()
 
     assert hass.services.async_call.await_count == 1
-    assert hass.services.async_call.await_args.args[2]["value"] == 60, (
-        "400 W baseline + (180-20)*50% = 480 W, or 60% of 800 W"
+    assert runtime.controller.state.outputs["number.inverter"] == 480
+    assert hass.services.async_call.await_args.args[2]["value"] == 52, (
+        "The requested 480 W is ramped from the reported 400 W to 416 W (52%)"
     )
 
 

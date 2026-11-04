@@ -77,7 +77,8 @@ async def test_positive_watts_are_sent_through_number_integration():
     await runtime.async_update()
     hass.services.async_call.assert_awaited_once()
     assert hass.services.async_call.await_args.args[:2] == ("number", "set_value")
-    assert hass.services.async_call.await_args.args[2]["value"] == 200
+    assert hass.services.async_call.await_args.args[2]["value"] == 20
+    assert runtime.controller.state.outputs["number.inverter"] == 200
 
 
 @pytest.mark.asyncio
@@ -86,7 +87,8 @@ async def test_positive_percent_limit_is_converted_from_watts():
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
-    assert hass.services.async_call.await_args.args[2]["value"] == 25
+    assert hass.services.async_call.await_args.args[2]["value"] == 2
+    assert runtime.controller.state.outputs["number.inverter"] == 200
 
 
 @pytest.mark.asyncio
@@ -147,13 +149,14 @@ async def test_negative_failed_write_is_reported():
 async def test_implausible_rounding_cannot_exceed_inverter_maximum():
     hass, entry = configured(grid=804, inverter_unit="%")
     state = hass.states.get("number.inverter")
+    state.state = "96"  # Near the 98% device maximum.
     state.attributes["max"] = 98
     state.attributes["step"] = 5
     runtime = EMSRuntime(hass, entry)
-    runtime._running = True
-    await runtime.async_update()
-    value = hass.services.async_call.await_args.args[2]["value"]
-    assert value <= 98
+    await runtime._apply({"number.inverter": 1000}, now=1000)
+    # A 5% step is 40 W at 800 W. No safe positive step fits a 20 W ramp.
+    hass.services.async_call.assert_not_awaited()
+    assert float(state.state) <= state.attributes["max"]
 
 
 @pytest.mark.asyncio
@@ -321,6 +324,7 @@ async def test_negative_invalid_inverter_limits_are_not_written():
 async def test_positive_no_new_command_for_tiny_limit_changes():
     hass, entry = configured()
     runtime = EMSRuntime(hass, entry)
+    hass.states.get("number.inverter").state = "400"
     runtime._last_sent["number.inverter"] = 400
     await runtime._apply({"number.inverter": 404}, now=1000)
     hass.services.async_call.assert_not_awaited()
@@ -384,7 +388,8 @@ async def test_advanced_grid_target_option_changes_output():
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
-    assert hass.services.async_call.await_args.args[2]["value"] == 190
+    assert hass.services.async_call.await_args.args[2]["value"] == 20
+    assert runtime.controller.state.outputs["number.inverter"] == 190
 
 
 @pytest.mark.asyncio
@@ -395,7 +400,8 @@ async def test_household_feed_in_mode_ignores_upper_soc_for_normal_demand() -> N
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
-    assert hass.services.async_call.await_args.args[2]["value"] == 40
+    assert hass.services.async_call.await_args.args[2]["value"] == 20
+    assert runtime.controller.state.outputs["number.inverter"] == 40
 
 
 @pytest.mark.asyncio
@@ -406,7 +412,8 @@ async def test_pv_feed_in_mode_uses_maximum_only_at_upper_soc() -> None:
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
-    assert hass.services.async_call.await_args.args[2]["value"] == 800
+    assert hass.services.async_call.await_args.args[2]["value"] == 20
+    assert runtime.controller.state.outputs["number.inverter"] == 800
 
 
 @pytest.mark.asyncio

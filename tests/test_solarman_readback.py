@@ -141,3 +141,18 @@ async def test_unsupported_solarman_profile_never_claims_verified_shutdown(solar
     await runtime.async_disable()
     await runtime._verify_shutdown(module.monotonic())
     assert runtime._shutdown_obligations == {"number.m200", "number.m80"}
+
+
+@pytest.mark.asyncio
+async def test_optimistic_positive_command_cannot_open_feedback_gate(solarman_pair) -> None:
+    """A number's optimistic 1% cannot permit the next ramp while register 53 is old."""
+    runtime, hardware, _, states = solarman_pair
+    await runtime._apply({"number.m200": 20}, now=1000)
+    assert states["number.m200"].state == "1.0"
+    states["sensor.grid"].last_reported += timedelta(seconds=2)
+    grid_time = states["sensor.grid"].last_reported
+    assert not await runtime._feedback_ready(now=1010, grid_seq=grid_time)
+    assert "number.m200" in runtime._pending
+    hardware["device_m200"] = 100
+    assert await runtime._feedback_ready(now=1010, grid_seq=grid_time)
+    assert not runtime._pending

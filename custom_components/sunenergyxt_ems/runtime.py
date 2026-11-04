@@ -523,9 +523,7 @@ class EMSRuntime:
                 previous_command = self._last_sent.get(entity_id)
                 if previous_command is not None:
                     previous_w = (
-                        previous_command * rating / 100
-                        if unit == "%"
-                        else previous_command
+                        previous_command * rating / 100 if unit == "%" else previous_command
                     )
                     baseline_w = min(baseline_w, previous_w)
                 target = min(target, baseline_w + MAX_POSITIVE_COMMAND_STEP_W)
