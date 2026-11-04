@@ -120,10 +120,28 @@ class EMSRuntime:
 
     async def _load_shutdown_obligations(self) -> None:
         """Recover unacknowledged shutdowns without assuming an old command succeeded."""
-        saved = await self._shutdown_store.async_load()
-        if saved:
-            self._shutdown_obligations = set(saved.get("pending", ()))
-            self._deferred_shutdown = set(self._shutdown_obligations)
+        try:
+            saved = await self._shutdown_store.async_load()
+        except (OSError, HomeAssistantError) as exc:
+            _LOGGER.warning("Cannot read inverter shutdown journal: %s", exc)
+            saved = None
+        pending = saved.get("pending") if isinstance(saved, dict) else None
+        if isinstance(pending, list) and all(isinstance(key, str) for key in pending):
+            self._shutdown_obligations = set(pending)
+        else:
+            # First use and a lost journal are indistinguishable. Establish a
+            # confirmed minimum once, even when the restored EMS switch is off.
+            self._shutdown_obligations = self._configured_inverters()
+            if self._shutdown_obligations:
+                await self._save_shutdown_obligations()
+        self._deferred_shutdown = set(self._shutdown_obligations)
+
+    def _configured_inverters(self) -> set[str]:
+        return {
+            inverter["entity_id"]
+            for battery in self.entry.data[CONF_BATTERIES]
+            for inverter in battery[CONF_INVERTERS]
+        }
 
     async def _save_shutdown_obligations(self, pending: set[str] | None = None) -> bool:
         """Persist before sending, and remove only after fresh acknowledgement."""
@@ -735,11 +753,7 @@ class EMSRuntime:
             self._shutdown_pending.clear()
             self._shutdown_retried.clear()
             commands = self.controller.disable(self._batteries())
-            configured = {
-                inverter["entity_id"]
-                for battery in self.entry.data[CONF_BATTERIES]
-                for inverter in battery[CONF_INVERTERS]
-            }
+            configured = self._configured_inverters()
             unreachable = sorted(configured - commands.keys())
             self._shutdown_obligations.update(configured)
             self._deferred_shutdown.update(configured)
