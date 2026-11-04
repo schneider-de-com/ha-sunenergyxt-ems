@@ -73,6 +73,37 @@ def battery_suggestions(hass: HomeAssistant) -> dict[str, dict[str, str]]:
     return find_batteries(registry_candidates(hass))
 
 
+def registered_connection(hass: HomeAssistant, inverter_entity_id: str) -> str | None:
+    """Find a Solarman connectivity binary sensor by stable device registry ID.
+
+    The real M80's number stayed available through a 5 s Solarman outage on
+    2026-11-03; its separate connectivity sensor recorded off -> on instead.
+    Never depend on user-renamable entity IDs or localized display names.
+    """
+    registry = er.async_get(hass)
+    inverter = registry.async_get(inverter_entity_id)
+    if (
+        inverter is None
+        or inverter.platform.lower() != "solarman"
+        or inverter.domain != "number"
+        or not inverter.device_id
+    ):
+        return None
+    entries = getattr(registry, "entities", None)
+    if entries is None:
+        return None
+    matches = [
+        entry.entity_id
+        for entry in entries.values()
+        if entry.device_id == inverter.device_id
+        and entry.platform.lower() == "solarman"
+        and entry.domain == "binary_sensor"
+        and getattr(entry, "original_device_class", None) == "connectivity"
+        and entry.disabled_by is None
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
 def registered_dc_output(hass: HomeAssistant, device_id: str) -> str | None:
     """Recover a DC sensor for a pre-beta entry using the exact BK215 device ID."""
     registry = er.async_get(hass)
