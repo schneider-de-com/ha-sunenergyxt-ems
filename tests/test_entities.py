@@ -252,3 +252,18 @@ def test_unavailable_battery_has_independent_status(objects):
     )
     entity = sensors.BatteryStatus(entry, runtime, "bk")
     assert entity.native_value == "blocked"
+
+
+def test_disabled_grid_diagnostics_do_not_display_last_running_power(objects):
+    """After shutdown, last negative grid sample must not look like a live value."""
+    entry, runtime, _ = objects
+    runtime.controller.enabled = False
+    runtime._grid_raw_w = -700.0
+    runtime._grid_filtered_w = -350.0
+    for key, field in (
+        ("grid_raw", "raw_grid_w"),
+        ("grid_effective", "effective_grid_w"),
+        ("grid_error", "pid_error_w"),
+    ):
+        sensor = sensors.EMSControlValue(entry, runtime, key, field)
+        assert sensor.native_value is None
