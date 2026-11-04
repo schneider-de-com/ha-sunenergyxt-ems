@@ -15,6 +15,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sunenergyxt_ems.const import DOMAIN
+from custom_components.sunenergyxt_ems.runtime import EMSRuntime
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
@@ -100,3 +101,50 @@ async def test_setup_registers_real_integration_devices_and_controls(
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+@pytest.mark.asyncio
+async def test_offline_shutdown_survives_runtime_reload_in_real_ha(hass: HomeAssistant) -> None:
+    """Real HA storage must retain a failed safe-off until a fresh readback."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk215-1",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [{"entity_id": "number.m80", "rated_w": 800}],
+                }
+            ],
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("number.m80", "unavailable", {"unit_of_measurement": "%"})
+    commands = []
+
+    async def set_value(call):
+        commands.append(dict(call.data))
+
+    hass.services.async_register("number", "set_value", set_value)
+    first = EMSRuntime(hass, entry)
+    await first.async_disable()
+    assert not commands
+    recovered = EMSRuntime(hass, entry)
+    await recovered._load_shutdown_obligations()
+    assert recovered._shutdown_obligations == {"number.m80"}
+    hass.states.async_set(
+        "number.m80", "100", {"unit_of_measurement": "%", "min": 0, "max": 100, "step": 0.1}
+    )
+    recovered._running = True
+    await recovered.async_update()
+    assert commands == [{"entity_id": "number.m80", "value": 0}]
+    assert (await recovered._shutdown_store.async_load())["pending"] == ["number.m80"]
+    hass.states.async_set(
+        "number.m80", "0", {"unit_of_measurement": "%", "min": 0, "max": 100, "step": 0.1}
+    )
+    await recovered.async_update()
+    assert (await recovered._shutdown_store.async_load())["pending"] == []
