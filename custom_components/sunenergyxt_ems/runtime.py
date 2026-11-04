@@ -322,10 +322,7 @@ class EMSRuntime:
         if not registered.config_entry_id or not registered.device_id:
             return False
         source_entry = self.hass.config_entries.async_get_entry(registered.config_entry_id)
-        if (
-            source_entry is None
-            or source_entry.options.get("lookup_file") != "deye_micro_53.yaml"
-        ):
+        if source_entry is None or source_entry.options.get("lookup_file") != "deye_micro_53.yaml":
             return False
         state = self.hass.states.get(entity_id)
         if state is None or state.attributes.get("unit_of_measurement") != "%":
