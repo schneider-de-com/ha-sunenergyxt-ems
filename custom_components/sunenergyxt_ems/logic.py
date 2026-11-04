@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from math import ceil, isfinite
 from statistics import median
 
+from .pid import PIDGains, bounded_pid
+
 
 @dataclass(frozen=True, slots=True)
 class Inverter:
@@ -27,6 +29,9 @@ class Battery:
     charging_w: float = 0
     output_limit_w: float = 1920
     dc_output_w: float | None = None
+    pv_input_w: float | None = None
+    pv_input_configured: bool = False
+    ev3600_charging: bool | None = False
 
 
 @dataclass(slots=True)
@@ -40,6 +45,42 @@ class ControllerState:
     grid_outage: bool = False
     recovery_count: int = 0
     last_sequence: object | None = None
+    ev3600_active: set[str] = field(default_factory=set)
+    ev3600_unknown: set[str] = field(default_factory=set)
+    raw_grid_w: float | None = None
+    effective_grid_w: float | None = None
+    pid_error_w: float = 0.0
+    pid_p_w: float = 0.0
+    pid_i_w: float = 0.0
+    pid_d_w: float = 0.0
+    pid_last_error_w: float | None = None
+    pid_last_at: float | None = None
+    pid_last_sequence: object | None = None
+    target_w: float = 0.0
+
+
+class StartHold:
+    """Hold normal corrections after an inverter first starts from zero."""
+
+    def __init__(self, seconds: float = 30.0) -> None:
+        self.seconds = seconds
+        self._until: dict[str, float] = {}
+
+    def record(self, key: str, *, before_w: float, after_w: float, now: float) -> None:
+        if before_w <= 0 < after_w and isfinite(now):
+            self._until[key] = now + self.seconds
+
+    def remaining(self, key: str, now: float) -> float:
+        return max(0.0, self._until.get(key, 0.0) - now)
+
+    def active(self, key: str, now: float) -> bool:
+        return self.remaining(key, now) > 0
+
+    def reset(self, key: str | None = None) -> None:
+        if key is None:
+            self._until.clear()
+        else:
+            self._until.pop(key, None)
 
 
 class GridMedianFilter:
@@ -81,11 +122,65 @@ class Controller:
         self.grid_target_w = 20
         self.grid_grace_seconds = 8
         self.recovery_samples = 3
+        self.pid_gains = PIDGains()
+        self.adaptive_pid = False
+        self.pid_hold = False
+
+    def _reset_pid(self) -> None:
+        self.state.pid_p_w = 0.0
+        self.state.pid_i_w = 0.0
+        self.state.pid_d_w = 0.0
+        self.state.pid_last_error_w = None
+        self.state.pid_last_at = None
+        self.state.pid_last_sequence = None
+
+    def _pid_correction(
+        self, grid_w: float, now: float, sequence: object | None, capacity_w: float
+    ) -> float:
+        error = grid_w - self.grid_target_w
+        self.state.pid_error_w = error
+        self.state.effective_grid_w = grid_w
+        self.state.raw_grid_w = grid_w
+        if self.pid_hold:
+            self._reset_pid()
+            self.state.pid_error_w = error
+            self.state.pid_last_at = now
+            self.state.pid_last_sequence = sequence
+            return 0.0
+        if 0 <= grid_w < 30:
+            self.state.pid_p_w = 0.0
+            self.state.pid_d_w = 0.0
+            return 0.0
+        new = sequence is None or sequence != self.state.pid_last_sequence
+        dt = (
+            max(0.0, min(15.0, now - self.state.pid_last_at))
+            if new and self.state.pid_last_at is not None
+            else 0.0
+        )
+        terms = bounded_pid(
+            error,
+            self.state.pid_last_error_w if new and not self.pid_hold else None,
+            0.0 if self.pid_hold else dt,
+            self.state.pid_i_w,
+            sum(self.state.outputs.values()),
+            capacity_w,
+            self.pid_gains,
+        )
+        self.state.pid_p_w = terms.proportional
+        self.state.pid_i_w = terms.integral
+        self.state.pid_d_w = terms.derivative
+        if new:
+            self.state.pid_last_at = now
+            self.state.pid_last_error_w = error
+            self.state.pid_last_sequence = sequence
+        step = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
+        return max(-step, min(step, float(terms.correction)))
 
     def disable(self, batteries: tuple[Battery, ...]) -> dict[str, float]:
         self.enabled = False
         commands = self._safe_limits(batteries)
         self.state.outputs = commands.copy()
+        self._reset_pid()
         return commands
 
     @staticmethod
@@ -118,6 +213,8 @@ class Controller:
 
     def _eligible(self, batteries: tuple[Battery, ...]) -> list[Battery]:
         eligible = []
+        self.state.ev3600_active.clear()
+        self.state.ev3600_unknown.clear()
         for battery in batteries:
             if (
                 not self._valid_soc(battery.soc)
@@ -134,7 +231,13 @@ class Controller:
                 self.state.blocked.add(battery.key)
             elif battery.key in self.state.blocked and battery.soc >= battery.lower_soc + 5:
                 self.state.blocked.remove(battery.key)
-            if battery.key not in self.state.blocked:
+            if battery.ev3600_charging is True:
+                self.state.full.discard(battery.key)
+                self.state.ev3600_active.add(battery.key)
+            elif battery.ev3600_charging is None:
+                self.state.full.discard(battery.key)
+                self.state.ev3600_unknown.add(battery.key)
+            elif battery.key not in self.state.blocked:
                 eligible.append(battery)
         return eligible
 
@@ -183,6 +286,7 @@ class Controller:
     ) -> dict[str, float]:
         safe = self._safe_limits(batteries)
         if not self.enabled:
+            self._reset_pid()
             return safe
 
         eligible = self._eligible(batteries)
@@ -212,6 +316,7 @@ class Controller:
             self.state.recovery_count = 0
             self.state.last_sequence = None
             self.state.outputs = safe.copy()
+            self._reset_pid()
             return safe
 
         if self.state.grid_outage:
@@ -222,6 +327,7 @@ class Controller:
                 return safe
             self.state.grid_outage = False
             self.state.recovery_count = 0
+            self._reset_pid()
         self.state.last_grid_ok = now
 
         ranked = self._rank(eligible)
@@ -231,15 +337,30 @@ class Controller:
             for inv in battery.inverters
             if self._valid_inverter(inv)
         )
-        # One step of the agreed proportional controller; never use the full
-        # grid error as an unrestricted actuator change.
-        in_deadband = 0 <= grid_w < 30
-        if in_deadband:
-            correction = 0.0
+        capacity_w = sum(
+            min(
+                1920.0,
+                battery.output_limit_w,
+                sum(inv.rated_w for inv in battery.inverters if self._valid_inverter(inv)),
+            )
+            for battery in ranked
+        )
+        if self.adaptive_pid:
+            correction = self._pid_correction(grid_w, now, sequence, capacity_w)
         else:
-            gain = 1.0 if grid_w < 0 else 0.5
-            step_cap = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
-            correction = max(-step_cap, min(step_cap, (grid_w - self.grid_target_w) * gain))
+            in_deadband = 0 <= grid_w < 30
+            if in_deadband:
+                correction = 0.0
+            else:
+                gain = 1.0 if grid_w < 0 else 0.5
+                step_cap = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
+                correction = max(-step_cap, min(step_cap, (grid_w - self.grid_target_w) * gain))
+            self.state.pid_error_w = grid_w - self.grid_target_w
+            self.state.pid_p_w = correction
+            self.state.pid_i_w = 0.0
+            self.state.pid_d_w = 0.0
+            self.state.raw_grid_w = grid_w
+            self.state.effective_grid_w = grid_w
         # Leaving a full-charge export override must not continue intentional
         # export merely to respect the ordinary rate limit.
         exiting_full = any(
@@ -277,13 +398,22 @@ class Controller:
             maximum_w = min(
                 1920, battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters)
             )
-            budget_w = maximum_w if battery.key in self.state.full else min(total_w, maximum_w)
+            if battery.key in self.state.full and battery.pv_input_configured:
+                if battery.pv_input_w is None or not isfinite(battery.pv_input_w):
+                    budget_w = min(total_w, maximum_w)
+                else:
+                    budget_w = min(maximum_w, max(0.0, battery.pv_input_w))
+            else:
+                budget_w = maximum_w if battery.key in self.state.full else min(total_w, maximum_w)
             for inverter in eligible_inverters:
                 power_w = min(inverter.rated_w, max(inverter.minimum_w, budget_w))
                 commands[inverter.key] = power_w
                 budget_w = max(0, budget_w - power_w)
                 total_w = max(0, total_w - power_w)
         self.state.outputs = commands.copy()
+        self.state.target_w = sum(commands.values())
+        if self.state.full or self.state.ev3600_active or self.state.ev3600_unknown:
+            self.state.pid_i_w = 0.0
         return commands
 
 

@@ -131,7 +131,39 @@
           "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)",
           "feed_in_mode": "Einspeiseverhalten",
           "feed_in_hysteresis_pct": "PV-Modus: SoC-Hysterese (Prozentpunkte)",
-          "reset_dc_trip": "Gespeicherte DC-Schutzsperre zurücksetzen (EMS aus, frische BK215-Ausgangsleistung höchstens 100 W)"
+          "reset_dc_trip": "Gespeicherte DC-Schutzsperre zurücksetzen (EMS aus, frische BK215-Ausgangsleistung höchstens 100 W)",
+          "adaptive_pid": "Adaptiven PID-Regler aktivieren",
+          "start_hold_seconds": "Anlaufhaltezeit (Sekunden)",
+          "pid_kp_min": "PID Kp klein",
+          "pid_kp_max": "PID Kp groß",
+          "pid_kp_export": "PID Kp bei Einspeisung",
+          "pid_ki": "PID Integralverstärkung",
+          "pid_kd": "PID Differentialverstärkung",
+          "pv_input_1": "Speicher 1: PV-Eingangsleistung (optional)",
+          "ev_mode_1": "Speicher 1: EV3600-Autoladeschalter",
+          "ev_power_1": "Speicher 1: EV3600-Ladeleistung",
+          "pv_input_2": "Speicher 2: PV-Eingangsleistung (optional)",
+          "ev_mode_2": "Speicher 2: EV3600-Autoladeschalter",
+          "ev_power_2": "Speicher 2: EV3600-Ladeleistung",
+          "pv_input_3": "Speicher 3: PV-Eingangsleistung (optional)",
+          "ev_mode_3": "Speicher 3: EV3600-Autoladeschalter",
+          "ev_power_3": "Speicher 3: EV3600-Ladeleistung",
+          "pv_input_4": "Speicher 4: PV-Eingangsleistung (optional)",
+          "ev_mode_4": "Speicher 4: EV3600-Autoladeschalter",
+          "ev_power_4": "Speicher 4: EV3600-Ladeleistung",
+          "pv_input_5": "Speicher 5: PV-Eingangsleistung (optional)",
+          "ev_mode_5": "Speicher 5: EV3600-Autoladeschalter",
+          "ev_power_5": "Speicher 5: EV3600-Ladeleistung",
+          "ac_1_1": "Speicher 1, Wechselrichter 1: gemessene AC-Leistung (optional)",
+          "ac_1_2": "Speicher 1, Wechselrichter 2: gemessene AC-Leistung (optional)",
+          "ac_2_1": "Speicher 2, Wechselrichter 1: gemessene AC-Leistung (optional)",
+          "ac_2_2": "Speicher 2, Wechselrichter 2: gemessene AC-Leistung (optional)",
+          "ac_3_1": "Speicher 3, Wechselrichter 1: gemessene AC-Leistung (optional)",
+          "ac_3_2": "Speicher 3, Wechselrichter 2: gemessene AC-Leistung (optional)",
+          "ac_4_1": "Speicher 4, Wechselrichter 1: gemessene AC-Leistung (optional)",
+          "ac_4_2": "Speicher 4, Wechselrichter 2: gemessene AC-Leistung (optional)",
+          "ac_5_1": "Speicher 5, Wechselrichter 1: gemessene AC-Leistung (optional)",
+          "ac_5_2": "Speicher 5, Wechselrichter 2: gemessene AC-Leistung (optional)"
         },
         "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
       }
@@ -139,7 +171,9 @@
     "error": {
       "missing_upper": "Bitte die obere SoC-Grenze für alle Speicher ohne entsprechende Entität eintragen.",
       "disable_before_trip_reset": "Vor dem Zurücksetzen der DC-Schutzsperre zuerst EMS deaktivieren.",
-      "trip_reset_unconfirmed": "Zurücksetzen verweigert: BK215-DC-Ausgangsleistung fehlt, ist veraltet oder liegt über 100 W."
+      "trip_reset_unconfirmed": "Zurücksetzen verweigert: BK215-DC-Ausgangsleistung fehlt, ist veraltet oder liegt über 100 W.",
+      "incomplete_ev3600": "EV3600-Schalter und Ladeleistungssensor gemeinsam auswählen.",
+      "invalid_pid_gains": "PID Kp-Maximum muss mindestens dem Minimum entsprechen."
     }
   },
   "entity": {
@@ -149,6 +183,27 @@
       },
       "battery_status": {
         "name": "Speicherstatus"
+      },
+      "grid_raw": {
+        "name": "Netzleistung roh"
+      },
+      "grid_effective": {
+        "name": "Netzleistung gefiltert"
+      },
+      "grid_error": {
+        "name": "Regelabweichung"
+      },
+      "pid_proportional": {
+        "name": "PID P-Anteil"
+      },
+      "pid_integral": {
+        "name": "PID I-Anteil"
+      },
+      "pid_derivative": {
+        "name": "PID D-Anteil"
+      },
+      "controller_target": {
+        "name": "Angefordertes Gesamtlimit"
       }
     },
     "switch": {

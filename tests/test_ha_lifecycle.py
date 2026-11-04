@@ -66,6 +66,17 @@ async def test_setup_registers_real_integration_devices_and_controls(
         f"{entry.entry_id}_battery_bk215-1",
         f"{entry.entry_id}_enabled",
         f"{entry.entry_id}_feed_in",
+    } | {
+        f"{entry.entry_id}_{key}"
+        for key in (
+            "grid_raw",
+            "grid_effective",
+            "grid_error",
+            "pid_proportional",
+            "pid_integral",
+            "pid_derivative",
+            "controller_target",
+        )
     }
     assert all(hass.states.get(entity.entity_id) is not None for entity in entities)
 

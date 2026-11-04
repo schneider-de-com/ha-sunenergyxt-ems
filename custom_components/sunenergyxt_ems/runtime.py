@@ -36,7 +36,9 @@ from .const import (
     DOMAIN,
     FEED_IN_MODE_PV,
 )
-from .logic import Battery, Controller, GridMedianFilter, Inverter
+from .inputs import ev3600_charging, fresh_power
+from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
+from .pid import PIDGains
 from .registry import registered_dc_output
 
 _LOGGER = logging.getLogger(__name__)
@@ -86,6 +88,9 @@ class EMSRuntime:
         self._dc_monitored: dict[str, str] = {}
         self._last_processed_grid: datetime | None = None
         self._grid_filter = GridMedianFilter()
+        self._grid_raw_w: float | None = None
+        self._grid_filtered_w: float | None = None
+        self._start_hold = StartHold(seconds=30.0)
         self._running = False
         self._seen_valid = False
 
@@ -201,6 +206,15 @@ class EMSRuntime:
                     inverters=tuple(inverters),
                     charging_w=charging,
                     dc_output_w=self._fresh_dc_output(dc_source),
+                    pv_input_w=fresh_power(
+                        self.hass, self.entry.options.get("pv_input", {}).get(record[CONF_DEVICE])
+                    ),
+                    pv_input_configured=bool(
+                        self.entry.options.get("pv_input", {}).get(record[CONF_DEVICE])
+                    ),
+                    ev3600_charging=ev3600_charging(
+                        self.hass, self.entry.options.get("ev3600", {}).get(record[CONF_DEVICE])
+                    ),
                 )
             )
         return tuple(batteries)
@@ -288,7 +302,11 @@ class EMSRuntime:
         observed = self._reported_outputs(batteries)
         reductions: dict[str, float] = {}
         for battery in batteries:
-            if battery.key not in self.controller.state.blocked:
+            if battery.key not in (
+                self.controller.state.blocked
+                | self.controller.state.ev3600_active
+                | self.controller.state.ev3600_unknown
+            ):
                 continue
             for inverter in battery.inverters:
                 if not inverter.online:
@@ -336,6 +354,11 @@ class EMSRuntime:
                 maximum, max(minimum, round(round((value - minimum) / step) * step + minimum, 4))
             )
             previous = self._last_sent.get(entity_id)
+            if not emergency and not force and self._start_hold.active(entity_id, now):
+                # Sustained negative signed-grid readings still permit reductions.
+                exporting = self._grid_filtered_w is not None and self._grid_filtered_w < -120
+                if not (exporting and previous is not None and value < previous):
+                    continue
             # No-op writes on startup only create unnecessary communication
             # (and a fake pending acknowledgement) for already-correct limits.
             reported_value = self._float(state.state)
@@ -394,6 +417,14 @@ class EMSRuntime:
                 self.status = "write_error"
                 _LOGGER.warning("Unable to set %s limit: %s", entity_id, exc)
                 continue
+            self._start_hold.record(
+                entity_id,
+                before_w=(reported_value or 0) * rating / 100
+                if unit == "%"
+                else (reported_value or 0),
+                after_w=target,
+                now=now,
+            )
             self._last_sent[entity_id] = value
             self._sent_at[entity_id] = now
             self._pending[entity_id] = PendingCommand(
@@ -442,6 +473,14 @@ class EMSRuntime:
                 bool(self.entry.options.get(CONF_FEED_IN, False))
                 and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
             )
+            self.controller.adaptive_pid = bool(self.entry.options.get("adaptive_pid", False))
+            self.controller.pid_gains = PIDGains(
+                kp_min=float(self.entry.options.get("pid_kp_min", 0.5)),
+                kp_max=float(self.entry.options.get("pid_kp_max", 0.9)),
+                kp_export=float(self.entry.options.get("pid_kp_export", 1.0)),
+                ki=float(self.entry.options.get("pid_ki", 0.02)),
+                kd=float(self.entry.options.get("pid_kd", 0.12)),
+            )
             self.controller.enabled = bool(self.entry.options.get(CONF_ENABLED, True))
             self.controller.full_hysteresis_pct = float(
                 self.entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
@@ -477,14 +516,17 @@ class EMSRuntime:
                 self._publish()
                 return
             now = monotonic()
+            self._start_hold.seconds = float(self.entry.options.get("start_hold_seconds", 30.0))
             self.controller.grid_target_w = float(
                 self.entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W)
             )
             grid, sequence = self._grid()
+            self._grid_raw_w = grid
             if grid is None or sequence is None:
                 self._grid_filter.reset()
             else:
                 grid = self._grid_filter.observe(grid, sequence)
+            self._grid_filtered_w = grid
             batteries = self._batteries()
             detected_trips = {
                 battery.key
@@ -537,17 +579,6 @@ class EMSRuntime:
                     self.last_error = "BK215 DC sensor not current: " + ", ".join(missing_dc)
                 self._publish()
                 return
-            if not self._seen_valid:
-                if grid is None or not any(
-                    battery.soc is not None
-                    and battery.lower_soc is not None
-                    and any(inverter.online for inverter in battery.inverters)
-                    for battery in batteries
-                ):
-                    self.status = "waiting"
-                    self._publish()
-                    return
-                self._seen_valid = True
             # Protect the battery independently of normal feedback settling.
             # Do not increase another inverter until an earlier required
             # reduction has been written and acknowledged.
@@ -559,6 +590,17 @@ class EMSRuntime:
                 self._publish()
                 return
 
+            if not self._seen_valid:
+                if grid is None or not any(
+                    battery.soc is not None
+                    and battery.lower_soc is not None
+                    and any(inverter.online for inverter in battery.inverters)
+                    for battery in batteries
+                ):
+                    self.status = "waiting"
+                    self._publish()
+                    return
+                self._seen_valid = True
             if grid is None:
                 outputs = self.controller.update(batteries, grid, now, sequence=sequence)
                 self.status = "grid_unavailable"
@@ -580,6 +622,13 @@ class EMSRuntime:
             # never speculative commands from earlier, rate-limited ticks.
             self.controller.state.outputs = self._reported_outputs(batteries)
             previous_main = self.controller.state.main
+            # A held inverter must not silently accumulate PID integral
+            # while normal actuator writes are intentionally postponed.
+            self.controller.pid_hold = any(
+                inverter.online and self._start_hold.active(inverter.key, now)
+                for battery in batteries
+                for inverter in battery.inverters
+            )
             outputs = self.controller.update(batteries, grid, now, sequence=sequence)
             self._last_processed_grid = sequence
 
@@ -622,6 +671,8 @@ class EMSRuntime:
         async with self._lock:
             self.controller.enabled = False
             self._grid_filter.reset()
+            self._start_hold.reset()
+            self.controller.pid_hold = False
             self.last_error = None
             self._pending.clear()
             self._shutdown_pending.clear()

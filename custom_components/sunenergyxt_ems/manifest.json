@@ -15,5 +15,5 @@
   "issue_tracker": "https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.1.0b4"
+  "version": "0.1.0b5"
 }
