@@ -110,6 +110,7 @@ async def test_percent_m80_first_step_is_not_2_5_percent() -> None:
     """A 20 W nominal step is already 2.5% of the M80 and physically unsafe."""
     runtime, hass = runtime_pair()
     hass.states.get("number.m80").attributes["unit_of_measurement"] = "%"
+    hass.states.get("number.m80").attributes["step"] = 0.1
     hass.states.get("number.m80").attributes["max"] = 100
 
     await runtime._apply({"number.m80": 520}, now=1000)
