@@ -232,3 +232,55 @@ async def test_changed_raw_value_without_new_meter_report_does_not_trip(
 
     assert runtime._startup_export_trip is False
     assert "Excess grid export during startup" not in (runtime.last_error or "")
+
+@pytest.mark.asyncio
+async def test_real_m200_one_percent_export_trips_startup_without_second_negative(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replay 2026-11-04 16:52: nominal 20 W command, -188.632 W net export.
+
+    A 1% limit is not a 20 W AC measurement on the real M200. The first
+    fresh severe net-export reading must trigger a fail-closed reduction.
+    """
+    hass, entry = configured_runtime()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    hass.states.get("number.m200").state = "1"
+    runtime._start_hold.record("number.m200", before_w=0, after_w=20, now=1000)
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    meter = hass.states.get("sensor.grid")
+    base = datetime.now(UTC) - timedelta(seconds=1)
+    for i, value in enumerate((250.118, -188.632)):
+        clock[0] += 5
+        meter.state = str(value)
+        meter.last_reported = base + timedelta(milliseconds=100 * (i + 1))
+        await runtime.async_update()
+
+    assert runtime._startup_export_trip is True
+    assert "Excess grid export" in (runtime.last_error or "")
+    assert any(
+        call.args[2] == {"entity_id": "number.m200", "value": 0}
+        for call in hass.services.async_call.await_args_list
+    ), "The first -188.632 W sample must stop the reachable inverter"
+
+
+@pytest.mark.asyncio
+async def test_small_minus_49_w_startup_sample_not_latched_as_severe_export(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not turn routine small deviations into a permanent safety latch."""
+    hass, entry = configured_runtime()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    hass.states.get("number.m200").state = "1"
+    runtime._start_hold.record("number.m200", before_w=0, after_w=20, now=1000)
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    meter = hass.states.get("sensor.grid")
+    meter.state = "-49.610"
+    meter.last_reported = datetime.now(UTC) - timedelta(seconds=1)
+    await runtime.async_update()
+
+    assert runtime._startup_export_trip is False
+    assert "Excess grid export" not in (runtime.last_error or "")
