@@ -233,6 +233,7 @@ async def test_changed_raw_value_without_new_meter_report_does_not_trip(
     assert runtime._startup_export_trip is False
     assert "Excess grid export during startup" not in (runtime.last_error or "")
 
+
 @pytest.mark.asyncio
 async def test_real_m200_one_percent_export_trips_startup_without_second_negative(
     monkeypatch: pytest.MonkeyPatch,
