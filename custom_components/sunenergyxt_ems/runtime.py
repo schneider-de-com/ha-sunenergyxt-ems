@@ -764,7 +764,7 @@ class EMSRuntime:
                 self._publish()
                 return
 
-            if not self._feedback_ready(now, sequence):
+            if not await self._feedback_ready(now, sequence):
                 self._publish()
                 return
 
