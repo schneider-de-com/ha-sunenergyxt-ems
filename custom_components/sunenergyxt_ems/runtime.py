@@ -96,6 +96,9 @@ class EMSRuntime:
         self._grid_filter = GridMedianFilter()
         self._grid_raw_w: float | None = None
         self._grid_filtered_w: float | None = None
+        self._last_raw_grid_sequence: datetime | None = None
+        self._previous_raw_grid_w: float | None = None
+        self._startup_export_trip = False
         self._start_hold = StartHold(seconds=30.0)
         self._running = False
         self._seen_valid = False
@@ -535,8 +538,7 @@ class EMSRuntime:
             self.status = "write_error"
         elif self._shutdown_pending:
             self.status = "shutdown_pending"
-        elif self.status != "write_error":
-            self.last_error = None
+        else:
             self.status = "disabled"
 
     async def async_update(self) -> None:
@@ -603,6 +605,25 @@ class EMSRuntime:
                 grid = self._grid_filter.observe(grid, sequence)
             self._grid_filtered_w = grid
             batteries = self._batteries()
+            if self._grid_raw_w is None:
+                self._previous_raw_grid_w = None
+            elif sequence != self._last_raw_grid_sequence:
+                # A single meter spike must not stop a starting inverter. Two
+                # distinct export samples, the second exceeding the supervised
+                # test's 250 W cutoff, must bypass filtering and startup hold.
+                self._startup_export_trip |= (
+                    not self.controller.feed_in
+                    and self._previous_raw_grid_w is not None
+                    and self._previous_raw_grid_w < -30
+                    and self._grid_raw_w < -250
+                    and any(
+                        self._start_hold.active(inv.key, now)
+                        for battery in batteries
+                        for inv in battery.inverters
+                    )
+                )
+                self._previous_raw_grid_w = self._grid_raw_w
+                self._last_raw_grid_sequence = sequence
             detected_trips = {
                 battery.key
                 for battery in batteries
@@ -633,6 +654,20 @@ class EMSRuntime:
                         "BK215 DC output above 1920 W; manual inspection required: "
                         + ", ".join(sorted(self._overload_latched))
                     )
+                self._publish()
+                return
+            if self._startup_export_trip:
+                safe = {
+                    inv.key: inv.minimum_w
+                    for battery in batteries
+                    for inv in battery.inverters
+                    if inv.online
+                }
+                self.last_error = None
+                await self._apply(safe, now, emergency=True)
+                if self.last_error is None:
+                    self.status = "write_error"
+                    self.last_error = "Excess grid export during startup; switch EMS off to reset"
                 self._publish()
                 return
             missing_dc = sorted(
@@ -747,6 +782,9 @@ class EMSRuntime:
             self.controller.enabled = False
             self._grid_filter.reset()
             self._start_hold.reset()
+            self._startup_export_trip = False
+            self._previous_raw_grid_w = None
+            self._last_raw_grid_sequence = None
             self.controller.pid_hold = False
             self.last_error = None
             self._pending.clear()
