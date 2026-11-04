@@ -59,7 +59,9 @@ class EMSToggle(SwitchEntity):
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: object) -> None:
-        """Disable one control option; runtime handles safe one-shot lowering."""
+        """Record the shutdown before persisting a disabled EMS switch."""
+        if self._key == CONF_ENABLED and self.is_on:
+            await self._runtime.async_disable()
         self._runtime.hass.config_entries.async_update_entry(
             self._entry, options={**self._entry.options, self._key: False}
         )

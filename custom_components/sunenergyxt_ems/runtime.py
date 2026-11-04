@@ -11,11 +11,12 @@ from time import monotonic
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
+from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_BATTERIES,
@@ -39,7 +40,7 @@ from .const import (
 from .inputs import ev3600_charging, fresh_power
 from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
 from .pid import PIDGains
-from .registry import registered_dc_output
+from .registry import registered_connection, registered_dc_output
 
 _LOGGER = logging.getLogger(__name__)
 UPDATE_PERIOD = timedelta(seconds=5)
@@ -48,8 +49,19 @@ MAX_SOC_AGE = timedelta(seconds=45)
 MAX_DC_AGE = timedelta(seconds=90)
 MAX_BK215_DC_W = 1920.0
 MIN_OUTPUT_CHANGE_W = 10.0
+# Live 2026-11-04: an initial 520 W / 26% M200 command produced
+# -646 W net export after a transient 2.5 kW household load. Bound each
+# upward *actuator* step to the project's existing 20 W smallest step.
+# This is a conservative software ramp, not a device/hardware power cap.
+MAX_POSITIVE_COMMAND_STEP_W = 20.0
 FEEDBACK_SETTLE_SECONDS = 5.0
 FEEDBACK_TIMEOUT_SECONDS = 30.0
+# Conservative software-only startup export trip. On 2026-11-04 the
+# M200 produced -188.632 W signed-grid export after a *nominal* 20 W
+# command; the old -200 W threshold missed this observed unsafe sample.
+# -100 W is an operational fail-closed threshold, NOT a device rating
+# or a claim about the actual AC power output of the inverter.
+STARTUP_EXPORT_TRIP_W = -100.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,18 +90,30 @@ class EMSRuntime:
         self.status = "waiting"
         self.last_error: str | None = None
         self._unsubscribe: Any = None
+        self._unsubscribe_connections: Any = None
+        self._connection_inverters: dict[str, set[str]] = {}
         self._lock = asyncio.Lock()
         self._last_sent: dict[str, float] = {}
         self._sent_at: dict[str, float] = {}
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
+        self._shutdown_retried: set[str] = set()
         self._deferred_shutdown: set[str] = set()
+        self._shutdown_obligations: set[str] = set()
+        # A previously acknowledged shutdown must be rechecked after a
+        # genuine unavailable -> online transition, not on every off tick.
+        self._offline_inverters: set[str] = set()
+        self._shutdown_store: Store[dict[str, list[str]]] = Store(
+            hass, 1, f"{DOMAIN}.shutdown.{entry.entry_id}", atomic_writes=True
+        )
         self._overload_latched: set[str] = set(entry.options.get(CONF_DC_TRIPPED, ()))
         self._dc_monitored: dict[str, str] = {}
         self._last_processed_grid: datetime | None = None
         self._grid_filter = GridMedianFilter()
         self._grid_raw_w: float | None = None
         self._grid_filtered_w: float | None = None
+        self._last_raw_grid_sequence: datetime | None = None
+        self._startup_export_trip = False
         self._start_hold = StartHold(seconds=30.0)
         self._running = False
         self._seen_valid = False
@@ -103,13 +127,84 @@ class EMSRuntime:
 
     async def async_start(self) -> None:
         """Start polling. Never send commands using data from a previous run."""
+        await self._load_shutdown_obligations()
         self._running = True
+        # A real M80 Solarman outage on 2026-11-03 lasted 4.83 s,
+        # shorter than the 5 s control interval: event capture is required.
+        links: dict[str, set[str]] = {}
+        for inverter in self._configured_inverters():
+            connection = registered_connection(self.hass, inverter)
+            if connection is not None:
+                links.setdefault(connection, set()).add(inverter)
+        self._connection_inverters = links
+        if links:
+            self._unsubscribe_connections = async_track_state_change_event(
+                self.hass, sorted(links), self._on_connection_event
+            )
         self._unsubscribe = async_track_time_interval(
             self.hass,
             self._async_on_interval,
             UPDATE_PERIOD,
         )
         await self.async_update()
+
+    async def _load_shutdown_obligations(self) -> None:
+        """Recover unacknowledged shutdowns without assuming an old command succeeded."""
+        try:
+            saved = await self._shutdown_store.async_load()
+        except (OSError, HomeAssistantError) as exc:
+            _LOGGER.warning("Cannot read inverter shutdown journal: %s", exc)
+            saved = None
+        pending = saved.get("pending") if isinstance(saved, dict) else None
+        if isinstance(pending, list) and all(isinstance(key, str) for key in pending):
+            self._shutdown_obligations = set(pending)
+        else:
+            # First use and a lost journal are indistinguishable. Establish a
+            # confirmed minimum once, even when the restored EMS switch is off.
+            self._shutdown_obligations = self._configured_inverters()
+            if self._shutdown_obligations:
+                await self._save_shutdown_obligations()
+        self._deferred_shutdown = set(self._shutdown_obligations)
+
+    @callback
+    def _on_connection_event(self, event: Event) -> None:
+        """Latch even very short outages; immediately check safe-off on return."""
+        if not self._running:
+            return
+        inverters = self._connection_inverters.get(event.data.get("entity_id"), set())
+        new_state = event.data.get("new_state")
+        if not inverters or new_state is None or new_state.state != "on":
+            self._offline_inverters.update(inverters)
+            return
+        if self._offline_inverters.intersection(inverters):
+            # The number entity can remain online throughout a Solarman
+            # dropout; the next regular polling tick could miss it entirely.
+            self.hass.async_create_task(self.async_update())
+
+    def _configured_inverters(self) -> set[str]:
+        return {
+            inverter["entity_id"]
+            for battery in self.entry.data[CONF_BATTERIES]
+            for inverter in battery[CONF_INVERTERS]
+        }
+
+    async def _save_shutdown_obligations(self, pending: set[str] | None = None) -> bool:
+        """Persist before sending, and remove only after fresh acknowledgement."""
+        try:
+            data = {"pending": sorted(self._shutdown_obligations if pending is None else pending)}
+            await self._shutdown_store.async_save(data)
+            # Store can defer writes during shutdown and only log disk write errors.
+            if (
+                getattr(self.hass, "state", None) is CoreState.stopping
+                or await self._shutdown_store.async_load() != data
+            ):
+                raise OSError("Home Assistant did not confirm the shutdown journal write")
+        except (OSError, HomeAssistantError) as exc:
+            self.last_error = f"Cannot persist inverter shutdown obligations: {exc}"
+            self.status = "write_error"
+            _LOGGER.error("%s", self.last_error)
+            return False
+        return True
 
     async def _async_on_interval(self, _now: datetime) -> None:
         """Run scheduled updates in Home Assistant's event loop, never its executor."""
@@ -121,6 +216,9 @@ class EMSRuntime:
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
+        if self._unsubscribe_connections is not None:
+            self._unsubscribe_connections()
+            self._unsubscribe_connections = None
 
     def _float(self, source: str | float | int | None) -> float | None:
         if isinstance(source, (int, float)):
@@ -179,8 +277,15 @@ class EMSRuntime:
                 rated = self._float(definition[CONF_RATED_W])
                 if rated is None or rated <= 0:
                     continue
+                connection_id = registered_connection(self.hass, entity_id)
+                connection = self.hass.states.get(connection_id) if connection_id else None
                 online = bool(
-                    state and state.state not in ("unknown", "unavailable") and unit in ("W", "%")
+                    state
+                    and state.state not in ("unknown", "unavailable")
+                    and unit in ("W", "%")
+                    # The M80's limit remained readable even through a
+                    # 2026-11-03 Solarman disconnect. Trust the actual link.
+                    and (not connection_id or (connection and connection.state == "on"))
                 )
                 minimum = self._float(state.attributes.get("min", 0)) if state else 0
                 minimum = max(0.0, minimum or 0.0)
@@ -255,7 +360,47 @@ class EMSRuntime:
                     observed[inverter.key] = power_w
         return observed
 
-    def _feedback_ready(self, now: float, grid_seq: datetime | None) -> bool:
+    async def _hardware_feedback_matches(self, entity_id: str, target: float) -> bool:
+        """Verify a Solarman limit by a fresh device register read, not an optimistic HA state.
+
+        Only the explicitly identified deye_micro_53 profile is supported:
+        both connected M200/M80 were checked on 2026-11-04 (1% -> 100,
+        0% -> 0 at register 53). Unknown Solarman profiles fail closed.
+        Non-Solarman platforms retain their existing HA-entity feedback.
+        """
+        registered = er.async_get(self.hass).async_get(entity_id)
+        if registered is None or registered.platform != "solarman":
+            return True
+        if not registered.config_entry_id or not registered.device_id:
+            return False
+        source_entry = self.hass.config_entries.async_get_entry(registered.config_entry_id)
+        if source_entry is None or source_entry.options.get("lookup_file") != "deye_micro_53.yaml":
+            return False
+        state = self.hass.states.get(entity_id)
+        if state is None or state.attributes.get("unit_of_measurement") != "%":
+            return False
+        try:
+            # Solarman's number.write() publishes the requested state without a
+            # fresh register read. This read service executes a new Modbus
+            # READ_HOLDING_REGISTERS request, independent of the optimistic state.
+            response = await self.hass.services.async_call(
+                "solarman",
+                "read_holding_registers",
+                {"device": registered.device_id, "address": 53, "count": 1},
+                blocking=True,
+                return_response=True,
+            )
+        except (HomeAssistantError, TimeoutError, OSError, ValueError) as exc:
+            _LOGGER.debug("Cannot verify %s with Solarman register 53: %s", entity_id, exc)
+            return False
+        if not isinstance(response, dict):
+            return False
+        raw = self._float(response.get("53", response.get(53)))
+        # The installed profile encodes percentages as 100 register units per 1%.
+        # This conversion is profile-specific, not a universal Deye or Modbus rule.
+        return raw is not None and abs(raw / 100.0 - target) <= 0.05
+
+    async def _feedback_ready(self, now: float, grid_seq: datetime | None) -> bool:
         """Wait for a changed reported limit and a later, settled meter sample."""
         if not self._pending:
             return True
@@ -272,6 +417,8 @@ class EMSRuntime:
                 and reported > pending.entity_reported_before
                 and abs(current - pending.target) <= max((step or 1) / 2, 0.01)
             )
+            if confirmed:
+                confirmed = await self._hardware_feedback_matches(entity_id, pending.target)
             if not confirmed:
                 if now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
                     self.status = "write_error"
@@ -317,6 +464,30 @@ class EMSRuntime:
                     reductions[inverter.key] = inverter.minimum_w
         return reductions
 
+    def _reconnected_inverters(self, batteries: tuple[Battery, ...]) -> set[str]:
+        """Detect actual HA availability recovery without policing manual limits.
+
+        Once the user hands a running inverter back to manual control, its
+        later limit changes are left alone. Only a witnessed outage/recovery
+        creates a fresh obligation to re-establish the safe minimum.
+        """
+        offline = {
+            inverter.key
+            for battery in batteries
+            for inverter in battery.inverters
+            if not inverter.online
+        }
+        online = {
+            inverter.key
+            for battery in batteries
+            for inverter in battery.inverters
+            if inverter.online
+        }
+        recovered = self._offline_inverters & online
+        self._offline_inverters.difference_update(recovered)
+        self._offline_inverters.update(offline)
+        return recovered
+
     def _minimum_interval(self, entity_id: str) -> float:
         """Prefer conservative intervals for APsystems flash-based controls."""
         entry = er.async_get(self.hass).async_get(entity_id)
@@ -343,6 +514,34 @@ class EMSRuntime:
             )
             if not 0 < rating <= 5000 or unit not in ("W", "%"):
                 continue
+            if not emergency and not force:
+                # Rate-limit the *actually dispatched* actuator command, not
+                # the speculative pure-controller target. The latter may be
+                # hundreds of watts after a single short-lived load spike.
+                # A missing numeric baseline cannot authorize an increase.
+                reported = self._float(state.state)
+                if reported is None:
+                    continue
+                baseline_w = reported * rating / 100 if unit == "%" else reported
+                previous_command = self._last_sent.get(entity_id)
+                if previous_command is not None:
+                    previous_w = (
+                        previous_command * rating / 100 if unit == "%" else previous_command
+                    )
+                    baseline_w = min(baseline_w, previous_w)
+                # The nominal 20 W budget is NOT a safe physical step on
+                # Deye microinverters: at 1% the M80 (8 W nominal) made
+                # phase B drop ~73 W in a guarded trial, and the M200 has
+                # shown worse transients. When a percent actuator exposes
+                # fine 0.1%-or-better resolution, advance by only one
+                # reported precision step (0.1pp maximum) at a time.
+                # This is a conservative commissioning limit, NOT proof
+                # that physical output follows the advertised percent.
+                precision = self._float(state.attributes.get("step", 1))
+                positive_step_w = MAX_POSITIVE_COMMAND_STEP_W
+                if unit == "%" and precision is not None and 0 < precision <= 0.1:
+                    positive_step_w = min(positive_step_w, rating * precision / 100)
+                target = min(target, baseline_w + positive_step_w)
             value = target * 100 / rating if unit == "%" else target
             minimum = self._float(state.attributes.get("min", 0))
             maximum = self._float(state.attributes.get("max", 100 if unit == "%" else rating))
@@ -353,6 +552,11 @@ class EMSRuntime:
             value = min(
                 maximum, max(minimum, round(round((value - minimum) / step) * step + minimum, 4))
             )
+            if not emergency and not force:
+                # A coarse device step must not round above the ramp budget.
+                value_w = value * rating / 100 if unit == "%" else value
+                if value_w > baseline_w + positive_step_w + 0.001:
+                    continue
             previous = self._last_sent.get(entity_id)
             if not emergency and not force and self._start_hold.active(entity_id, now):
                 # Sustained negative signed-grid readings still permit reductions.
@@ -380,9 +584,20 @@ class EMSRuntime:
                 continue
             interval = self._minimum_interval(entity_id)
             if previous is not None and not force:
-                if abs(value - previous) < max(
-                    step, MIN_OUTPUT_CHANGE_W * (100 / rating if unit == "%" else 1)
-                ) and not (emergency and reported_value is not None and value < reported_value):
+                # A finely controlled percent actuator needs its 0.1pp
+                # steps to *pass* the old 10 W deadband. The 20-second
+                # increase interval and fresh Modbus/grid acknowledgements
+                # still gate every step; other actuators keep their
+                # existing anti-chatter deadband.
+                fine_percent_increase = unit == "%" and 0 < step <= 0.1 and value > previous
+                min_change = (
+                    step / 2
+                    if fine_percent_increase
+                    else max(step, MIN_OUTPUT_CHANGE_W * (100 / rating if unit == "%" else 1))
+                )
+                if abs(value - previous) < min_change and not (
+                    emergency and reported_value is not None and value < reported_value
+                ):
                     continue
                 elapsed = now - self._sent_at.get(entity_id, 0)
                 # Safety fallback and deliberate shutdown may bypass the normal interval.
@@ -434,9 +649,10 @@ class EMSRuntime:
                 grid_reported_before=grid_before,
             )
 
-    def _verify_shutdown(self, now: float) -> None:
+    async def _verify_shutdown(self, now: float) -> None:
         """Confirm each zero-limit actuator report; never assume service success."""
         failures = []
+        acknowledged = set()
         for entity_id, pending in list(self._shutdown_pending.items()):
             state = self.hass.states.get(entity_id)
             current = self._float(state.state) if state else None
@@ -449,19 +665,43 @@ class EMSRuntime:
                 and isinstance(reported, datetime)
                 and reported > pending.entity_reported_before
                 and abs(current - pending.target) <= max((step or 1) / 2, 0.01)
+                and await self._hardware_feedback_matches(entity_id, pending.target)
             ):
-                self._shutdown_pending.pop(entity_id, None)
+                acknowledged.add(entity_id)
             elif now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
                 failures.append(entity_id)
-        if failures:
+                if entity_id not in self._shutdown_retried:
+                    self._shutdown_retried.add(entity_id)
+                    self._shutdown_pending.pop(entity_id)
+                    self._deferred_shutdown.add(entity_id)
+        if acknowledged:
+            remaining = self._shutdown_obligations - acknowledged
+            if not await self._save_shutdown_obligations(remaining):
+                return
+            self._shutdown_obligations = remaining
+            for entity_id in acknowledged:
+                self._shutdown_pending.pop(entity_id, None)
+            if (
+                not remaining
+                and self.last_error
+                and self.last_error.startswith(
+                    ("Shutdown not acknowledged:", "Cannot persist inverter shutdown obligations:")
+                )
+            ):
+                self.last_error = None
+        if self._deferred_shutdown:
+            self.last_error = "Cannot stop unavailable inverters: " + ", ".join(
+                sorted(self._deferred_shutdown)
+            )
+            self.status = "write_error"
+        elif failures:
             self.last_error = "Shutdown not acknowledged: " + ", ".join(failures)
             self.status = "write_error"
         elif self.last_error is not None:
             self.status = "write_error"
         elif self._shutdown_pending:
             self.status = "shutdown_pending"
-        elif self.status != "write_error":
-            self.last_error = None
+        else:
             self.status = "disabled"
 
     async def async_update(self) -> None:
@@ -485,7 +725,17 @@ class EMSRuntime:
             self.controller.full_hysteresis_pct = float(
                 self.entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
             )
-            if not self.controller.enabled:
+            batteries = self._batteries()
+            reconnected = self._reconnected_inverters(batteries)
+            if reconnected:
+                # Reconnection is a new safety boundary even when a prior
+                # disable was fully acknowledged and its journal is empty.
+                # Persist before dispatch; a storage error must never stop
+                # the best-effort emergency hardware command.
+                self._shutdown_obligations.update(reconnected)
+                self._deferred_shutdown.update(reconnected)
+                await self._save_shutdown_obligations()
+            if not self.controller.enabled or self._shutdown_obligations:
                 if self._deferred_shutdown:
                     recovered = {
                         inverter.key: inverter.minimum_w
@@ -505,7 +755,7 @@ class EMSRuntime:
                             and self.last_error.startswith("Cannot stop unavailable inverters:")
                         ):
                             self.last_error = None
-                self._verify_shutdown(monotonic())
+                await self._verify_shutdown(monotonic())
                 self._publish()
                 return
             if self._deferred_shutdown:
@@ -528,6 +778,21 @@ class EMSRuntime:
                 grid = self._grid_filter.observe(grid, sequence)
             self._grid_filtered_w = grid
             batteries = self._batteries()
+            if self._grid_raw_w is not None and sequence != self._last_raw_grid_sequence:
+                # The 2026-11-04 hardware trace jumped directly from +153 W
+                # to -696 W: do not require an earlier negative meter sample.
+                # A single severe export during startup is an emergency,
+                # bypassing the filter and the normal startup settling hold.
+                self._startup_export_trip |= (
+                    not self.controller.feed_in
+                    and self._grid_raw_w < STARTUP_EXPORT_TRIP_W
+                    and any(
+                        self._start_hold.active(inv.key, now)
+                        for battery in batteries
+                        for inv in battery.inverters
+                    )
+                )
+                self._last_raw_grid_sequence = sequence
             detected_trips = {
                 battery.key
                 for battery in batteries
@@ -558,6 +823,20 @@ class EMSRuntime:
                         "BK215 DC output above 1920 W; manual inspection required: "
                         + ", ".join(sorted(self._overload_latched))
                     )
+                self._publish()
+                return
+            if self._startup_export_trip:
+                safe = {
+                    inv.key: inv.minimum_w
+                    for battery in batteries
+                    for inv in battery.inverters
+                    if inv.online
+                }
+                self.last_error = None
+                await self._apply(safe, now, emergency=True)
+                if self.last_error is None:
+                    self.status = "write_error"
+                    self.last_error = "Excess grid export during startup; switch EMS off to reset"
                 self._publish()
                 return
             missing_dc = sorted(
@@ -608,7 +887,7 @@ class EMSRuntime:
                 self._publish()
                 return
 
-            if not self._feedback_ready(now, sequence):
+            if not await self._feedback_ready(now, sequence):
                 self._publish()
                 return
 
@@ -672,20 +951,23 @@ class EMSRuntime:
             self.controller.enabled = False
             self._grid_filter.reset()
             self._start_hold.reset()
+            self._startup_export_trip = False
+            self._last_raw_grid_sequence = None
             self.controller.pid_hold = False
             self.last_error = None
             self._pending.clear()
             self._shutdown_pending.clear()
+            self._shutdown_retried.clear()
             commands = self.controller.disable(self._batteries())
-            configured = {
-                inverter["entity_id"]
-                for battery in self.entry.data[CONF_BATTERIES]
-                for inverter in battery[CONF_INVERTERS]
-            }
+            configured = self._configured_inverters()
             unreachable = sorted(configured - commands.keys())
-            self._deferred_shutdown.update(unreachable)
+            self._shutdown_obligations.update(configured)
+            self._deferred_shutdown.update(configured)
+            persisted = await self._save_shutdown_obligations()
+            persistence_error = self.last_error if not persisted else None
             await self._apply(commands, monotonic(), emergency=True, force=True)
             self._shutdown_pending = dict(self._pending)
+            self._deferred_shutdown.difference_update(self._shutdown_pending)
             self._pending.clear()
             observed = self._reported_outputs(self._batteries())
             missed = [
@@ -700,6 +982,12 @@ class EMSRuntime:
                     (self.last_error + "; " if self.last_error else "")
                     + "Cannot stop unavailable inverters: "
                     + ", ".join(unreachable)
+                )
+            if persistence_error:
+                self.last_error = (
+                    f"{persistence_error}; {self.last_error}"
+                    if self.last_error and self.last_error != persistence_error
+                    else persistence_error
                 )
             self.status = (
                 "write_error"

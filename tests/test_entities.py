@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -43,6 +44,7 @@ def objects():
         _start_hold=StartHold(seconds=30),
         _grid_raw_w=None,
         _grid_filtered_w=None,
+        async_disable=AsyncMock(),
     )
     changes = []
 
@@ -78,7 +80,13 @@ async def test_negative_manual_disable_updates_persistent_setting(objects, monke
     entry, runtime, changes = objects
     entity = switches.EMSToggle(entry, runtime, "enabled", "EMS control")
     monkeypatch.setattr(entity, "async_write_ha_state", lambda: None)
+
+    async def record_stop():
+        assert entry.options["enabled"] is True
+
+    runtime.async_disable.side_effect = record_stop
     await entity.async_turn_off()
+    runtime.async_disable.assert_awaited_once()
     assert entry.options["enabled"] is False
 
 
