@@ -90,6 +90,9 @@ class EMSRuntime:
         self._shutdown_retried: set[str] = set()
         self._deferred_shutdown: set[str] = set()
         self._shutdown_obligations: set[str] = set()
+        # A previously acknowledged shutdown must be rechecked after a
+        # genuine unavailable -> online transition, not on every off tick.
+        self._offline_inverters: set[str] = set()
         self._shutdown_store: Store[dict[str, list[str]]] = Store(
             hass, 1, f"{DOMAIN}.shutdown.{entry.entry_id}", atomic_writes=True
         )
@@ -414,6 +417,30 @@ class EMSRuntime:
                     reductions[inverter.key] = inverter.minimum_w
         return reductions
 
+    def _reconnected_inverters(self, batteries: tuple[Battery, ...]) -> set[str]:
+        """Detect actual HA availability recovery without policing manual limits.
+
+        Once the user hands a running inverter back to manual control, its
+        later limit changes are left alone. Only a witnessed outage/recovery
+        creates a fresh obligation to re-establish the safe minimum.
+        """
+        offline = {
+            inverter.key
+            for battery in batteries
+            for inverter in battery.inverters
+            if not inverter.online
+        }
+        online = {
+            inverter.key
+            for battery in batteries
+            for inverter in battery.inverters
+            if inverter.online
+        }
+        recovered = self._offline_inverters & online
+        self._offline_inverters.difference_update(recovered)
+        self._offline_inverters.update(offline)
+        return recovered
+
     def _minimum_interval(self, entity_id: str) -> float:
         """Prefer conservative intervals for APsystems flash-based controls."""
         entry = er.async_get(self.hass).async_get(entity_id)
@@ -607,6 +634,16 @@ class EMSRuntime:
             self.controller.full_hysteresis_pct = float(
                 self.entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
             )
+            batteries = self._batteries()
+            reconnected = self._reconnected_inverters(batteries)
+            if reconnected:
+                # Reconnection is a new safety boundary even when a prior
+                # disable was fully acknowledged and its journal is empty.
+                # Persist before dispatch; a storage error must never stop
+                # the best-effort emergency hardware command.
+                self._shutdown_obligations.update(reconnected)
+                self._deferred_shutdown.update(reconnected)
+                await self._save_shutdown_obligations()
             if not self.controller.enabled or self._shutdown_obligations:
                 if self._deferred_shutdown:
                     recovered = {
