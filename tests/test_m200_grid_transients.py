@@ -160,3 +160,75 @@ async def test_direct_severe_export_from_positive_import_trips_during_startup_ho
         call.args[2]["entity_id"] == "number.m200" and call.args[2]["value"] == 0
         for call in hass.services.async_call.await_args_list
     ), "One fresh severe export during startup must immediately request zero"
+
+
+@pytest.mark.asyncio
+async def test_severe_export_when_feed_in_enabled_does_not_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Intentional feed-in must not activate the zero-export startup latch."""
+    hass, entry = configured_runtime()
+    entry.options["feed_in"] = True
+    entry.options["feed_in_mode"] = "pv"
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    runtime._start_hold.record("number.m200", before_w=0, after_w=110, now=1000)
+    meter = hass.states.get("sensor.grid")
+    meter.state = "-695.867"
+    meter.last_reported = datetime.now(UTC) - timedelta(seconds=1)
+
+    await runtime.async_update()
+
+    assert runtime.controller.feed_in is True
+    assert runtime._startup_export_trip is False
+    assert "Excess grid export" not in (runtime.last_error or "")
+
+
+@pytest.mark.asyncio
+async def test_severe_export_outside_start_hold_does_not_latch_startup_fault(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Normal export feedback remains separate from startup-only emergency latch."""
+    hass, entry = configured_runtime()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    monkeypatch.setattr(module, "monotonic", lambda: 1000.0)
+    meter = hass.states.get("sensor.grid")
+    meter.state = "-695.867"
+    meter.last_reported = datetime.now(UTC) - timedelta(seconds=1)
+
+    await runtime.async_update()
+
+    assert runtime._startup_export_trip is False
+    assert "Excess grid export during startup" not in (runtime.last_error or "")
+
+
+@pytest.mark.asyncio
+async def test_changed_raw_value_without_new_meter_report_does_not_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject a stale/synthetic export value without a distinct meter timestamp."""
+    hass, entry = configured_runtime()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    runtime._start_hold.record("number.m200", before_w=0, after_w=110, now=1000)
+    meter = hass.states.get("sensor.grid")
+    stamp = datetime.now(UTC) - timedelta(seconds=1)
+    meter.state = "239.133"
+    meter.last_reported = stamp
+    meter.last_updated = stamp
+
+    await runtime.async_update()
+    assert runtime._startup_export_trip is False
+
+    clock[0] += 5
+    meter.state = "-695.867"
+    # HA has not published an actual fresh meter sample.
+    await runtime.async_update()
+
+    assert runtime._startup_export_trip is False
+    assert "Excess grid export during startup" not in (runtime.last_error or "")
