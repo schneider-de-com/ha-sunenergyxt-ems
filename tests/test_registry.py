@@ -242,3 +242,28 @@ def test_legacy_dc_lookup_requires_matching_device_and_official_unique_id(regist
     assert module.registered_dc_output(hass, "bk2") is None
     values["sensor.changed_dc"].unique_id = "wrong_source_wifi_outputpower_total"
     assert module.registered_dc_output(hass, "bk1") is None
+
+
+def test_solarman_connection_uses_same_device_and_connectivity_class(registry):
+    """A renamed HA connection sensor is linked by device, not entity prefix."""
+    hass, values = registry
+    link = item(
+        "binary_sensor.user_renamed",
+        "solarman_entry_connection_binary_sensor",
+        "inverter",
+        "solarman",
+        "binary_sensor",
+    )
+    link.original_device_class = "connectivity"
+    values[link.entity_id] = link
+    other = item(
+        "binary_sensor.other_link",
+        "other_connection_binary_sensor",
+        "other_device",
+        "solarman",
+        "binary_sensor",
+    )
+    other.original_device_class = "connectivity"
+    values[other.entity_id] = other
+    assert module.registered_connection(hass, "number.changed_inverter") == link.entity_id
+    assert module.registered_connection(hass, "number.unknown_inverter") is None
