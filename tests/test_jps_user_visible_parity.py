@@ -118,14 +118,10 @@ async def test_startup_hold_and_pid_gains_are_native_ha_number_entities():
 async def test_existing_bk215_upper_soc_mapping_can_be_changed_in_options(monkeypatch):
     entry, runtime, _writes = entry_and_runtime()
     handler = config_flow.EMSEntryOptionsFlow()
-    monkeypatch.setattr(
-        config_flow.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry)
-    )
+    monkeypatch.setattr(config_flow.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
     handler.hass = runtime.hass
     form = await handler.async_step_init()
-    fields = {
-        getattr(marker, "schema", str(marker)) for marker in form["data_schema"].schema
-    }
+    fields = {getattr(marker, "schema", str(marker)) for marker in form["data_schema"].schema}
     assert "upper_source_1" in fields
     assert "upper_pct_2" in fields
     result = await handler.async_step_init(
@@ -149,13 +145,23 @@ async def test_one_sensor_each_for_bypass_ev_and_per_inverter_diagnostics(monkey
     runtime.controller.state.ev3600_unknown = set()
     runtime._batteries = lambda: (
         SimpleNamespace(
-            key="bk1", soc=89, upper_soc=90, lower_soc=10, pv_input_w=None,
-            ev3600_charging=False, dc_output_w=0,
+            key="bk1",
+            soc=89,
+            upper_soc=90,
+            lower_soc=10,
+            pv_input_w=None,
+            ev3600_charging=False,
+            dc_output_w=0,
             inverters=(SimpleNamespace(key="number.deye_m200", online=True),),
         ),
         SimpleNamespace(
-            key="bk2", soc=11, upper_soc=90, lower_soc=10, pv_input_w=None,
-            ev3600_charging=False, dc_output_w=0,
+            key="bk2",
+            soc=11,
+            upper_soc=90,
+            lower_soc=10,
+            pv_input_w=None,
+            ev3600_charging=False,
+            dc_output_w=0,
             inverters=(SimpleNamespace(key="number.deye_m80", online=True),),
         ),
     )
