@@ -128,3 +128,36 @@ async def test_measured_startup_export_bypasses_hold(monkeypatch):
     hass.services.async_call.assert_awaited_once()
     assert hass.services.async_call.await_args.args[2]["value"] == 0
     assert "Excess grid export" in (runtime.last_error or "")
+
+
+@pytest.mark.asyncio
+async def test_direct_severe_export_from_positive_import_trips_during_startup_hold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live replay 2026-11-04 12:14: a first severe export must trip immediately.
+
+    A pre-export sample below -30 W is not guaranteed; L1 may swing
+    straight from import into severe export before the next 5 s reading.
+    """
+    hass, entry = configured_runtime()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    hass.states.get("number.m200").state = "5.5"
+    runtime._start_hold.record("number.m200", before_w=0, after_w=110, now=1000)
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    meter = hass.states.get("sensor.grid")
+    base = datetime.now(UTC) - timedelta(seconds=1)
+    for i, watts in enumerate((239.133, 153.136, -695.867)):
+        clock[0] += 5
+        meter.state = str(watts)
+        meter.last_reported = base + timedelta(milliseconds=100 * (i + 1))
+        await runtime.async_update()
+
+    assert runtime._startup_export_trip is True
+    assert "Excess grid export" in (runtime.last_error or "")
+    assert any(
+        call.args[2]["entity_id"] == "number.m200"
+        and call.args[2]["value"] == 0
+        for call in hass.services.async_call.await_args_list
+    ), "One fresh severe export during startup must immediately request zero"
