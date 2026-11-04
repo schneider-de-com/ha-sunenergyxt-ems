@@ -584,9 +584,22 @@ class EMSRuntime:
                 continue
             interval = self._minimum_interval(entity_id)
             if previous is not None and not force:
-                if abs(value - previous) < max(
-                    step, MIN_OUTPUT_CHANGE_W * (100 / rating if unit == "%" else 1)
-                ) and not (emergency and reported_value is not None and value < reported_value):
+                # A finely controlled percent actuator needs its 0.1pp
+                # steps to *pass* the old 10 W deadband. The 20-second
+                # increase interval and fresh Modbus/grid acknowledgements
+                # still gate every step; other actuators keep their
+                # existing anti-chatter deadband.
+                fine_percent_increase = (
+                    unit == "%" and 0 < step <= 0.1 and value > previous
+                )
+                min_change = (
+                    step / 2
+                    if fine_percent_increase
+                    else max(step, MIN_OUTPUT_CHANGE_W * (100 / rating if unit == "%" else 1))
+                )
+                if abs(value - previous) < min_change and not (
+                    emergency and reported_value is not None and value < reported_value
+                ):
                     continue
                 elapsed = now - self._sent_at.get(entity_id, 0)
                 # Safety fallback and deliberate shutdown may bypass the normal interval.
