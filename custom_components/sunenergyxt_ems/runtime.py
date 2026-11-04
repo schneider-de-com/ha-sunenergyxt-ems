@@ -11,11 +11,11 @@ from time import monotonic
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.core import CoreState, Event, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.helpers.storage import Store
 
 from .const import (
@@ -82,6 +82,8 @@ class EMSRuntime:
         self.status = "waiting"
         self.last_error: str | None = None
         self._unsubscribe: Any = None
+        self._unsubscribe_connections: Any = None
+        self._connection_inverters: dict[str, set[str]] = {}
         self._lock = asyncio.Lock()
         self._last_sent: dict[str, float] = {}
         self._sent_at: dict[str, float] = {}
@@ -119,6 +121,18 @@ class EMSRuntime:
         """Start polling. Never send commands using data from a previous run."""
         await self._load_shutdown_obligations()
         self._running = True
+        # A real M80 Solarman outage on 2026-11-03 lasted 4.83 s,
+        # shorter than the 5 s control interval: event capture is required.
+        links: dict[str, set[str]] = {}
+        for inverter in self._configured_inverters():
+            connection = registered_connection(self.hass, inverter)
+            if connection is not None:
+                links.setdefault(connection, set()).add(inverter)
+        self._connection_inverters = links
+        if links:
+            self._unsubscribe_connections = async_track_state_change_event(
+                self.hass, sorted(links), self._on_connection_event
+            )
         self._unsubscribe = async_track_time_interval(
             self.hass,
             self._async_on_interval,
@@ -143,6 +157,20 @@ class EMSRuntime:
             if self._shutdown_obligations:
                 await self._save_shutdown_obligations()
         self._deferred_shutdown = set(self._shutdown_obligations)
+
+    def _on_connection_event(self, event: Event) -> None:
+        """Latch even very short outages; immediately check safe-off on return."""
+        if not self._running:
+            return
+        inverters = self._connection_inverters.get(event.data.get("entity_id"), set())
+        new_state = event.data.get("new_state")
+        if not inverters or new_state is None or new_state.state != "on":
+            self._offline_inverters.update(inverters)
+            return
+        if self._offline_inverters.intersection(inverters):
+            # The number entity can remain online throughout a Solarman
+            # dropout; the next regular polling tick could miss it entirely.
+            self.hass.async_create_task(self.async_update())
 
     def _configured_inverters(self) -> set[str]:
         return {
@@ -179,6 +207,9 @@ class EMSRuntime:
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
+        if self._unsubscribe_connections is not None:
+            self._unsubscribe_connections()
+            self._unsubscribe_connections = None
 
     def _float(self, source: str | float | int | None) -> float | None:
         if isinstance(source, (int, float)):
