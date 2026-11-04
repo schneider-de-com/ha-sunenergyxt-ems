@@ -163,7 +163,17 @@
           "ac_4_1": "Speicher 4, Wechselrichter 1: gemessene AC-Leistung (optional)",
           "ac_4_2": "Speicher 4, Wechselrichter 2: gemessene AC-Leistung (optional)",
           "ac_5_1": "Speicher 5, Wechselrichter 1: gemessene AC-Leistung (optional)",
-          "ac_5_2": "Speicher 5, Wechselrichter 2: gemessene AC-Leistung (optional)"
+          "ac_5_2": "Speicher 5, Wechselrichter 2: gemessene AC-Leistung (optional)",
+          "upper_source_1": "Speicher 1: SoC-Obergrenze (Sensor-/Zahlen-Entität)",
+          "upper_pct_1": "Speicher 1: eigene SoC-Obergrenze (%) – überschreibt die Quelle",
+          "upper_source_2": "Speicher 2: SoC-Obergrenze (Sensor-/Zahlen-Entität)",
+          "upper_pct_2": "Speicher 2: eigene SoC-Obergrenze (%) – überschreibt die Quelle",
+          "upper_source_3": "Speicher 3: SoC-Obergrenze (Sensor-/Zahlen-Entität)",
+          "upper_pct_3": "Speicher 3: eigene SoC-Obergrenze (%) – überschreibt die Quelle",
+          "upper_source_4": "Speicher 4: SoC-Obergrenze (Sensor-/Zahlen-Entität)",
+          "upper_pct_4": "Speicher 4: eigene SoC-Obergrenze (%) – überschreibt die Quelle",
+          "upper_source_5": "Speicher 5: SoC-Obergrenze (Sensor-/Zahlen-Entität)",
+          "upper_pct_5": "Speicher 5: eigene SoC-Obergrenze (%) – überschreibt die Quelle"
         },
         "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
       }
@@ -204,6 +214,41 @@
       },
       "controller_target": {
         "name": "Angefordertes Gesamtlimit"
+      },
+      "startup_hold_remaining": {
+        "name": "Verbleibende Anlaufzeit"
+      },
+      "ev3600_state": {
+        "name": "EV3600-Autoladung",
+        "state": {
+          "not_configured": "Nicht eingerichtet",
+          "idle": "Lädt nicht",
+          "charging": "Lädt",
+          "unavailable": "Nicht verfügbar"
+        }
+      },
+      "bypass_state": {
+        "name": "Vollladungs-Bypass",
+        "state": {
+          "disabled": "Deaktiviert",
+          "household_load": "Haushaltslastmodus",
+          "ems_disabled": "EMS ausgeschaltet",
+          "unavailable": "Nicht verfügbar",
+          "ev3600_charging": "EV3600 lädt",
+          "ev3600_unavailable": "EV3600 nicht verfügbar",
+          "blocked": "Gesperrt",
+          "active": "Aktiv",
+          "waiting_for_upper_soc": "Wartet auf SoC-Obergrenze"
+        }
+      },
+      "inverter_requested": {
+        "name": "Angefordertes Wechselrichterlimit"
+      },
+      "inverter_reported": {
+        "name": "Gemeldetes Wechselrichterlimit"
+      },
+      "inverter_measured_ac": {
+        "name": "Gemessene Wechselrichter-AC-Leistung"
       }
     },
     "switch": {
@@ -212,6 +257,29 @@
       },
       "feed_in": {
         "name": "Einspeisung nach Vollladung"
+      },
+      "adaptive_pid": {
+        "name": "Adaptiver PID-Regler"
+      }
+    },
+    "number": {
+      "start_hold_seconds": {
+        "name": "Anlaufverzögerung"
+      },
+      "pid_kp_min": {
+        "name": "PID Kp bei geringer Netzabweichung"
+      },
+      "pid_kp_max": {
+        "name": "PID Kp bei großer Netzabweichung"
+      },
+      "pid_kp_export": {
+        "name": "PID Kp bei Einspeisung"
+      },
+      "pid_ki": {
+        "name": "PID Ki Integralverstärkung"
+      },
+      "pid_kd": {
+        "name": "PID Kd Differentialverstärkung"
       }
     }
   }
