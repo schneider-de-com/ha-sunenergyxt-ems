@@ -16,6 +16,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_BATTERIES,
@@ -84,6 +85,10 @@ class EMSRuntime:
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
         self._deferred_shutdown: set[str] = set()
+        self._shutdown_obligations: set[str] = set()
+        self._shutdown_store: Store[dict[str, list[str]]] = Store(
+            hass, 1, f"{DOMAIN}.shutdown.{entry.entry_id}"
+        )
         self._overload_latched: set[str] = set(entry.options.get(CONF_DC_TRIPPED, ()))
         self._dc_monitored: dict[str, str] = {}
         self._last_processed_grid: datetime | None = None
@@ -103,6 +108,7 @@ class EMSRuntime:
 
     async def async_start(self) -> None:
         """Start polling. Never send commands using data from a previous run."""
+        await self._load_shutdown_obligations()
         self._running = True
         self._unsubscribe = async_track_time_interval(
             self.hass,
@@ -110,6 +116,26 @@ class EMSRuntime:
             UPDATE_PERIOD,
         )
         await self.async_update()
+
+    async def _load_shutdown_obligations(self) -> None:
+        """Recover unacknowledged shutdowns without assuming an old command succeeded."""
+        saved = await self._shutdown_store.async_load()
+        if saved:
+            self._shutdown_obligations = set(saved.get("pending", ()))
+            self._deferred_shutdown = set(self._shutdown_obligations)
+
+    async def _save_shutdown_obligations(self, pending: set[str] | None = None) -> bool:
+        """Persist before sending, and remove only after fresh acknowledgement."""
+        try:
+            await self._shutdown_store.async_save(
+                {"pending": sorted(self._shutdown_obligations if pending is None else pending)}
+            )
+        except (OSError, HomeAssistantError) as exc:
+            self.last_error = f"Cannot persist inverter shutdown obligations: {exc}"
+            self.status = "write_error"
+            _LOGGER.error("%s", self.last_error)
+            return False
+        return True
 
     async def _async_on_interval(self, _now: datetime) -> None:
         """Run scheduled updates in Home Assistant's event loop, never its executor."""
@@ -434,9 +460,10 @@ class EMSRuntime:
                 grid_reported_before=grid_before,
             )
 
-    def _verify_shutdown(self, now: float) -> None:
+    async def _verify_shutdown(self, now: float) -> None:
         """Confirm each zero-limit actuator report; never assume service success."""
         failures = []
+        acknowledged = set()
         for entity_id, pending in list(self._shutdown_pending.items()):
             state = self.hass.states.get(entity_id)
             current = self._float(state.state) if state else None
@@ -450,10 +477,26 @@ class EMSRuntime:
                 and reported > pending.entity_reported_before
                 and abs(current - pending.target) <= max((step or 1) / 2, 0.01)
             ):
-                self._shutdown_pending.pop(entity_id, None)
+                acknowledged.add(entity_id)
             elif now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
                 failures.append(entity_id)
-        if failures:
+        if acknowledged:
+            remaining = self._shutdown_obligations - acknowledged
+            if not await self._save_shutdown_obligations(remaining):
+                return
+            self._shutdown_obligations = remaining
+            for entity_id in acknowledged:
+                self._shutdown_pending.pop(entity_id, None)
+            if not remaining and self.last_error and self.last_error.startswith(
+                ("Shutdown not acknowledged:", "Cannot persist inverter shutdown obligations:")
+            ):
+                self.last_error = None
+        if self._deferred_shutdown:
+            self.last_error = "Cannot stop unavailable inverters: " + ", ".join(
+                sorted(self._deferred_shutdown)
+            )
+            self.status = "write_error"
+        elif failures:
             self.last_error = "Shutdown not acknowledged: " + ", ".join(failures)
             self.status = "write_error"
         elif self.last_error is not None:
@@ -485,7 +528,7 @@ class EMSRuntime:
             self.controller.full_hysteresis_pct = float(
                 self.entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
             )
-            if not self.controller.enabled:
+            if not self.controller.enabled or self._shutdown_obligations:
                 if self._deferred_shutdown:
                     recovered = {
                         inverter.key: inverter.minimum_w
@@ -505,7 +548,7 @@ class EMSRuntime:
                             and self.last_error.startswith("Cannot stop unavailable inverters:")
                         ):
                             self.last_error = None
-                self._verify_shutdown(monotonic())
+                await self._verify_shutdown(monotonic())
                 self._publish()
                 return
             if self._deferred_shutdown:
@@ -683,9 +726,13 @@ class EMSRuntime:
                 for inverter in battery[CONF_INVERTERS]
             }
             unreachable = sorted(configured - commands.keys())
-            self._deferred_shutdown.update(unreachable)
+            self._shutdown_obligations.update(configured)
+            self._deferred_shutdown.update(configured)
+            persisted = await self._save_shutdown_obligations()
+            persistence_error = self.last_error if not persisted else None
             await self._apply(commands, monotonic(), emergency=True, force=True)
             self._shutdown_pending = dict(self._pending)
+            self._deferred_shutdown.difference_update(self._shutdown_pending)
             self._pending.clear()
             observed = self._reported_outputs(self._batteries())
             missed = [
@@ -700,6 +747,12 @@ class EMSRuntime:
                     (self.last_error + "; " if self.last_error else "")
                     + "Cannot stop unavailable inverters: "
                     + ", ".join(unreachable)
+                )
+            if persistence_error:
+                self.last_error = (
+                    f"{persistence_error}; {self.last_error}"
+                    if self.last_error and self.last_error != persistence_error
+                    else persistence_error
                 )
             self.status = (
                 "write_error"
