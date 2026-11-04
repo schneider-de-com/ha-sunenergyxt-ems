@@ -103,7 +103,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           path = Path("custom_components/sunenergyxt_ems/runtime.py")
-          old = "if not self._feedback_ready(now, sequence):"
+          old = "if not await self._feedback_ready(now, sequence):"
           content = path.read_text()
           assert content.count(old) == 1, "Cannot locate intended mutation"
           path.write_text(content.replace(old, "if False:", 1))
