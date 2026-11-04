@@ -262,7 +262,15 @@ async def test_ack_and_new_grid_sample_allow_next_bounded_command(
     hass.states.get("number.inverter").last_reported = datetime.now(UTC) + timedelta(milliseconds=1)
     # The Shelly meter also reports a newer observation, after the write.
     hass.states.get("sensor.grid").last_reported = datetime.now(UTC) + timedelta(milliseconds=2)
-    clock[0] += 21.0  # 5 s settling and 20 s Deye increase interval have elapsed
+    clock[0] += 21.0  # Feedback is ready but the new 30 s startup hold is not.
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 1
+    assert runtime._start_hold.active("number.inverter", clock[0])
+
+    # A newer meter reading after the hold and the acknowledged actuator update
+    # must allow the next bounded correction; old observations may not be reused.
+    clock[0] += 11.0
+    hass.states.get("sensor.grid").last_reported = datetime.now(UTC) + timedelta(milliseconds=3)
     await runtime.async_update()
 
     assert hass.services.async_call.await_count == 2
