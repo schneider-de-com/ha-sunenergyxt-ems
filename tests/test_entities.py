@@ -9,6 +9,7 @@ import pytest
 pytest.importorskip("homeassistant")
 from custom_components.sunenergyxt_ems import sensor as sensors  # noqa: E402
 from custom_components.sunenergyxt_ems import switch as switches  # noqa: E402
+from custom_components.sunenergyxt_ems.logic import Controller, StartHold  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +35,14 @@ def objects():
         status="waiting",
         last_error=None,
         signal="ems_updated",
+        controller=Controller(),
+        _last_sent={},
+        _pending={},
+        _shutdown_pending={},
+        _deferred_shutdown=set(),
+        _start_hold=StartHold(seconds=30),
+        _grid_raw_w=None,
+        _grid_filtered_w=None,
     )
     changes = []
 
@@ -79,7 +88,12 @@ def test_positive_status_sensor_reports_waiting_and_running(objects):
     assert entity.native_value == "waiting"
     runtime.status = "running"
     assert entity.native_value == "running"
-    assert entity.extra_state_attributes is None
+    diagnostics = entity.extra_state_attributes
+    assert diagnostics["last_error"] is None
+    assert diagnostics["control_mode"] == "proportional"
+    assert diagnostics["requested_total_w"] == 0
+    assert diagnostics["pending_actuator_reads"] == []
+    assert diagnostics["pending_shutdown_reads"] == []
 
 
 def test_negative_status_sensor_exposes_write_failure(objects):
@@ -88,7 +102,10 @@ def test_negative_status_sensor_exposes_write_failure(objects):
     runtime.last_error = "number.inverter: unavailable"
     entity = sensors.EMSStatus(entry, runtime)
     assert entity.native_value == "write_error"
-    assert entity.extra_state_attributes == {"last_error": "number.inverter: unavailable"}
+    diagnostics = entity.extra_state_attributes
+    assert diagnostics["last_error"] == "number.inverter: unavailable"
+    assert diagnostics["control_mode"] == "proportional"
+    assert diagnostics["pending_actuator_reads"] == []
 
 
 @pytest.mark.asyncio
@@ -107,8 +124,12 @@ async def test_positive_sensor_setup_creates_status(objects):
     hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     created = []
     await sensors.async_setup_entry(hass, entry, created.extend)
-    assert len(created) == 1
+    assert len(created) == 1 + len(sensors.PID_VALUES)
     assert created[0].unique_id == "ems-entry_status"
+    assert {entity.unique_id for entity in created[1:]} == {
+        f"ems-entry_{key}" for key, _ in sensors.PID_VALUES
+    }
+    assert all(isinstance(entity, sensors.EMSControlValue) for entity in created[1:])
 
 
 @pytest.mark.asyncio
@@ -162,7 +183,14 @@ async def test_batteries_have_separate_visible_status_entities(objects):
     }
     runtime.controller = SimpleNamespace(
         enabled=True,
-        state=SimpleNamespace(main="bk1", support="bk2", blocked=set(), outputs={}),
+        state=SimpleNamespace(
+            main="bk1",
+            support="bk2",
+            blocked=set(),
+            outputs={},
+            ev3600_active=set(),
+            ev3600_unknown=set(),
+        ),
     )
     runtime._batteries = lambda: (
         SimpleNamespace(
@@ -171,6 +199,8 @@ async def test_batteries_have_separate_visible_status_entities(objects):
             lower_soc=10,
             upper_soc=100,
             inverters=(SimpleNamespace(key="number.one", online=True),),
+            pv_input_w=None,
+            ev3600_charging=False,
         ),
         SimpleNamespace(
             key="bk2",
@@ -178,21 +208,27 @@ async def test_batteries_have_separate_visible_status_entities(objects):
             lower_soc=10,
             upper_soc=100,
             inverters=(SimpleNamespace(key="number.two", online=True),),
+            pv_input_w=None,
+            ev3600_charging=False,
         ),
     )
+    runtime._dc_monitored = {}
+    runtime._reported_outputs = lambda batteries: {}
+    runtime.entry = entry
     runtime.hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     added = []
     await sensors.async_setup_entry(runtime.hass, entry, added.extend)
-    assert len(added) == 3
-    assert {entity.unique_id for entity in added} == {
-        "ems-entry_status",
-        "ems-entry_battery_bk1",
-        "ems-entry_battery_bk2",
-    }
-    assert added[1].native_value == "main"
-    assert added[2].native_value == "support"
-    assert added[1].device_info["identifiers"] != added[2].device_info["identifiers"]
-    assert added[1].extra_state_attributes["soc_pct"] == 75
+    assert len(added) == 3 + len(sensors.PID_VALUES)
+    by_id = {entity.unique_id: entity for entity in added}
+    assert {"ems-entry_status", "ems-entry_battery_bk1", "ems-entry_battery_bk2"} <= set(by_id)
+    main = by_id["ems-entry_battery_bk1"]
+    support = by_id["ems-entry_battery_bk2"]
+    assert main.native_value == "main"
+    assert support.native_value == "support"
+    assert main.device_info["identifiers"] != support.device_info["identifiers"]
+    assert main.extra_state_attributes["soc_pct"] == 75
+    assert main.extra_state_attributes["reported_limit_w"] == {}
+    assert main.extra_state_attributes["measured_inverter_ac_w"] == {}
 
 
 def test_unavailable_battery_has_independent_status(objects):
