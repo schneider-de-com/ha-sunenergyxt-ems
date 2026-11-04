@@ -308,7 +308,50 @@ class EMSRuntime:
                     observed[inverter.key] = power_w
         return observed
 
-    def _feedback_ready(self, now: float, grid_seq: datetime | None) -> bool:
+    async def _hardware_feedback_matches(self, entity_id: str, target: float) -> bool:
+        """Verify a Solarman limit by a fresh device register read, not an optimistic HA state.
+
+        Only the explicitly identified deye_micro_53 profile is supported:
+        both connected M200/M80 were checked on 2026-11-04 (1% -> 100,
+        0% -> 0 at register 53). Unknown Solarman profiles fail closed.
+        Non-Solarman platforms retain their existing HA-entity feedback.
+        """
+        registered = er.async_get(self.hass).async_get(entity_id)
+        if registered is None or registered.platform != "solarman":
+            return True
+        if not registered.config_entry_id or not registered.device_id:
+            return False
+        source_entry = self.hass.config_entries.async_get_entry(registered.config_entry_id)
+        if (
+            source_entry is None
+            or source_entry.options.get("lookup_file") != "deye_micro_53.yaml"
+        ):
+            return False
+        state = self.hass.states.get(entity_id)
+        if state is None or state.attributes.get("unit_of_measurement") != "%":
+            return False
+        try:
+            # Solarman's number.write() publishes the requested state without a
+            # fresh register read. This read service executes a new Modbus
+            # READ_HOLDING_REGISTERS request, independent of the optimistic state.
+            response = await self.hass.services.async_call(
+                "solarman",
+                "read_holding_registers",
+                {"device": registered.device_id, "address": 53, "count": 1},
+                blocking=True,
+                return_response=True,
+            )
+        except (HomeAssistantError, TimeoutError, OSError, ValueError) as exc:
+            _LOGGER.debug("Cannot verify %s with Solarman register 53: %s", entity_id, exc)
+            return False
+        if not isinstance(response, dict):
+            return False
+        raw = self._float(response.get("53", response.get(53)))
+        # The installed profile encodes percentages as 100 register units per 1%.
+        # This conversion is profile-specific, not a universal Deye or Modbus rule.
+        return raw is not None and abs(raw / 100.0 - target) <= 0.05
+
+    async def _feedback_ready(self, now: float, grid_seq: datetime | None) -> bool:
         """Wait for a changed reported limit and a later, settled meter sample."""
         if not self._pending:
             return True
@@ -325,6 +368,8 @@ class EMSRuntime:
                 and reported > pending.entity_reported_before
                 and abs(current - pending.target) <= max((step or 1) / 2, 0.01)
             )
+            if confirmed:
+                confirmed = await self._hardware_feedback_matches(entity_id, pending.target)
             if not confirmed:
                 if now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
                     self.status = "write_error"
@@ -503,6 +548,7 @@ class EMSRuntime:
                 and isinstance(reported, datetime)
                 and reported > pending.entity_reported_before
                 and abs(current - pending.target) <= max((step or 1) / 2, 0.01)
+                and await self._hardware_feedback_matches(entity_id, pending.target)
             ):
                 acknowledged.add(entity_id)
             elif now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
