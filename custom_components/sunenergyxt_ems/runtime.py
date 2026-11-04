@@ -529,7 +529,19 @@ class EMSRuntime:
                         previous_command * rating / 100 if unit == "%" else previous_command
                     )
                     baseline_w = min(baseline_w, previous_w)
-                target = min(target, baseline_w + MAX_POSITIVE_COMMAND_STEP_W)
+                # The nominal 20 W budget is NOT a safe physical step on
+                # Deye microinverters: at 1% the M80 (8 W nominal) made
+                # phase B drop ~73 W in a guarded trial, and the M200 has
+                # shown worse transients. When a percent actuator exposes
+                # fine 0.1%-or-better resolution, advance by only one
+                # reported precision step (0.1pp maximum) at a time.
+                # This is a conservative commissioning limit, NOT proof
+                # that physical output follows the advertised percent.
+                precision = self._float(state.attributes.get("step", 1))
+                positive_step_w = MAX_POSITIVE_COMMAND_STEP_W
+                if unit == "%" and precision is not None and 0 < precision <= 0.1:
+                    positive_step_w = min(positive_step_w, rating * precision / 100)
+                target = min(target, baseline_w + positive_step_w)
             value = target * 100 / rating if unit == "%" else target
             minimum = self._float(state.attributes.get("min", 0))
             maximum = self._float(state.attributes.get("max", 100 if unit == "%" else rating))
@@ -543,7 +555,7 @@ class EMSRuntime:
             if not emergency and not force:
                 # A coarse device step must not round above the ramp budget.
                 value_w = value * rating / 100 if unit == "%" else value
-                if value_w > baseline_w + MAX_POSITIVE_COMMAND_STEP_W + 0.001:
+                if value_w > baseline_w + positive_step_w + 0.001:
                     continue
             previous = self._last_sent.get(entity_id)
             if not emergency and not force and self._start_hold.active(entity_id, now):
