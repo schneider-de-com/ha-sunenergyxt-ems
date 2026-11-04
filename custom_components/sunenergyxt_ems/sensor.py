@@ -142,7 +142,10 @@ class EMSControlValue(SensorEntity):
     @property
     def native_value(self) -> float | None:
         if not self._runtime.controller.enabled and self._field in (
-            "raw_grid_w", "effective_grid_w", "pid_error_w", "target_w"
+            "raw_grid_w",
+            "effective_grid_w",
+            "pid_error_w",
+            "target_w",
         ):
             # A previous signed meter sample is not a live observation.
             return None
