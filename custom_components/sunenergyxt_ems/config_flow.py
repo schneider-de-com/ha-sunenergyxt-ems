@@ -431,7 +431,9 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             for index, battery in enumerate(existing, start=1):
                 old = battery.get(CONF_UPPER)
                 source = requested.pop(f"upper_source_{index}", None)
-                percent = requested.pop(f"upper_pct_{index}", None)
+                percent = requested.pop(
+                    f"upper_pct_{index}", requested.pop(f"upper_{index}", None)
+                )
                 changed_source = bool(source) and source != old
                 changed_percent = percent is not None and (
                     not isinstance(old, (int, float)) or float(percent) != float(old)
@@ -629,9 +631,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             upper = battery.get(CONF_UPPER)
             source = upper if isinstance(upper, str) else None
             fields[
-                vol.Optional(
-                    f"upper_source_{index}", **({"default": source} if source else {})
-                )
+                vol.Optional(f"upper_source_{index}", **({"default": source} if source else {}))
             ] = selector.EntitySelector(
                 selector.EntitySelectorConfig(domain=["number", "sensor", "input_number"])
             )
