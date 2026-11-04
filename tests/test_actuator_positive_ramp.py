@@ -150,3 +150,36 @@ async def test_zero_to_zero_does_not_send_fake_pending_command() -> None:
 
     hass.services.async_call.assert_not_awaited()
     assert not runtime._pending
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reported,confirmed,expected",
+    [
+        ("2.29", True, 2.4),
+        ("2.29", False, None),
+        ("2.24", True, None),
+        ("2.39", True, 2.4),
+    ],
+)
+async def test_fine_ramp_after_off_grid_readback(
+    reported: str, confirmed: bool, expected: float | None
+) -> None:
+    """A confirmed 2.3% command must progress by one step after 2.29% feedback."""
+    runtime, hass = runtime_pair()
+    entity_id = "number.m200"
+    runtime._last_sent[entity_id] = 2.3
+    runtime._sent_at[entity_id] = 900.0
+    hass.states.get(entity_id).state = reported
+    runtime._hardware_feedback_matches = AsyncMock(return_value=confirmed)
+
+    await runtime._apply({entity_id: 520}, now=1000)
+
+    if expected is None:
+        hass.services.async_call.assert_not_awaited()
+    else:
+        assert hass.services.async_call.await_args_list
+        assert hass.services.async_call.await_args.args[2] == {
+            "entity_id": entity_id,
+            "value": expected,
+        }
