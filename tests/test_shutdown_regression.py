@@ -382,3 +382,62 @@ async def test_confirmed_disabled_handover_does_not_override_manual_limit():
     await runtime.async_update()
     hass.services.async_call.assert_not_awaited()
     assert runtime.status == "disabled"
+
+
+@pytest.mark.asyncio
+async def test_offline_then_reconnected_after_confirmed_handover_reissues_safe_zero() -> None:
+    """A cleared shutdown journal must not hide a subsequent device reconnect."""
+    hass, entry = configured_two_bk215()
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    await runtime._shutdown_store.async_save({"pending": []})
+    await runtime._load_shutdown_obligations()
+    runtime._running = True
+
+    # A deliberate manual setting while EMS is off is not overwritten.
+    await runtime.async_update()
+    hass.services.async_call.assert_not_awaited()
+    assert runtime.status == "disabled"
+
+    m80 = hass.states.get("number.m80")
+    m80.state = "unavailable"
+    await runtime.async_update()
+    hass.services.async_call.assert_not_awaited()
+
+    # A freshly reconnected inverter can restore its previous 100% setting.
+    m80.state = "100"
+    m80.last_reported += timedelta(seconds=1)
+    await runtime.async_update()
+
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert any(
+        command["entity_id"] == "number.m80" and command["value"] == 0
+        for command in commands
+    ), "Reconnection must initiate a fresh, verified emergency minimum"
+    assert "number.m80" in runtime._shutdown_obligations
+    assert runtime.status == "shutdown_pending"
+
+
+@pytest.mark.asyncio
+async def test_reconnect_reissues_zero_even_if_optimistic_entity_reports_zero() -> None:
+    """A 0% entity value is not proof of a safe physical Solarman register."""
+    hass, entry = configured_two_bk215()
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    await runtime._shutdown_store.async_save({"pending": []})
+    await runtime._load_shutdown_obligations()
+    runtime._running = True
+
+    await runtime.async_update()
+    m80 = hass.states.get("number.m80")
+    m80.state = "unavailable"
+    await runtime.async_update()
+    m80.state = "0"
+    m80.last_reported += timedelta(seconds=1)
+    await runtime.async_update()
+
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert any(
+        command["entity_id"] == "number.m80" and command["value"] == 0
+        for command in commands
+    ), "Reconnect requires a new write/readback even with optimistic 0%"
