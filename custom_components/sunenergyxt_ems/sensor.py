@@ -57,13 +57,14 @@ async def async_setup_entry(
         key = record["device_id"]
         name = record.get("label", "BK215")
         for kind in ("ev3600_state", "bypass_state"):
-            entities.append(BatteryModeStatus(entry, runtime, key, name, controller_device.id, kind))
+            entities.append(
+                BatteryModeStatus(entry, runtime, key, name, controller_device.id, kind)
+            )
         for inverter in record.get("inverters", ()):
             for kind in ("requested", "reported", "measured_ac"):
                 entities.append(
                     InverterLimitValue(
-                        entry, runtime, key, name, controller_device.id,
-                        inverter["entity_id"], kind
+                        entry, runtime, key, name, controller_device.id, inverter["entity_id"], kind
                     )
                 )
     async_add_entities(entities)
@@ -272,8 +273,10 @@ class EMSStartupHoldRemaining(SensorEntity):
     def native_value(self) -> float:
         now = monotonic()
         return round(
-            max((self._runtime._start_hold.remaining(key, now)
-                 for key in self._runtime._last_sent), default=0.0),
+            max(
+                (self._runtime._start_hold.remaining(key, now) for key in self._runtime._last_sent),
+                default=0.0,
+            ),
             1,
         )
 
@@ -363,9 +366,7 @@ class BatteryModeStatus(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
-        battery = next(
-            (b for b in self._runtime._batteries() if b.key == self._device_id), None
-        )
+        battery = next((b for b in self._runtime._batteries() if b.key == self._device_id), None)
         return {
             "upper_limit_pct": battery.upper_soc if battery else None,
             "current_soc_pct": battery.soc if battery else None,
@@ -440,7 +441,9 @@ class InverterLimitValue(SensorEntity):
             "value_type": self._kind,
             "measured_ac_source": self._runtime.entry.options.get("ac_power", {}).get(
                 self._inverter_entity_id
-            ) if self._kind == "measured_ac" else None,
+            )
+            if self._kind == "measured_ac"
+            else None,
         }
 
     async def async_added_to_hass(self) -> None:
