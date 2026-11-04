@@ -51,6 +51,9 @@ MAX_BK215_DC_W = 1920.0
 MIN_OUTPUT_CHANGE_W = 10.0
 FEEDBACK_SETTLE_SECONDS = 5.0
 FEEDBACK_TIMEOUT_SECONDS = 30.0
+# Conservative software-only export emergency threshold, based on the
+# 2026-11-04 supervised -203 W / -696 W hardware events. Not a device rating.
+STARTUP_EXPORT_TRIP_W = -200.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +100,6 @@ class EMSRuntime:
         self._grid_raw_w: float | None = None
         self._grid_filtered_w: float | None = None
         self._last_raw_grid_sequence: datetime | None = None
-        self._previous_raw_grid_w: float | None = None
         self._startup_export_trip = False
         self._start_hold = StartHold(seconds=30.0)
         self._running = False
@@ -648,24 +650,20 @@ class EMSRuntime:
                 grid = self._grid_filter.observe(grid, sequence)
             self._grid_filtered_w = grid
             batteries = self._batteries()
-            if self._grid_raw_w is None:
-                self._previous_raw_grid_w = None
-            elif sequence != self._last_raw_grid_sequence:
-                # A single meter spike must not stop a starting inverter. Two
-                # distinct export samples, the second exceeding the supervised
-                # test's 250 W cutoff, must bypass filtering and startup hold.
+            if self._grid_raw_w is not None and sequence != self._last_raw_grid_sequence:
+                # The 2026-11-04 hardware trace jumped directly from +153 W
+                # to -696 W: do not require an earlier negative meter sample.
+                # A single severe export during startup is an emergency,
+                # bypassing the filter and the normal startup settling hold.
                 self._startup_export_trip |= (
                     not self.controller.feed_in
-                    and self._previous_raw_grid_w is not None
-                    and self._previous_raw_grid_w < -30
-                    and self._grid_raw_w < -250
+                    and self._grid_raw_w < STARTUP_EXPORT_TRIP_W
                     and any(
                         self._start_hold.active(inv.key, now)
                         for battery in batteries
                         for inv in battery.inverters
                     )
                 )
-                self._previous_raw_grid_w = self._grid_raw_w
                 self._last_raw_grid_sequence = sequence
             detected_trips = {
                 battery.key
@@ -826,7 +824,6 @@ class EMSRuntime:
             self._grid_filter.reset()
             self._start_hold.reset()
             self._startup_export_trip = False
-            self._previous_raw_grid_w = None
             self._last_raw_grid_sequence = None
             self.controller.pid_hold = False
             self.last_error = None
