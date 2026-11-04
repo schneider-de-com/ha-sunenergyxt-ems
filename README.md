@@ -1,6 +1,6 @@
 # SunEnergyXT EMS for Home Assistant
 
-> **Experimental MVP beta 0.1.0b5. Not hardware-validated; not approved for unattended inverter control.**
+> **Experimental MVP beta 0.1.0b6. Not hardware-validated; not approved for unattended inverter control.**
 >
 > Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
@@ -34,7 +34,7 @@ It does **not** speak directly to batteries or inverters.
 > This is a custom repository, not a default Marketplace catalog entry.
 
 1. On **Home Assistant 2026.11 or later**, go to **Settings → Marketplace**. Earlier versions (including 2026.10.4) use **HACS**.
-2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.0b5` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
+2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.0b6` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
 3. Install **SunEnergyXT EMS** from the Marketplace or HACS. Restart Home Assistant if requested. Adding files does not start inverter control.
 4. Ensure your inverter controls and grid meter are ready before setup.
 5. For a live setup: **turn off all existing automations writing to the selected inverter power-limit entities before completing the EMS config flow.** Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
@@ -42,7 +42,19 @@ It does **not** speak directly to batteries or inverters.
 
 **Important:** Completing the config flow starts the EMS automatically when current, valid measurements exist. There is no read-only simulation mode in the MVP. **Do not complete the flow while another controller is active.** Only one controller may write any inverter's power limit.
 
-The integration exposes a global EMS switch, optional feed-in switch, global status sensor and individual BK215 status devices. Use **Configure** to change operating settings and **Reconfigure** to change assigned batteries, inverters and grid meter.
+### Where to find the JPS-derived features
+
+In **Settings → Devices & services → Integrations → SunEnergyXT EMS**, open the **SunEnergyXT EMS** controller device:
+
+- **Switches:** EMS on/off, feed-in after full charge, and **Adaptive PID**. New/old installations keep existing PID setting; **EMS remains OFF unless you explicitly switch it on**.
+- **Number controls:** startup hold (default 30 seconds), variable PID Kp min/max/export, Ki and Kd; they persist through Home Assistant and use the same bounds as Configure.
+- **Sensors:** live signed grid raw/filtered power, error, PID P/I/D, requested total, and **startup hold remaining**. When EMS is off, past signed grid readings are not displayed as live values.
+
+Each detected **BK215 (EMS)** child device has its own **EV3600 auto-charge** and **full-charge bypass** state sensors. The per-inverter requested limit, reported HA power limit and actual measured AC power are *separate* sensors. AC is unknown until a fresh AC-power entity is selected: a reported Deye limit is **never** measured power.
+
+Use **Configure** to select the EV3600 mode switch + charging-power sensor **as a pair** for the relevant battery, an optional fresh PV input and an independently measured AC source. An unconfigured EV3600 state shows **Not configured**, not a false 'not charging' confirmation. Existing charge SoC mappings can now be corrected using **Battery N: upper SoC source** or an explicit **Battery N: upper SoC (%)**. An explicit numeric override takes precedence over an unchanged existing source; choosing a different source takes precedence over the previous numeric default. **Changing the EMS upper mapping does not change the BK215 hardware charging ceiling.** Do not configure a threshold the battery cannot reach. Feed-in remains OFF by default and may export stored energy.
+
+Use **Reconfigure** to change assigned batteries, inverters and the shared grid meter.
 
 The new Marketplace uses the same `hacs.json` and GitHub release layout as HACS. The integration is **not yet published to the default catalog**.
 
@@ -67,4 +79,4 @@ Every commit should reference its relevant issue.
 
 [Apache License 2.0](LICENSE).
 
-Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.0b5.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.
+Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.0b6.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.

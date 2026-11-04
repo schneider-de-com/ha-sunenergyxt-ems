@@ -720,6 +720,11 @@ class EMSRuntime:
             bool(self.entry.options.get(CONF_FEED_IN, False))
             and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
         )
+        adaptive = bool(self.entry.options.get("adaptive_pid", False))
+        if adaptive != self.controller.adaptive_pid:
+            self.controller.adaptive_pid = adaptive
+            self.controller._reset_pid()
+        self._start_hold.seconds = float(self.entry.options.get("start_hold_seconds", 30.0))
         if not enabled and self.controller.enabled:
             await self.async_disable()
         elif enabled and not self.controller.enabled:

@@ -19,7 +19,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     runtime = EMSRuntime(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
-    await hass.config_entries.async_forward_entry_setups(entry, (Platform.SENSOR, Platform.SWITCH))
+    await hass.config_entries.async_forward_entry_setups(
+        entry, (Platform.SENSOR, Platform.SWITCH, Platform.NUMBER)
+    )
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await runtime.async_start()
     return True
@@ -33,14 +35,14 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Remove callbacks and sensor/switch platforms."""
+    """Remove callbacks and native entity platforms."""
     from homeassistant.const import Platform
 
     runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if runtime is not None:
         await runtime.async_stop()
     result = await hass.config_entries.async_unload_platforms(
-        entry, (Platform.SENSOR, Platform.SWITCH)
+        entry, (Platform.SENSOR, Platform.SWITCH, Platform.NUMBER)
     )
     if result:
         hass.data[DOMAIN].pop(entry.entry_id, None)

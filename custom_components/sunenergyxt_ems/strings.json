@@ -163,7 +163,17 @@
           "ac_4_1": "Battery 4, inverter 1: measured AC watts (optional)",
           "ac_4_2": "Battery 4, inverter 2: measured AC watts (optional)",
           "ac_5_1": "Battery 5, inverter 1: measured AC watts (optional)",
-          "ac_5_2": "Battery 5, inverter 2: measured AC watts (optional)"
+          "ac_5_2": "Battery 5, inverter 2: measured AC watts (optional)",
+          "upper_source_1": "Battery 1: upper SoC threshold (sensor/number entity)",
+          "upper_pct_1": "Battery 1: explicit upper SoC threshold (%) – overrides source",
+          "upper_source_2": "Battery 2: upper SoC threshold (sensor/number entity)",
+          "upper_pct_2": "Battery 2: explicit upper SoC threshold (%) – overrides source",
+          "upper_source_3": "Battery 3: upper SoC threshold (sensor/number entity)",
+          "upper_pct_3": "Battery 3: explicit upper SoC threshold (%) – overrides source",
+          "upper_source_4": "Battery 4: upper SoC threshold (sensor/number entity)",
+          "upper_pct_4": "Battery 4: explicit upper SoC threshold (%) – overrides source",
+          "upper_source_5": "Battery 5: upper SoC threshold (sensor/number entity)",
+          "upper_pct_5": "Battery 5: explicit upper SoC threshold (%) – overrides source"
         },
         "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. The displayed SoC hysteresis is an EMS software choice, not a universal manufacturer value. Leave feed-in off until hardware-tested."
       }
@@ -204,6 +214,41 @@
       },
       "controller_target": {
         "name": "Requested total inverter limit"
+      },
+      "startup_hold_remaining": {
+        "name": "Startup hold remaining"
+      },
+      "ev3600_state": {
+        "name": "EV3600 auto-charge status",
+        "state": {
+          "not_configured": "Not configured",
+          "idle": "Not charging",
+          "charging": "Charging",
+          "unavailable": "Unavailable"
+        }
+      },
+      "bypass_state": {
+        "name": "Full-charge bypass status",
+        "state": {
+          "disabled": "Disabled",
+          "household_load": "Household-load mode",
+          "ems_disabled": "EMS switched off",
+          "unavailable": "Unavailable",
+          "ev3600_charging": "EV3600 charging",
+          "ev3600_unavailable": "EV3600 unavailable",
+          "blocked": "Blocked",
+          "active": "Active",
+          "waiting_for_upper_soc": "Waiting for upper SoC threshold"
+        }
+      },
+      "inverter_requested": {
+        "name": "Requested inverter limit"
+      },
+      "inverter_reported": {
+        "name": "Reported inverter limit"
+      },
+      "inverter_measured_ac": {
+        "name": "Measured inverter AC power"
       }
     },
     "switch": {
@@ -212,6 +257,29 @@
       },
       "feed_in": {
         "name": "Feed-in after full charge"
+      },
+      "adaptive_pid": {
+        "name": "Adaptive PID controller"
+      }
+    },
+    "number": {
+      "start_hold_seconds": {
+        "name": "Startup settling time"
+      },
+      "pid_kp_min": {
+        "name": "PID Kp at low grid error"
+      },
+      "pid_kp_max": {
+        "name": "PID Kp at high grid error"
+      },
+      "pid_kp_export": {
+        "name": "PID Kp during export"
+      },
+      "pid_ki": {
+        "name": "PID Ki integral gain"
+      },
+      "pid_kd": {
+        "name": "PID Kd derivative gain"
       }
     }
   }

@@ -462,3 +462,18 @@ async def test_bk215_dc_hardware_trip_persists_across_runtime_recreation() -> No
     restarted._running = True
     await restarted.async_update()
     assert restarted.status == "hardware_limit"
+
+
+@pytest.mark.asyncio
+async def test_pid_switch_options_update_is_visible_without_energizing_inverters():
+    """A switched-off EMS must reflect the selected controller mode immediately."""
+    hass, entry = configured()
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    assert runtime.controller.adaptive_pid is False
+    entry.options["adaptive_pid"] = True
+    entry.options["start_hold_seconds"] = 40
+    await runtime.async_change_options()
+    assert runtime.controller.adaptive_pid is True
+    assert runtime._start_hold.seconds == 40
+    hass.services.async_call.assert_not_awaited()

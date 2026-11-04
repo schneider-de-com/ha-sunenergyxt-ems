@@ -422,14 +422,28 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Keep operating settings editable without reinstalling the integration."""
         existing = list(getattr(self.config_entry, "data", {}).get(CONF_BATTERIES, []))
-        missing = [
-            (index, battery)
-            for index, battery in enumerate(existing, start=1)
-            if not battery.get(CONF_UPPER)
-        ]
         errors: dict[str, str] = {}
         if user_input is not None:
             requested = dict(user_input)
+            # Stage changes to existing upper SoC mappings. HA's Options Flow
+            # must not mutate config-entry data before all validation succeeds.
+            new_batteries = [dict(battery) for battery in existing]
+            for index, battery in enumerate(existing, start=1):
+                old = battery.get(CONF_UPPER)
+                source = requested.pop(f"upper_source_{index}", None)
+                percent = requested.pop(f"upper_pct_{index}", requested.pop(f"upper_{index}", None))
+                changed_source = bool(source) and source != old
+                changed_percent = percent is not None and (
+                    not isinstance(old, (int, float)) or float(percent) != float(old)
+                )
+                if changed_source:
+                    new_upper = source
+                elif changed_percent:
+                    new_upper = float(percent)
+                else:
+                    new_upper = old
+                if new_upper is not None:
+                    new_batteries[index - 1][CONF_UPPER] = new_upper
             reset_trip = bool(requested.pop("reset_dc_trip", False))
             pv_map = dict(self.config_entry.options.get("pv_input", {}))
             ev_map = dict(self.config_entry.options.get("ev3600", {}))
@@ -497,20 +511,15 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     self.config_entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV),
                 )
                 == FEED_IN_MODE_PV
-                and missing
+                and any(battery.get(CONF_UPPER) is None for battery in new_batteries)
             ):
-                if any(f"upper_{index}" not in requested for index, _ in missing):
-                    errors["base"] = "missing_upper"
-                else:
-                    updated = dict(self.config_entry.data)
-                    records = [dict(battery) for battery in existing]
-                    for index, _ in missing:
-                        records[index - 1][CONF_UPPER] = float(requested.pop(f"upper_{index}"))
-                    updated[CONF_BATTERIES] = records
-                    self.hass.config_entries.async_update_entry(self.config_entry, data=updated)
+                errors["base"] = "missing_upper"
             if float(requested.get("pid_kp_max", 0.9)) < float(requested.get("pid_kp_min", 0.5)):
                 errors["base"] = "invalid_pid_gains"
             if not errors:
+                if new_batteries != existing:
+                    updated = {**self.config_entry.data, CONF_BATTERIES: new_batteries}
+                    self.hass.config_entries.async_update_entry(self.config_entry, data=updated)
                 settings = {
                     key: value
                     for key, value in requested.items()
@@ -613,10 +622,23 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 )
         if self.config_entry.options.get(CONF_DC_TRIPPED):
             fields[vol.Optional("reset_dc_trip", default=False)] = selector.BooleanSelector()
-        for index, _ in missing:
-            fields[vol.Optional(f"upper_{index}")] = vol.All(
-                vol.Coerce(float), vol.Range(min=70, max=100)
+        # Existing entries may already have an upper SoC source; always let
+        # the user inspect or correct it. Changing this EMS mapping never
+        # changes the BK215 hardware charging ceiling.
+        for index, battery in enumerate(existing, start=1):
+            upper = battery.get(CONF_UPPER)
+            source = upper if isinstance(upper, str) else None
+            fields[
+                vol.Optional(f"upper_source_{index}", **({"default": source} if source else {}))
+            ] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=["number", "sensor", "input_number"])
             )
+            fields[
+                vol.Optional(
+                    f"upper_pct_{index}",
+                    **({"default": upper} if isinstance(upper, (float, int)) else {}),
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=70, max=100))
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(fields),
