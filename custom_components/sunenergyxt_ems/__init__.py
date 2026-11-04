@@ -19,7 +19,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     runtime = EMSRuntime(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
-    await hass.config_entries.async_forward_entry_setups(entry, (Platform.SENSOR, Platform.SWITCH, Platform.NUMBER))
+    await hass.config_entries.async_forward_entry_setups(
+        entry, (Platform.SENSOR, Platform.SWITCH, Platform.NUMBER)
+    )
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await runtime.async_start()
     return True
