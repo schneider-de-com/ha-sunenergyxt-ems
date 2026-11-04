@@ -11,7 +11,7 @@ from time import monotonic
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -84,10 +84,11 @@ class EMSRuntime:
         self._sent_at: dict[str, float] = {}
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
+        self._shutdown_retried: set[str] = set()
         self._deferred_shutdown: set[str] = set()
         self._shutdown_obligations: set[str] = set()
         self._shutdown_store: Store[dict[str, list[str]]] = Store(
-            hass, 1, f"{DOMAIN}.shutdown.{entry.entry_id}"
+            hass, 1, f"{DOMAIN}.shutdown.{entry.entry_id}", atomic_writes=True
         )
         self._overload_latched: set[str] = set(entry.options.get(CONF_DC_TRIPPED, ()))
         self._dc_monitored: dict[str, str] = {}
@@ -127,9 +128,14 @@ class EMSRuntime:
     async def _save_shutdown_obligations(self, pending: set[str] | None = None) -> bool:
         """Persist before sending, and remove only after fresh acknowledgement."""
         try:
-            await self._shutdown_store.async_save(
-                {"pending": sorted(self._shutdown_obligations if pending is None else pending)}
-            )
+            data = {"pending": sorted(self._shutdown_obligations if pending is None else pending)}
+            await self._shutdown_store.async_save(data)
+            # Store can defer writes during shutdown and only log disk write errors.
+            if (
+                getattr(self.hass, "state", None) is CoreState.stopping
+                or await self._shutdown_store.async_load() != data
+            ):
+                raise OSError("Home Assistant did not confirm the shutdown journal write")
         except (OSError, HomeAssistantError) as exc:
             self.last_error = f"Cannot persist inverter shutdown obligations: {exc}"
             self.status = "write_error"
@@ -480,6 +486,10 @@ class EMSRuntime:
                 acknowledged.add(entity_id)
             elif now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
                 failures.append(entity_id)
+                if entity_id not in self._shutdown_retried:
+                    self._shutdown_retried.add(entity_id)
+                    self._shutdown_pending.pop(entity_id)
+                    self._deferred_shutdown.add(entity_id)
         if acknowledged:
             remaining = self._shutdown_obligations - acknowledged
             if not await self._save_shutdown_obligations(remaining):
@@ -487,8 +497,12 @@ class EMSRuntime:
             self._shutdown_obligations = remaining
             for entity_id in acknowledged:
                 self._shutdown_pending.pop(entity_id, None)
-            if not remaining and self.last_error and self.last_error.startswith(
-                ("Shutdown not acknowledged:", "Cannot persist inverter shutdown obligations:")
+            if (
+                not remaining
+                and self.last_error
+                and self.last_error.startswith(
+                    ("Shutdown not acknowledged:", "Cannot persist inverter shutdown obligations:")
+                )
             ):
                 self.last_error = None
         if self._deferred_shutdown:
@@ -719,6 +733,7 @@ class EMSRuntime:
             self.last_error = None
             self._pending.clear()
             self._shutdown_pending.clear()
+            self._shutdown_retried.clear()
             commands = self.controller.disable(self._batteries())
             configured = {
                 inverter["entity_id"]
