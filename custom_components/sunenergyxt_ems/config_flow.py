@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from time import monotonic
 from typing import Any
 
 import voluptuous as vol
@@ -364,16 +363,17 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         # Reconfiguration is an explicit handover: do not leave
                         # a removed inverter running at an old EMS limit.
                         if getattr(getattr(runtime, "controller", None), "enabled", True):
-                            await runtime.async_stop()
                             await runtime.async_disable()
                             if hasattr(self.hass, "config_entries"):
                                 # Do not resume the old controller if the user abandons reconfiguration.
                                 self.hass.config_entries.async_update_entry(
                                     entry, options={**entry.options, CONF_ENABLED: False}
                                 )
-                        elif hasattr(runtime, "_verify_shutdown"):
-                            runtime._verify_shutdown(monotonic())
-                        if runtime.last_error or getattr(runtime, "_shutdown_pending", {}):
+                        if (
+                            runtime.last_error
+                            or getattr(runtime, "_shutdown_pending", {})
+                            or getattr(runtime, "_shutdown_obligations", set())
+                        ):
                             errors["base"] = "inverter_stop_failed"
                         else:
                             return self.async_update_reload_and_abort(entry, data_updates=data)
@@ -517,6 +517,13 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             if float(requested.get("pid_kp_max", 0.9)) < float(requested.get("pid_kp_min", 0.5)):
                 errors["base"] = "invalid_pid_gains"
             if not errors:
+                if requested.get(CONF_ENABLED) is False and self.config_entry.options.get(
+                    CONF_ENABLED, True
+                ):
+                    runtimes = getattr(getattr(self, "hass", None), "data", {}).get(DOMAIN, {})
+                    runtime = runtimes.get(getattr(self.config_entry, "entry_id", None))
+                    if runtime is not None:
+                        await runtime.async_disable()
                 if new_batteries != existing:
                     updated = {**self.config_entry.data, CONF_BATTERIES: new_batteries}
                     self.hass.config_entries.async_update_entry(self.config_entry, data=updated)
