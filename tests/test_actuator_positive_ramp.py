@@ -84,7 +84,9 @@ async def test_first_m200_command_cannot_jump_to_26_percent_on_2507_w_import() -
 
     command = hass.services.async_call.await_args.args[2]
     assert command["entity_id"] == "number.m200"
-    assert 0 < command["value"] <= 0.1, "20 W nominal still commands unsafe 1%; 0.1% is the tested starting step"
+    assert 0 < command["value"] <= 0.1, (
+        "20 W nominal still commands unsafe 1%; 0.1% is the tested starting step"
+    )
     assert runtime._last_sent["number.m200"] == command["value"]
 
 
