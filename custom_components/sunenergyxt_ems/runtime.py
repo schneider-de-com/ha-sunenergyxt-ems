@@ -589,15 +589,11 @@ class EMSRuntime:
                 # increase interval and fresh Modbus/grid acknowledgements
                 # still gate every step; other actuators keep their
                 # existing anti-chatter deadband.
-                fine_percent_increase = (
-                    unit == "%" and 0 < step <= 0.1 and value > previous
-                )
+                fine_percent_increase = unit == "%" and 0 < step <= 0.1 and value > previous
                 min_change = (
                     step / 2
                     if fine_percent_increase
-                    else max(
-                        step, MIN_OUTPUT_CHANGE_W * (100 / rating if unit == "%" else 1)
-                    )
+                    else max(step, MIN_OUTPUT_CHANGE_W * (100 / rating if unit == "%" else 1))
                 )
                 if abs(value - previous) < min_change and not (
                     emergency and reported_value is not None and value < reported_value
