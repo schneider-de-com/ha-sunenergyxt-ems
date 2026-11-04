@@ -73,9 +73,7 @@ def runtime_pair() -> tuple[EMSRuntime, SimpleNamespace]:
 
 @pytest.fixture(autouse=True)
 def isolate_registry(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None)
-    )
+    monkeypatch.setattr(module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None))
 
 
 @pytest.mark.asyncio
