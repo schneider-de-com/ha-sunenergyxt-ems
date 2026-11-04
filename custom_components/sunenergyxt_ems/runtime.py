@@ -541,6 +541,18 @@ class EMSRuntime:
                 positive_step_w = MAX_POSITIVE_COMMAND_STEP_W
                 if unit == "%" and precision is not None and 0 < precision <= 0.1:
                     positive_step_w = min(positive_step_w, rating * precision / 100)
+                    # A device can report 2.29% for a confirmed 2.3% command.
+                    # Use that command's grid point only within its rounding
+                    # interval, after feedback settles and a fresh device check.
+                    if (
+                        previous_command is not None
+                        and 0 < previous_command - reported < precision / 2
+                        and target > previous_command * rating / 100
+                        and entity_id not in self._pending
+                        and now - self._sent_at.get(entity_id, 0) >= 20.0
+                        and await self._hardware_feedback_matches(entity_id, previous_command)
+                    ):
+                        baseline_w = previous_command * rating / 100
                 target = min(target, baseline_w + positive_step_w)
             value = target * 100 / rating if unit == "%" else target
             minimum = self._float(state.attributes.get("min", 0))
