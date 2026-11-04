@@ -349,3 +349,34 @@ async def test_shutdown_ack_is_not_forgotten_if_persistence_fails() -> None:
     await runtime.async_update()
     assert runtime._shutdown_obligations == {"number.m200", "number.m80"}
     assert runtime.status == "write_error"
+
+
+@pytest.mark.parametrize("saved", [None, {}, {"pending": "number.m80"}])
+@pytest.mark.asyncio
+async def test_unknown_shutdown_state_requires_fresh_minimum_even_when_disabled(saved):
+    """An absent or invalid journal must not let an inverter stay at 100%."""
+    hass, entry = configured_two_bk215()
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    runtime._shutdown_store.data = saved
+    await runtime._load_shutdown_obligations()
+    runtime._running = True
+    await runtime.async_update()
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert {item["entity_id"]: item["value"] for item in commands} == {
+        "number.m200": 0,
+        "number.m80": 0,
+    }
+    assert runtime.status == "shutdown_pending"
+
+
+@pytest.mark.asyncio
+async def test_confirmed_disabled_handover_does_not_override_manual_limit():
+    hass, entry = configured_two_bk215()
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    await runtime._shutdown_store.async_save({"pending": []})
+    await runtime._load_shutdown_obligations()
+    runtime._running = True
+    await runtime.async_update()
+    hass.services.async_call.assert_not_awaited()
