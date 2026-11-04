@@ -22,6 +22,7 @@ async def async_setup_entry(
         [
             EMSToggle(entry, runtime, CONF_ENABLED, "EMS control"),
             EMSToggle(entry, runtime, CONF_FEED_IN, "Feed-in after full charge"),
+            EMSToggle(entry, runtime, "adaptive_pid", "Adaptive PID control"),
         ]
     )
 
