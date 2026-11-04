@@ -109,13 +109,13 @@ def test_negative_status_sensor_exposes_write_failure(objects):
 
 
 @pytest.mark.asyncio
-async def test_positive_switch_setup_creates_two_entities(objects):
+async def test_positive_switch_setup_creates_three_entities(objects):
     entry, runtime, _ = objects
     hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     created = []
     await switches.async_setup_entry(hass, entry, created.extend)
-    assert len(created) == 2
-    assert {entity.unique_id for entity in created} == {"ems-entry_enabled", "ems-entry_feed_in"}
+    assert len(created) == 3
+    assert {entity.unique_id for entity in created} == {"ems-entry_enabled", "ems-entry_feed_in", "ems-entry_adaptive_pid"}
 
 
 @pytest.mark.asyncio
@@ -124,12 +124,13 @@ async def test_positive_sensor_setup_creates_status(objects):
     hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     created = []
     await sensors.async_setup_entry(hass, entry, created.extend)
-    assert len(created) == 1 + len(sensors.PID_VALUES)
+    assert len(created) == 2 + len(sensors.PID_VALUES)
     assert created[0].unique_id == "ems-entry_status"
-    assert {entity.unique_id for entity in created[1:]} == {
+    assert {entity.unique_id for entity in created[1:1 + len(sensors.PID_VALUES)]} == {
         f"ems-entry_{key}" for key, _ in sensors.PID_VALUES
     }
-    assert all(isinstance(entity, sensors.EMSControlValue) for entity in created[1:])
+    assert all(isinstance(entity, sensors.EMSControlValue) for entity in created[1:1 + len(sensors.PID_VALUES)])
+    assert created[-1].unique_id == "ems-entry_startup_hold_remaining"
 
 
 @pytest.mark.asyncio
@@ -219,7 +220,7 @@ async def test_batteries_have_separate_visible_status_entities(objects):
     runtime.hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     added = []
     await sensors.async_setup_entry(runtime.hass, entry, added.extend)
-    assert len(added) == 3 + len(sensors.PID_VALUES)
+    assert len(added) == 3 + len(sensors.PID_VALUES) + 1 + 2 * 5
     by_id = {entity.unique_id: entity for entity in added}
     assert {"ems-entry_status", "ems-entry_battery_bk1", "ems-entry_battery_bk2"} <= set(by_id)
     main = by_id["ems-entry_battery_bk1"]
