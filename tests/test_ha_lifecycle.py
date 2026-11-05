@@ -68,6 +68,7 @@ async def test_setup_registers_real_integration_devices_and_controls(
     unique_ids = {entity.unique_id for entity in entities}
     assert unique_ids == {
         f"{entry.entry_id}_status",
+        f"{entry.entry_id}_weighted_battery_level",
         f"{entry.entry_id}_battery_bk215-1",
         f"{entry.entry_id}_enabled",
         f"{entry.entry_id}_feed_in",

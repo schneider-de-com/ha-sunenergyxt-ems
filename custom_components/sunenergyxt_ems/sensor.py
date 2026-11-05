@@ -15,6 +15,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_FEED_IN, CONF_FEED_IN_MODE, DOMAIN, FEED_IN_MODE_PV
 from .inputs import fresh_power
+from .logic import weighted_battery_level
 from .runtime import EMSRuntime
 
 PID_VALUES = (
@@ -42,6 +43,7 @@ async def async_setup_entry(
     )
     entities: list[SensorEntity] = [EMSStatus(entry, runtime)]
     entities.extend(EMSControlValue(entry, runtime, key, field) for key, field in PID_VALUES)
+    entities.append(EMSWeightedBatteryLevel(entry, runtime))
     entities.extend(
         BatteryStatus(
             entry,
@@ -68,6 +70,46 @@ async def async_setup_entry(
                     )
                 )
     async_add_entities(entities)
+
+
+class EMSWeightedBatteryLevel(SensorEntity):
+    """Show the combined battery level weighted by configured capacity."""
+
+    _attr_translation_key = "weighted_battery_level"
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = "measurement"
+
+    def __init__(self, entry: ConfigEntry, runtime: EMSRuntime) -> None:
+        self._entry = entry
+        self._runtime = runtime
+        self._attr_unique_id = f"{entry.entry_id}_weighted_battery_level"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, "controller")})
+
+    @property
+    def native_value(self) -> float | None:
+        capacities = self._entry.options.get("capacity_wh", {})
+        return weighted_battery_level(
+            [
+                (battery.soc, self._runtime._float(capacities.get(battery.key)))
+                for battery in self._runtime._batteries()
+            ]
+        )
+
+    @property
+    def available(self) -> bool:
+        return self.native_value is not None
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._runtime.signal, self._refresh)
+        )
+
+    @callback
+    def _refresh(self) -> None:
+        self.async_write_ha_state()
 
 
 class EMSStatus(SensorEntity):

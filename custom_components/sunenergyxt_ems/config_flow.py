@@ -448,8 +448,12 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             pv_map = dict(self.config_entry.options.get("pv_input", {}))
             ev_map = dict(self.config_entry.options.get("ev3600", {}))
             ac_map = dict(self.config_entry.options.get("ac_power", {}))
+            capacities = dict(self.config_entry.options.get("capacity_wh", {}))
             for index, battery in enumerate(existing, start=1):
                 device = battery[CONF_DEVICE]
+                capacity = requested.pop(f"capacity_wh_{index}", capacities.get(device))
+                if capacity is not None:
+                    capacities[device] = capacity
                 pv = requested.pop(f"pv_input_{index}", pv_map.get(device))
                 mode = requested.pop(f"ev_mode_{index}", ev_map.get(device, {}).get("mode"))
                 power = requested.pop(f"ev_power_{index}", ev_map.get(device, {}).get("power"))
@@ -549,6 +553,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 settings["pv_input"] = pv_map
                 settings["ev3600"] = ev_map
                 settings["ac_power"] = ac_map
+                settings["capacity_wh"] = capacities
                 settings[CONF_DC_TRIPPED] = (
                     [] if reset_trip else list(self.config_entry.options.get(CONF_DC_TRIPPED, ()))
                 )
@@ -606,6 +611,10 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             )
         for index, battery in enumerate(existing, start=1):
             device = battery[CONF_DEVICE]
+            capacity = self.config_entry.options.get("capacity_wh", {}).get(device)
+            fields[
+                vol.Optional(f"capacity_wh_{index}", **({"default": capacity} if capacity else {}))
+            ] = vol.All(vol.Coerce(float), vol.Range(min=1))
             pv = self.config_entry.options.get("pv_input", {}).get(device)
             ev = self.config_entry.options.get("ev3600", {}).get(device, {})
             for prefix, source, domain in (

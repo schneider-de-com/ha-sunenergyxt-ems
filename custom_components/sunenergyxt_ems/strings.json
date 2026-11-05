@@ -173,7 +173,10 @@
           "upper_source_4": "Battery 4: upper SoC threshold (sensor/number entity)",
           "upper_pct_4": "Battery 4: explicit upper SoC threshold (%) – overrides source",
           "upper_source_5": "Battery 5: upper SoC threshold (sensor/number entity)",
-          "upper_pct_5": "Battery 5: explicit upper SoC threshold (%) – overrides source"
+          "upper_pct_5": "Battery 5: explicit upper SoC threshold (%) – overrides source",
+          "capacity_wh_1": "Battery 1: total capacity including expansions (Wh)",
+          "capacity_wh_2": "Battery 2: total capacity including expansions (Wh)",
+          "capacity_wh_3": "Battery 3: total capacity including expansions (Wh)"
         },
         "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. The displayed SoC hysteresis is an EMS software choice, not a universal manufacturer value. Leave feed-in off until hardware-tested."
       }
@@ -249,6 +252,9 @@
       },
       "inverter_measured_ac": {
         "name": "Measured inverter AC power"
+      },
+      "weighted_battery_level": {
+        "name": "Capacity-weighted battery level"
       }
     },
     "switch": {
