@@ -169,9 +169,18 @@ class Controller:
             self.state.pid_last_sequence = sequence
             return 0.0
         if 0 <= grid_w < 30:
-            self.state.pid_p_w = 0.0
-            self.state.pid_d_w = 0.0
+            # Reaching the import deadband is a new equilibrium. A stale
+            # positive integral would otherwise turn the next export sample
+            # into an increase request instead of reducing inverter power.
+            self._reset_pid()
+            self.state.pid_error_w = error
             return 0.0
+        # A direct import/export sign reversal can bypass the deadband
+        # entirely. Discard the prior direction's integral so the next
+        # correction cannot increase power while the meter shows export,
+        # or decrease power after import returns.
+        if self.state.pid_last_error_w is not None and error * self.state.pid_last_error_w < 0:
+            self.state.pid_i_w = 0.0
         new = sequence is None or sequence != self.state.pid_last_sequence
         dt = (
             max(0.0, min(15.0, now - self.state.pid_last_at))
