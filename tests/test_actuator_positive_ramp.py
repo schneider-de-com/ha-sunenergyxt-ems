@@ -7,7 +7,10 @@ not only the pure controller's intentions. No hardware is used by CI.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import json
+from datetime import UTC, datetime, timedelta
+from itertools import pairwise
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -102,7 +105,7 @@ async def test_next_m200_increase_after_start_hold_is_still_bounded() -> None:
 
     command = hass.services.async_call.await_args.args[2]
     assert command["entity_id"] == "number.m200"
-    assert 1.0 < command["value"] <= 1.1
+    assert 1.0 < command["value"] <= 2.0
 
 
 @pytest.mark.asyncio
@@ -156,16 +159,16 @@ async def test_zero_to_zero_does_not_send_fake_pending_command() -> None:
 @pytest.mark.parametrize(
     "reported,confirmed,expected",
     [
-        ("2.29", True, 2.4),
+        ("2.29", True, 3.3),
         ("2.29", False, None),
         ("2.24", True, None),
-        ("2.39", True, 2.4),
+        ("2.39", True, 3.3),
     ],
 )
 async def test_fine_ramp_after_off_grid_readback(
     reported: str, confirmed: bool, expected: float | None
 ) -> None:
-    """A confirmed 2.3% command must progress by one step after 2.29% feedback."""
+    """A confirmed 2.3% command must progress within 20 W after 2.29% feedback."""
     runtime, hass = runtime_pair()
     entity_id = "number.m200"
     runtime._last_sent[entity_id] = 2.3
@@ -183,3 +186,53 @@ async def test_fine_ramp_after_off_grid_readback(
             "entity_id": entity_id,
             "value": expected,
         }
+
+
+@pytest.mark.asyncio
+async def test_acknowledged_m200_reaches_household_load_within_five_minutes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An ideal 2 kW actuator must not need 27 minutes for a 240 W load.
+
+    Replay the real starting load through the normal runtime entry point.
+    The plant follows nominal limits immediately, so this isolates software
+    settling time. Hardware overshoot still needs independent live evidence.
+    """
+    trace = json.loads(
+        (Path(__file__).parent / "fixtures" / "m200_slow_ramp_20261105.json").read_text()
+    )
+    assert trace["series"]["limit_pct"][-1][1] == 1.4
+    load_w = trace["series"]["grid_w"][0][1]
+    runtime, hass = runtime_pair()
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
+    commands: list[tuple[float, float]] = []
+    grid = hass.states.get("sensor.grid")
+    inverter = hass.states.get("number.m200")
+    stamp = datetime.now(UTC)
+
+    async def acknowledge(domain, service, data, **kwargs):
+        assert domain == "number" and service == "set_value"
+        if data["entity_id"] == "number.m200":
+            inverter.state = str(data["value"])
+            inverter.last_reported = stamp + timedelta(microseconds=1)
+            commands.append((clock[0], data["value"]))
+
+    hass.services.async_call.side_effect = acknowledge
+    for tick in range(61):
+        clock[0] = 1000.0 + tick * 5
+        stamp = datetime.now(UTC)
+        grid.state = str(load_w - float(inverter.state) * 20)
+        grid.last_reported = stamp
+        await runtime.async_update()
+
+    assert commands[0][1] <= 0.1
+    assert all(b[1] - a[1] <= 1.00001 for a, b in pairwise(commands))
+    assert all(b[0] - a[0] >= 20 for a, b in pairwise(commands))
+    remaining_grid_w = load_w - float(inverter.state) * 20
+    assert 0 <= remaining_grid_w <= 50, (
+        f"After five minutes, grid import is still {remaining_grid_w:.1f} W, "
+        f"limit {inverter.state}% after {len(commands)} commands"
+    )

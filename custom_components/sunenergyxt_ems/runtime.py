@@ -532,15 +532,26 @@ class EMSRuntime:
                 # The nominal 20 W budget is NOT a safe physical step on
                 # Deye microinverters: at 1% the M80 (8 W nominal) made
                 # phase B drop ~73 W in a guarded trial, and the M200 has
-                # shown worse transients. When a percent actuator exposes
-                # fine 0.1%-or-better resolution, advance by only one
-                # reported precision step (0.1pp maximum) at a time.
-                # This is a conservative commissioning limit, NOT proof
-                # that physical output follows the advertised percent.
+                # shown worse transients. Start fine percent actuators
+                # with one precision step (0.1pp maximum). Once a previous command
+                # is acknowledged and startup has settled, use the normal
+                # 20 W budget. Applying 0.1pp for the entire run made a
+                # 240 W household load take roughly 27 minutes to settle.
                 precision = self._float(state.attributes.get("step", 1))
                 positive_step_w = MAX_POSITIVE_COMMAND_STEP_W
                 if unit == "%" and precision is not None and 0 < precision <= 0.1:
-                    positive_step_w = min(positive_step_w, rating * precision / 100)
+                    if (
+                        previous_command is not None
+                        and previous_command - reported >= precision / 2
+                        and target > baseline_w
+                    ):
+                        continue
+                    if (
+                        previous_command is None
+                        or baseline_w <= 0
+                        or self._start_hold.active(entity_id, now)
+                    ):
+                        positive_step_w = min(positive_step_w, rating * precision / 100)
                     # A device can report 2.29% for a confirmed 2.3% command.
                     # Use that command's grid point only within its rounding
                     # interval, after feedback settles and a fresh device check.
