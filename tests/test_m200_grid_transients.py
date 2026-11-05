@@ -309,8 +309,10 @@ def test_two_fresh_export_samples_bypass_median_but_one_does_not() -> None:
 async def test_repeated_export_reduces_before_five_sample_median(monkeypatch):
     """The second fresh negative sample must reach control before the median."""
     hass, entry = configured_runtime()
+    hass.states.get("number.m200").state = "40.1"
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
+    monkeypatch.setattr(runtime, "_apply", AsyncMock())
     clock = [1000.0]
     monkeypatch.setattr(module, "monotonic", lambda: clock[0])
     meter = hass.states.get("sensor.grid")
@@ -321,6 +323,7 @@ async def test_repeated_export_reduces_before_five_sample_median(monkeypatch):
         meter.last_reported = base + timedelta(milliseconds=100 * (i + 1))
         await runtime.async_update()
     assert runtime._grid_filtered_w == -479.0
+    assert runtime._apply.await_args.args[0]["number.m200"] < 802.0
 
 
 @pytest.mark.asyncio
