@@ -154,6 +154,12 @@ class Controller:
             self._reset_pid()
             self.state.pid_error_w = error
             return 0.0
+        # A direct import/export sign reversal can bypass the deadband
+        # entirely. Discard the prior direction's integral so the next
+        # correction cannot increase power while the meter shows export,
+        # or decrease power after import returns.
+        if self.state.pid_last_error_w is not None and error * self.state.pid_last_error_w < 0:
+            self.state.pid_i_w = 0.0
         new = sequence is None or sequence != self.state.pid_last_sequence
         dt = (
             max(0.0, min(15.0, now - self.state.pid_last_at))
