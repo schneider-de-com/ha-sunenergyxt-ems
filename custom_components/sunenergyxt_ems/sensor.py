@@ -91,6 +91,8 @@ class EMSWeightedBatteryLevel(SensorEntity):
     @property
     def native_value(self) -> float | None:
         capacities = self._entry.options.get("capacity_wh", {})
+        if any(isinstance(value, bool) for value in capacities.values()):
+            return None
         return weighted_battery_level(
             [
                 (battery.soc, self._runtime._float(capacities.get(battery.key)))

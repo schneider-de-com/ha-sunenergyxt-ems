@@ -176,7 +176,14 @@
           "upper_pct_5": "Battery 5: explicit upper SoC threshold (%) – overrides source",
           "capacity_wh_1": "Battery 1: total capacity including expansions (Wh)",
           "capacity_wh_2": "Battery 2: total capacity including expansions (Wh)",
-          "capacity_wh_3": "Battery 3: total capacity including expansions (Wh)"
+          "capacity_wh_3": "Battery 3: total capacity including expansions (Wh)",
+          "capacity_wh_4": "Battery 4: total capacity including expansions (Wh)",
+          "capacity_wh_5": "Battery 5: total capacity including expansions (Wh)",
+          "capacity_wh_6": "Battery 6: total capacity including expansions (Wh)",
+          "capacity_wh_7": "Battery 7: total capacity including expansions (Wh)",
+          "capacity_wh_8": "Battery 8: total capacity including expansions (Wh)",
+          "capacity_wh_9": "Battery 9: total capacity including expansions (Wh)",
+          "capacity_wh_10": "Battery 10: total capacity including expansions (Wh)"
         },
         "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. Keep feed-in off until hardware-tested."
       }

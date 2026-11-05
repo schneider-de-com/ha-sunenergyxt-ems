@@ -9,6 +9,7 @@ from custom_components.sunenergyxt_ems.logic import weighted_battery_level
 
 def test_expansion_capacity_contributes_to_weighted_level():
     assert weighted_battery_level([(80, 4300), (20, 2150)]) == 60
+    assert weighted_battery_level([(100, 1e308), (0, 1e308)]) == 50
 
 
 @pytest.mark.parametrize(

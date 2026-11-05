@@ -176,7 +176,14 @@
           "upper_pct_5": "Speicher 5: eigene SoC-Obergrenze (%) – überschreibt die Quelle",
           "capacity_wh_1": "Speicher 1: Gesamtkapazität einschließlich Erweiterungen (Wh)",
           "capacity_wh_2": "Speicher 2: Gesamtkapazität einschließlich Erweiterungen (Wh)",
-          "capacity_wh_3": "Speicher 3: Gesamtkapazität einschließlich Erweiterungen (Wh)"
+          "capacity_wh_3": "Speicher 3: Gesamtkapazität einschließlich Erweiterungen (Wh)",
+          "capacity_wh_4": "Speicher 4: Gesamtkapazität einschließlich Erweiterungen (Wh)",
+          "capacity_wh_5": "Speicher 5: Gesamtkapazität einschließlich Erweiterungen (Wh)",
+          "capacity_wh_6": "Speicher 6: Gesamtkapazität einschließlich Erweiterungen (Wh)",
+          "capacity_wh_7": "Speicher 7: Gesamtkapazität einschließlich Erweiterungen (Wh)",
+          "capacity_wh_8": "Speicher 8: Gesamtkapazität einschließlich Erweiterungen (Wh)",
+          "capacity_wh_9": "Speicher 9: Gesamtkapazität einschließlich Erweiterungen (Wh)",
+          "capacity_wh_10": "Speicher 10: Gesamtkapazität einschließlich Erweiterungen (Wh)"
         },
         "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
       }

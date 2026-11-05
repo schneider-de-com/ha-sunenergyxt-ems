@@ -49,6 +49,7 @@ In **Settings → Devices & services → Integrations → SunEnergyXT EMS**, ope
 - **Switches:** EMS on/off, feed-in after full charge, and **Adaptive PID**. New/old installations keep existing PID setting; **EMS remains OFF unless you explicitly switch it on**.
 - **Number controls:** startup hold (default 30 seconds), variable PID Kp min/max/export, Ki and Kd; they persist through Home Assistant and use the same bounds as Configure.
 - **Sensors:** live signed grid raw/filtered power, error, PID P/I/D, requested total, and **startup hold remaining**. When EMS is off, past signed grid readings are not displayed as live values.
+- **Capacity-weighted battery level:** enter each system's total capacity in Wh under **Configure**, including any expansion modules. The central sensor is unavailable until every configured battery has a current level and a valid capacity.
 
 Each detected **BK215 (EMS)** child device has its own **EV3600 auto-charge** and **full-charge bypass** state sensors. The per-inverter requested limit, reported HA power limit and actual measured AC power are *separate* sensors. AC is unknown until a fresh AC-power entity is selected: a reported Deye limit is **never** measured power.
 

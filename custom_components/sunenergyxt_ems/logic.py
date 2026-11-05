@@ -15,20 +15,25 @@ def weighted_battery_level(readings: list[tuple[float | None, float | None]]) ->
     """Return the capacity-weighted level only when every input is valid."""
     if not readings:
         return None
-    total_capacity = 0.0
-    weighted_sum = 0.0
     for level, capacity in readings:
         if (
             level is None
             or capacity is None
+            or isinstance(level, bool)
+            or isinstance(capacity, bool)
             or not isfinite(level)
             or not isfinite(capacity)
             or not 0 <= level <= 100
             or capacity <= 0
         ):
             return None
-        total_capacity += capacity
-        weighted_sum += level * capacity
+    scale = max(capacity for _, capacity in readings if capacity is not None)
+    total_capacity = sum(capacity / scale for _, capacity in readings if capacity is not None)
+    weighted_sum = sum(
+        level * (capacity / scale)
+        for level, capacity in readings
+        if level is not None and capacity is not None
+    )
     return weighted_sum / total_capacity
 
 
