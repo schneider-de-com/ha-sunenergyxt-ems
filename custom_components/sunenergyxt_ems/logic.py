@@ -131,6 +131,15 @@ class GridMedianFilter:
             self._last_sequence = sequence
         return float(median(self._samples))
 
+    def confirmed_export(self) -> float | None:
+        """Return the less severe of two consecutive significant export samples."""
+        if len(self._samples) < 2:
+            return None
+        previous, current = list(self._samples)[-2:]
+        if previous < -120 and current < -120:
+            return max(previous, current)
+        return None
+
     def reset(self) -> None:
         """Discard old meter samples after disable, restart or data loss."""
         self._samples.clear()

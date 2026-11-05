@@ -285,3 +285,58 @@ async def test_small_minus_49_w_startup_sample_not_latched_as_severe_export(
 
     assert runtime._startup_export_trip is False
     assert "Excess grid export" not in (runtime.last_error or "")
+
+
+def test_two_fresh_export_samples_bypass_median_but_one_does_not() -> None:
+    """Replay the November 5 load drop without reacting to an isolated spike."""
+    meter_filter = module.GridMedianFilter()
+    for i, value in enumerate((1503.0, 1487.0, 539.0)):
+        meter_filter.observe(value, i)
+    meter_filter.observe(-479.0, 3)
+    assert meter_filter.confirmed_export() is None
+    # Reobserving a single sensor report cannot manufacture confirmation.
+    meter_filter.observe(-479.0, 3)
+    assert meter_filter.confirmed_export() is None
+    meter_filter.observe(-486.0, 4)
+    assert meter_filter.confirmed_export() == -479.0
+    meter_filter.observe(200.0, 5)
+    assert meter_filter.confirmed_export() is None
+    meter_filter.reset()
+    assert meter_filter.confirmed_export() is None
+
+
+@pytest.mark.asyncio
+async def test_repeated_export_reduces_before_five_sample_median(monkeypatch):
+    """The second fresh negative sample must reach control before the median."""
+    hass, entry = configured_runtime()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    meter = hass.states.get("sensor.grid")
+    base = datetime.now(UTC) - timedelta(seconds=1)
+    for i, watts in enumerate((1503.0, 1487.0, 539.0, -479.0, -486.0)):
+        clock[0] += 5
+        meter.state = str(watts)
+        meter.last_reported = base + timedelta(milliseconds=100 * (i + 1))
+        await runtime.async_update()
+    assert runtime._grid_filtered_w == -479.0
+
+
+@pytest.mark.asyncio
+async def test_confirmed_export_does_not_override_intentional_feed_in(monkeypatch):
+    """The faster feedback path must not override explicit feed-in mode."""
+    hass, entry = configured_runtime()
+    entry.options["feed_in"] = True
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    meter = hass.states.get("sensor.grid")
+    base = datetime.now(UTC) - timedelta(seconds=1)
+    for i, watts in enumerate((1503.0, 1487.0, 539.0, -479.0, -486.0)):
+        clock[0] += 5
+        meter.state = str(watts)
+        meter.last_reported = base + timedelta(milliseconds=100 * (i + 1))
+        await runtime.async_update()
+    assert runtime._grid_filtered_w == 539.0
