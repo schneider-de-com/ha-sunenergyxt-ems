@@ -1,6 +1,6 @@
 # SunEnergyXT EMS for Home Assistant
 
-> **Experimental MVP beta 0.1.0b7. Not hardware-validated; not approved for unattended inverter control.**
+> **Experimental MVP beta 0.1.0b7. Device-specific commissioning evidence and remaining hardware limits are recorded in the release notes.**
 >
 > Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
