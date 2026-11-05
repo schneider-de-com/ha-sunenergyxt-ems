@@ -799,6 +799,13 @@ class EMSRuntime:
                 self._grid_filter.reset()
             else:
                 grid = self._grid_filter.observe(grid, sequence)
+            # The median delays sustained export after a sharp load drop.
+            # Require two distinct significant export samples and retain the
+            # less extreme one; isolated transients still use the median.
+            if grid is not None and not self.controller.feed_in:
+                confirmed_export = self._grid_filter.confirmed_export()
+                if confirmed_export is not None:
+                    grid = min(grid, confirmed_export)
             self._grid_filtered_w = grid
             batteries = self._batteries()
             if self._grid_raw_w is not None and sequence != self._last_raw_grid_sequence:
