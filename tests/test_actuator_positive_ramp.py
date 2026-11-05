@@ -236,3 +236,53 @@ async def test_acknowledged_m200_reaches_household_load_within_five_minutes(
         f"After five minutes, grid import is still {remaining_grid_w:.1f} W, "
         f"limit {inverter.state}% after {len(commands)} commands"
     )
+
+
+@pytest.mark.asyncio
+async def test_sustained_import_accelerates_bounded_acknowledged_increases() -> None:
+    """Three real high-import samples permit a 20 W step without a 20 s delay."""
+    runtime, hass = runtime_pair()
+    runtime._last_sent["number.m200"] = 1.0
+    runtime._sent_at["number.m200"] = 1000.0
+    hass.states.get("number.m200").state = "1"
+    for i, watts in enumerate((1200.0, 1150.0, 1100.0)):
+        runtime._grid_filter.observe(watts, i)
+    runtime._grid_raw_w = 1100.0
+
+    await runtime._apply({"number.m200": 540}, now=1010.0)
+
+    command = hass.services.async_call.await_args.args[2]
+    assert command["entity_id"] == "number.m200"
+    assert 1.0 < command["value"] <= 2.0
+
+
+@pytest.mark.asyncio
+async def test_single_high_import_sample_cannot_accelerate_increase() -> None:
+    """A single load spike retains the existing twenty-second interval."""
+    runtime, hass = runtime_pair()
+    runtime._last_sent["number.m200"] = 1.0
+    runtime._sent_at["number.m200"] = 1000.0
+    hass.states.get("number.m200").state = "1"
+    for i, watts in enumerate((20.0, 25.0, 1100.0)):
+        runtime._grid_filter.observe(watts, i)
+    runtime._grid_raw_w = 1100.0
+
+    await runtime._apply({"number.m200": 540}, now=1010.0)
+
+    hass.services.async_call.assert_not_awaited()
+
+
+def test_sustained_import_requires_three_distinct_samples() -> None:
+    """Duplicate observations, lower load and reset cannot arm the faster path."""
+    meter_filter = module.GridMedianFilter()
+    meter_filter.observe(1100.0, 1)
+    meter_filter.observe(1100.0, 1)
+    meter_filter.observe(1100.0, 1)
+    assert not meter_filter.sustained_import()
+    meter_filter.observe(1100.0, 2)
+    meter_filter.observe(1100.0, 3)
+    assert meter_filter.sustained_import()
+    meter_filter.observe(100.0, 4)
+    assert not meter_filter.sustained_import()
+    meter_filter.reset()
+    assert not meter_filter.sustained_import()

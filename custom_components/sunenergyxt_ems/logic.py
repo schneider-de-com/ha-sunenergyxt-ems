@@ -131,6 +131,11 @@ class GridMedianFilter:
             self._last_sequence = sequence
         return float(median(self._samples))
 
+    def sustained_import(self) -> bool:
+        """Confirm high import using three distinct recent meter samples."""
+        # Three samples above 500 W separate sustained load from short spikes.
+        return len(self._samples) >= 3 and all(value > 500 for value in list(self._samples)[-3:])
+
     def confirmed_export(self) -> float | None:
         """Return the less severe of two consecutive significant export samples."""
         if len(self._samples) < 2:

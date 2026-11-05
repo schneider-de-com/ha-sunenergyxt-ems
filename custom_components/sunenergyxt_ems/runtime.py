@@ -630,7 +630,18 @@ class EMSRuntime:
                         value < previous or (reported_value is not None and value < reported_value)
                     )
                 ):
-                    required = max(interval, 20.0) if value > previous else interval
+                    # After sustained high import, allow the same bounded
+                    # 20 W steps at the device's normal interval. First start,
+                    # actuator acknowledgements, and meter gating remain unchanged.
+                    high_import = (
+                        self._grid_raw_w is not None
+                        and self._grid_filter.sustained_import()
+                        and not self.controller.feed_in
+                        and not self._start_hold.active(entity_id, now)
+                    )
+                    required = (
+                        interval if value <= previous or high_import else max(interval, 20.0)
+                    )
                     if elapsed < required:
                         continue
             reported_before = getattr(state, "last_reported", None) or state.last_updated
