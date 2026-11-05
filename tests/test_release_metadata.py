@@ -1,13 +1,13 @@
 """Ensure HACS release metadata agrees with the version actually packaged."""
 
-import json
+from json import loads
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_release_notes_and_readme_match_manifest() -> None:
-    manifest = json.loads(
+    manifest = loads(
         (ROOT / "custom_components/sunenergyxt_ems/manifest.json").read_text()
     )
     version = manifest["version"]
