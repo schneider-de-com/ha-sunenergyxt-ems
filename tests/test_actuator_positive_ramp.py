@@ -286,3 +286,38 @@ def test_sustained_import_requires_three_distinct_samples() -> None:
     assert not meter_filter.sustained_import()
     meter_filter.reset()
     assert not meter_filter.sustained_import()
+
+
+@pytest.mark.asyncio
+async def test_sustained_high_import_converges_faster_in_closed_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replay a stable 2 kW load through meter, acknowledgements and actuator."""
+    runtime, hass = runtime_pair()
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
+    commands: list[tuple[float, float]] = []
+    grid = hass.states.get("sensor.grid")
+    inverter = hass.states.get("number.m200")
+    stamp = datetime.now(UTC)
+
+    async def acknowledge(domain, service, data, **kwargs):
+        assert domain == "number" and service == "set_value"
+        if data["entity_id"] == "number.m200":
+            inverter.state = str(data["value"])
+            inverter.last_reported = stamp + timedelta(microseconds=1)
+            commands.append((clock[0], data["value"]))
+
+    hass.services.async_call.side_effect = acknowledge
+    for tick in range(37):
+        clock[0] = 1000.0 + tick * 5
+        stamp = datetime.now(UTC)
+        grid.state = str(2000.0 - float(inverter.state) * 20)
+        grid.last_reported = stamp
+        await runtime.async_update()
+
+    assert commands[0][1] <= 0.1
+    assert all(b[1] - a[1] <= 1.00001 for a, b in pairwise(commands))
+    assert 2000.0 - float(inverter.state) * 20 < 1500.0
