@@ -5,7 +5,12 @@ Shelly changes from the import deadband to export. Test the *direction* of the
 next command, not only the absence of a command while inside the deadband.
 """
 
-from custom_components.sunenergyxt_ems.logic import Battery, Controller, ControllerState, Inverter
+from custom_components.sunenergyxt_ems.logic import (
+    Battery,
+    Controller,
+    ControllerState,
+    Inverter,
+)
 
 
 def test_grid_deadband_clears_previous_positive_pid_integral() -> None:
