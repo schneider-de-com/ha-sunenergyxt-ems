@@ -11,6 +11,32 @@ from statistics import median
 from .pid import PIDGains, bounded_pid
 
 
+def weighted_battery_level(readings: list[tuple[float | None, float | None]]) -> float | None:
+    """Return the capacity-weighted level only when every input is valid."""
+    if not readings:
+        return None
+    for level, capacity in readings:
+        if (
+            level is None
+            or capacity is None
+            or isinstance(level, bool)
+            or isinstance(capacity, bool)
+            or not isfinite(level)
+            or not isfinite(capacity)
+            or not 0 <= level <= 100
+            or capacity <= 0
+        ):
+            return None
+    scale = max(capacity for _, capacity in readings if capacity is not None)
+    total_capacity = sum(capacity / scale for _, capacity in readings if capacity is not None)
+    weighted_sum = sum(
+        level * (capacity / scale)
+        for level, capacity in readings
+        if level is not None and capacity is not None
+    )
+    return weighted_sum / total_capacity
+
+
 @dataclass(frozen=True, slots=True)
 class Inverter:
     key: str

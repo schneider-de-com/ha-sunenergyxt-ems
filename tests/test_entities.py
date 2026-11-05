@@ -116,6 +116,20 @@ def test_negative_status_sensor_exposes_write_failure(objects):
     assert diagnostics["pending_actuator_reads"] == []
 
 
+def test_weighted_level_uses_all_batteries_and_rejects_missing_data(objects):
+    entry, runtime, _ = objects
+    entry.options["capacity_wh"] = {"bk1": 4300, "bk2": 2150}
+    batteries = [SimpleNamespace(key="bk1", soc=80), SimpleNamespace(key="bk2", soc=20)]
+    runtime._batteries = lambda: batteries
+    runtime._float = lambda value: value
+    entity = sensors.EMSWeightedBatteryLevel(entry, runtime)
+    assert entity.available
+    assert entity.native_value == 60
+    batteries[1].soc = None
+    assert not entity.available
+    assert entity.native_value is None
+
+
 @pytest.mark.asyncio
 async def test_positive_switch_setup_creates_three_entities(objects):
     entry, runtime, _ = objects
@@ -136,7 +150,7 @@ async def test_positive_sensor_setup_creates_status(objects):
     hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     created = []
     await sensors.async_setup_entry(hass, entry, created.extend)
-    assert len(created) == 2 + len(sensors.PID_VALUES)
+    assert len(created) == 3 + len(sensors.PID_VALUES)
     assert created[0].unique_id == "ems-entry_status"
     assert {entity.unique_id for entity in created[1 : 1 + len(sensors.PID_VALUES)]} == {
         f"ems-entry_{key}" for key, _ in sensors.PID_VALUES
@@ -235,7 +249,7 @@ async def test_batteries_have_separate_visible_status_entities(objects):
     runtime.hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     added = []
     await sensors.async_setup_entry(runtime.hass, entry, added.extend)
-    assert len(added) == 3 + len(sensors.PID_VALUES) + 1 + 2 * 5
+    assert len(added) == 4 + len(sensors.PID_VALUES) + 1 + 2 * 5
     by_id = {entity.unique_id: entity for entity in added}
     assert {"ems-entry_status", "ems-entry_battery_bk1", "ems-entry_battery_bk2"} <= set(by_id)
     main = by_id["ems-entry_battery_bk1"]

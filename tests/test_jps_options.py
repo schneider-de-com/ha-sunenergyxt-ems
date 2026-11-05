@@ -28,6 +28,16 @@ def options(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_options_save_total_capacity_including_expansion(options):
+    handler, _entry = options
+    result = await handler.async_step_init(
+        {"enabled": False, "feed_in": False, "capacity_wh_1": 4300}
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"]["capacity_wh"] == {"bk1": 4300}
+
+
+@pytest.mark.asyncio
 async def test_options_save_pid_start_hold_full_pv_ev_and_measured_ac(options):
     handler, _entry = options
     result = await handler.async_step_init(

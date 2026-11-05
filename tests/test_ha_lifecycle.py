@@ -24,6 +24,64 @@ from custom_components.sunenergyxt_ems.runtime import EMSRuntime
 
 @pytest.mark.usefixtures("enable_custom_integrations")
 @pytest.mark.asyncio
+async def test_weighted_battery_sensor_tracks_real_ha_states(hass: HomeAssistant, freezer) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc1",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [{"entity_id": "number.inv1", "rated_w": 800}],
+                },
+                {
+                    "device_id": "bk2",
+                    "soc": "sensor.soc2",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [{"entity_id": "number.inv2", "rated_w": 800}],
+                },
+            ],
+        },
+        options={"enabled": False, "capacity_wh": {"bk1": 4300, "bk2": 2150}},
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.soc1", "80", {"unit_of_measurement": "%"})
+    hass.states.async_set("sensor.soc2", "20", {"unit_of_measurement": "%"})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_weighted_battery_level"
+    )
+    assert entity_id is not None
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    assert float(hass.states.get(entity_id).state) == 60
+    hass.states.async_set("sensor.soc2", "50", {"unit_of_measurement": "%"})
+    await runtime.async_update()
+    await hass.async_block_till_done()
+    assert float(hass.states.get(entity_id).state) == 70
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, "capacity_wh": {"bk1": 2150, "bk2": 2150}}
+    )
+    await hass.async_block_till_done()
+    assert float(hass.states.get(entity_id).state) == 65
+    hass.states.async_set("sensor.soc2", "unavailable", {"unit_of_measurement": "%"})
+    await runtime.async_update()
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_id).state == "unavailable"
+    hass.states.async_set("sensor.soc2", "50", {"unit_of_measurement": "%"})
+    freezer.tick(46)
+    await runtime.async_update()
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_id).state == "unavailable"
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
 async def test_setup_registers_real_integration_devices_and_controls(
     hass: HomeAssistant,
 ) -> None:
@@ -68,6 +126,7 @@ async def test_setup_registers_real_integration_devices_and_controls(
     unique_ids = {entity.unique_id for entity in entities}
     assert unique_ids == {
         f"{entry.entry_id}_status",
+        f"{entry.entry_id}_weighted_battery_level",
         f"{entry.entry_id}_battery_bk215-1",
         f"{entry.entry_id}_enabled",
         f"{entry.entry_id}_feed_in",
