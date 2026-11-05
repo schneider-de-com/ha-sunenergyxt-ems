@@ -158,7 +158,10 @@ class Controller:
         # entirely. Discard the prior direction's integral so the next
         # correction cannot increase power while the meter shows export,
         # or decrease power after import returns.
-        if self.state.pid_last_error_w is not None and error * self.state.pid_last_error_w < 0:
+        if (
+            self.state.pid_last_error_w is not None
+            and error * self.state.pid_last_error_w < 0
+        ):
             self.state.pid_i_w = 0.0
         new = sequence is None or sequence != self.state.pid_last_sequence
         dt = (
