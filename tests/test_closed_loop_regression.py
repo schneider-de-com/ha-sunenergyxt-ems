@@ -296,7 +296,7 @@ async def test_new_load_does_not_override_unacknowledged_command(
     first_limit = hass.services.async_call.await_args.args[2]["value"]
     assert first_limit > 0
 
-    for tick in range(1, 7):
+    for tick in range(1, 6):
         clock[0] = 9000.0 + 5 * tick
         meter = hass.states.get("sensor.grid")
         meter.state = "800"  # household demand changed significantly
@@ -307,3 +307,38 @@ async def test_new_load_does_not_override_unacknowledged_command(
             "Never replace an in-flight command just because the grid load changed"
         )
         assert runtime.status in ("waiting_feedback", "write_error")
+
+
+@pytest.mark.asyncio
+async def test_timeout_requests_safe_minimum_and_rejects_late_positive_ack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unconfirmed increase must not remain the last command indefinitely."""
+    hass, entry = configured_slow_inverter()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [10000.0]
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: clock[0])
+
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] > 0
+    for seconds in (5, 10, 15, 20, 25, 30):
+        clock[0] = 10000.0 + seconds
+        hass.states.get("sensor.grid").last_reported = datetime.now(UTC)
+        await runtime.async_update()
+
+    assert hass.services.async_call.await_count == 2
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+    assert runtime.status == "write_error"
+    assert "acknowledged" in runtime.last_error
+
+    # Late positive feedback is not confirmation of the subsequent zero request.
+    inverter = hass.states.get("number.inverter")
+    inverter.state = "2"
+    inverter.last_reported = datetime.now(UTC) + timedelta(milliseconds=1)
+    clock[0] += 5
+    hass.states.get("sensor.grid").last_reported = datetime.now(UTC)
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 2
+    assert runtime.status == "write_error"
+
