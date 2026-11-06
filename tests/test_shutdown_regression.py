@@ -15,7 +15,7 @@ import pytest
 
 pytest.importorskip("homeassistant")
 from custom_components.sunenergyxt_ems import runtime as module  # noqa: E402
-from custom_components.sunenergyxt_ems.runtime import EMSRuntime  # noqa: E402
+from custom_components.sunenergyxt_ems.runtime import EMSRuntime, PendingCommand  # noqa: E402
 
 
 def sample(value: object, unit: str = "%", **attrs: object) -> SimpleNamespace:
@@ -351,7 +351,9 @@ async def test_shutdown_ack_is_not_forgotten_if_persistence_fails() -> None:
     assert runtime.status == "write_error"
 
 
-@pytest.mark.parametrize("saved", [None, {}, {"pending": "number.m80"}])
+@pytest.mark.parametrize(
+    "saved", [None, {}, {"pending": "number.m80"}, {"pending": [], "inflight": "broken"}]
+)
 @pytest.mark.asyncio
 async def test_unknown_shutdown_state_requires_fresh_minimum_even_when_disabled(saved):
     """An absent or invalid journal must not let an inverter stay at 100%."""
@@ -415,6 +417,31 @@ async def test_offline_then_reconnected_after_confirmed_handover_reissues_safe_z
     ), "Reconnection must initiate a fresh, verified emergency minimum"
     assert "number.m80" in runtime._shutdown_obligations
     assert runtime.status == "shutdown_pending"
+
+
+@pytest.mark.asyncio
+async def test_reconnect_does_not_claim_other_inverters_positive_command_as_shutdown(
+    monkeypatch,
+) -> None:
+    hass, entry = configured_two_bk215()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    runtime._shutdown_obligations = {"number.m80"}
+    runtime._deferred_shutdown = {"number.m80"}
+    stamp = datetime.now(UTC)
+    pending = PendingCommand(
+        target=2.0, entity_reported_before=stamp, sent_at=1000.0, grid_reported_before=stamp
+    )
+    runtime._pending["number.m200"] = pending
+    runtime._inflight_commands.add("number.m200")
+    monkeypatch.setattr(module, "monotonic", lambda: 1001.0)
+
+    await runtime.async_update()
+
+    assert runtime._pending.get("number.m200") is pending
+    assert "number.m200" not in runtime._shutdown_pending
+    assert "number.m200" in runtime._inflight_commands
+    assert "number.m80" in runtime._shutdown_pending
 
 
 @pytest.mark.asyncio
@@ -484,3 +511,90 @@ async def test_solarman_connection_off_on_reconnect_is_safe_when_number_never_un
         command["entity_id"] == "number.m80" and command["value"] == 0 for command in commands
     ), "A Solarman connection off/on must not leave a restored 100% limit"
     assert "number.m80" in runtime._shutdown_obligations
+
+
+@pytest.mark.asyncio
+async def test_shutdown_retries_after_backoff_then_recovers_without_reconnect(monkeypatch):
+    hass, entry = configured_two_bk215()
+    entry.data["batteries"] = entry.data["batteries"][:1]
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    await runtime.async_disable()
+    clock[0] += 30
+    await runtime.async_update()
+    clock[0] += 5
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 2
+    clock[0] += 30
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 2
+    clock[0] += 270
+    await runtime.async_update()
+    clock[0] += 5
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 3
+    number = hass.states.get("number.m200")
+    number.state = "0"
+    number.last_reported = datetime.now(UTC) + timedelta(milliseconds=1)
+    clock[0] += 5
+    await runtime.async_update()
+    assert runtime.status == "disabled"
+    assert not runtime._shutdown_obligations
+
+
+@pytest.mark.asyncio
+async def test_shutdown_service_error_is_backed_off_and_recovers(monkeypatch):
+    hass, entry = configured_two_bk215()
+    entry.data["batteries"] = entry.data["batteries"][:1]
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [2000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    hass.services.async_call.side_effect = TimeoutError("device timeout")
+    await runtime.async_disable()
+    assert hass.services.async_call.await_count == 1
+    for _ in range(5):
+        clock[0] += 5
+        await runtime.async_update()
+    assert hass.services.async_call.await_count == 1
+    assert runtime.status == "write_error"
+    hass.services.async_call.side_effect = None
+    clock[0] += 275
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 2
+    number = hass.states.get("number.m200")
+    number.state = "0"
+    number.last_reported = datetime.now(UTC) + timedelta(milliseconds=1)
+    clock[0] += 5
+    await runtime.async_update()
+    assert runtime.status == "disabled"
+    assert not runtime._shutdown_obligations
+
+
+@pytest.mark.asyncio
+async def test_reconnect_bypasses_backoff_after_service_timeout(monkeypatch):
+    hass, entry = configured_two_bk215()
+    entry.data["batteries"] = entry.data["batteries"][:1]
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [3000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    hass.services.async_call.side_effect = TimeoutError("device timeout")
+    await runtime.async_disable()
+    number = hass.states.get("number.m200")
+    number.state = "unavailable"
+    clock[0] += 5
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 1
+    number.state = "0"
+    number.last_reported = datetime.now(UTC)
+    hass.services.async_call.side_effect = None
+    clock[0] += 5
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 2
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
