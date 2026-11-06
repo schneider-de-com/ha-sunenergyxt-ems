@@ -417,7 +417,10 @@ class EMSRuntime:
         """Wait for a changed reported limit and a later, settled meter sample."""
         if not self._pending:
             return True
-        for entity_id, pending in self._pending.items():
+        waiting_feedback = False
+        timed_out = False
+        waiting_meter = False
+        for entity_id, pending in list(self._pending.items()):
             state = self.hass.states.get(entity_id)
             current = self._float(state.state) if state else None
             reported = (
@@ -452,14 +455,14 @@ class EMSRuntime:
                         if entity_id in self._pending:
                             self._shutdown_pending[entity_id] = self._pending.pop(entity_id)
                             self._deferred_shutdown.discard(entity_id)
-                    self.status = "write_error"
+                    timed_out = True
                     self.last_error = (
                         f"{entity_id}: command was not acknowledged within "
                         f"{FEEDBACK_TIMEOUT_SECONDS:g} seconds"
                     )
                 else:
-                    self.status = "waiting_feedback"
-                return False
+                    waiting_feedback = True
+                continue
             if (
                 now - pending.sent_at < FEEDBACK_SETTLE_SECONDS
                 or grid_seq is None
@@ -468,8 +471,16 @@ class EMSRuntime:
                     and grid_seq <= pending.grid_reported_before
                 )
             ):
-                self.status = "waiting_meter"
-                return False
+                waiting_meter = True
+        if timed_out or waiting_feedback or waiting_meter:
+            self.status = (
+                "write_error"
+                if timed_out
+                else "waiting_feedback"
+                if waiting_feedback
+                else "waiting_meter"
+            )
+            return False
         completed = set(self._pending) & self._inflight_commands
         if completed:
             self._inflight_commands.difference_update(completed)
@@ -536,6 +547,13 @@ class EMSRuntime:
         self, targets: dict[str, float], now: float, *, emergency: bool = False, force: bool = False
     ) -> None:
         for entity_id, target in targets.items():
+            high_import = (
+                self._grid_raw_w is not None
+                and self._grid_filter.sustained_import()
+                and not self.controller.feed_in
+                and not self._start_hold.active(entity_id, now)
+            )
+            interval = self._minimum_interval(entity_id)
             state = self.hass.states.get(entity_id)
             if state is None or state.state in ("unknown", "unavailable"):
                 continue
@@ -597,7 +615,8 @@ class EMSRuntime:
                         and 0 < previous_command - reported < precision / 2
                         and target > previous_command * rating / 100
                         and entity_id not in self._pending
-                        and now - self._sent_at.get(entity_id, 0) >= 20.0
+                        and now - self._sent_at.get(entity_id, 0)
+                        >= (interval if high_import else max(interval, 20.0))
                         and await self._hardware_feedback_matches(entity_id, previous_command)
                     ):
                         baseline_w = previous_command * rating / 100
@@ -642,7 +661,6 @@ class EMSRuntime:
                 and abs(reported_value - value) <= max(step / 2, 0.01)
             ):
                 continue
-            interval = self._minimum_interval(entity_id)
             if previous is not None and not force:
                 # A finely controlled percent actuator needs its 0.1pp
                 # steps to *pass* the old 10 W deadband. The 20-second
@@ -667,11 +685,20 @@ class EMSRuntime:
                         value < previous or (reported_value is not None and value < reported_value)
                     )
                 ):
-                    required = max(interval, 20.0) if value > previous else interval
+                    # After sustained high import, allow the same bounded
+                    # 20 W steps at the device's normal interval. First start,
+                    # actuator acknowledgements, and meter gating remain unchanged.
+                    required = interval if value <= previous or high_import else max(interval, 20.0)
                     if elapsed < required:
                         continue
             reported_before = getattr(state, "last_reported", None) or state.last_updated
             _, grid_before = self._grid()
+            last_grid = self._grid_filter.last_sequence
+            if isinstance(last_grid, datetime) and (
+                grid_before is None
+                or (isinstance(grid_before, datetime) and last_grid > grid_before)
+            ):
+                grid_before = last_grid
             self._inflight_commands.add(entity_id)
             if not await self._save_shutdown_obligations() and not emergency:
                 return
@@ -982,13 +1009,28 @@ class EMSRuntime:
                     return
                 self._seen_valid = True
             if grid is None:
+                await self._feedback_ready(now, None)
+                feedback_error = self.status == "write_error"
                 outputs = self.controller.update(batteries, grid, now, sequence=sequence)
-                self.status = "grid_unavailable"
+                if not feedback_error:
+                    self.status = "grid_unavailable"
                 await self._apply(outputs, now, emergency=True)
                 self._publish()
                 return
 
-            if not await self._feedback_ready(now, sequence):
+            last_grid = self._grid_filter.last_sequence
+            stale_grid = (
+                isinstance(sequence, datetime)
+                and isinstance(last_grid, datetime)
+                and sequence < last_grid
+            )
+            # Check pending commands even when the meter goes backwards, so
+            # missing device feedback can still trigger the safety timeout.
+            if not await self._feedback_ready(now, None if stale_grid else sequence):
+                self._publish()
+                return
+            if stale_grid:
+                self.status = "waiting_meter"
                 self._publish()
                 return
 
