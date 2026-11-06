@@ -7,6 +7,7 @@ CI job with pytest-homeassistant-custom-component; no skip-on-missing-plugin.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -14,6 +15,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.setup import async_setup_component
 from homeassistant.util.file import WriteError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -277,3 +279,61 @@ async def test_real_ha_captures_sub_five_second_solarman_link_flap(
     ), "A 4.83 s offline/on cycle must reissue zero before the next scheduled poll"
     assert "number.m80" in runtime._shutdown_obligations
     await runtime.async_stop()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+async def test_ha_diagnostics_exposes_selected_mapping_without_secrets(
+    hass: HomeAssistant, hass_client
+) -> None:
+    """Only explicitly needed EMS fields reach the actual HA download API."""
+    battery = {
+        "device_id": "device-one",
+        "soc": "sensor.battery",
+        "lower": "number.minimum_soc",
+        "upper": 95,
+        "charging": "sensor.charging",
+        "dc_output": "sensor.dc_power",
+        "inverters": [{"entity_id": "number.m200", "rated_w": 2000, "token": "inv-secret"}],
+        "password": "battery-secret",
+    }
+    second_battery = {
+        "device_id": "device-two",
+        "soc": "sensor.battery_two",
+        "lower": 10,
+        "inverters": [{"entity_id": "number.m80", "rated_w": 800}],
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "invert_grid": True,
+            "batteries": [battery, second_battery],
+            "token": "secret",
+        },
+        options={"enabled": False, "password": "options-secret"},
+    )
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, "diagnostics", {})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    client = await hass_client()
+    response = await client.get(f"/api/diagnostics/config_entry/{entry.entry_id}")
+    assert response.status == 200
+    body = await response.json()
+    assert body["data"]["configuration"] == {
+        "grid": "sensor.grid",
+        "invert_grid": True,
+        "batteries": [
+            {
+                "device_id": "device-one",
+                "soc": "sensor.battery",
+                "lower": "number.minimum_soc",
+                "upper": 95,
+                "charging": "sensor.charging",
+                "dc_output": "sensor.dc_power",
+                "inverters": [{"entity_id": "number.m200", "rated_w": 2000}],
+            },
+            second_battery,
+        ],
+    }
+    assert "secret" not in json.dumps(body["data"])
