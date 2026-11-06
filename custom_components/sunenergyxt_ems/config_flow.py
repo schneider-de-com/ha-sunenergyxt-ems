@@ -75,14 +75,15 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         suggestions = battery_suggestions(self.hass)
         if self._reconfigure:
             for battery in self._previous.get(CONF_BATTERIES, []):
-                suggestions.setdefault(
-                    battery[CONF_DEVICE],
-                    {
+                device_id = battery[CONF_DEVICE]
+                suggestions[device_id] = {
+                    **suggestions.get(device_id, {}),
+                    **{
                         key: value
                         for key, value in battery.items()
                         if key in (CONF_SOC, CONF_LOWER, CONF_UPPER, "charging", "dc_output")
                     },
-                )
+                }
         if not suggestions:
             return await self.async_step_battery_manual()
         if user_input is not None:
