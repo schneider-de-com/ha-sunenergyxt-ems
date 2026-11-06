@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from math import isfinite
 from time import monotonic
@@ -56,6 +56,7 @@ MIN_OUTPUT_CHANGE_W = 10.0
 MAX_POSITIVE_COMMAND_STEP_W = 20.0
 FEEDBACK_SETTLE_SECONDS = 5.0
 FEEDBACK_TIMEOUT_SECONDS = 30.0
+SHUTDOWN_RETRY_BACKOFF_SECONDS = 300.0
 # Conservative software-only startup export trip. On 2026-11-04 the
 # M200 produced -188.632 W signed-grid export after a *nominal* 20 W
 # command; the old -200 W threshold missed this observed unsafe sample.
@@ -98,8 +99,10 @@ class EMSRuntime:
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
         self._shutdown_retried: set[str] = set()
+        self._shutdown_failed_at: dict[str, float] = {}
         self._deferred_shutdown: set[str] = set()
         self._shutdown_obligations: set[str] = set()
+        self._inflight_commands: set[str] = set()
         # A previously acknowledged shutdown must be rechecked after a
         # genuine unavailable -> online transition, not on every off tick.
         self._offline_inverters: set[str] = set()
@@ -156,8 +159,15 @@ class EMSRuntime:
             _LOGGER.warning("Cannot read inverter shutdown journal: %s", exc)
             saved = None
         pending = saved.get("pending") if isinstance(saved, dict) else None
-        if isinstance(pending, list) and all(isinstance(key, str) for key in pending):
-            self._shutdown_obligations = set(pending)
+        inflight = saved.get("inflight", []) if isinstance(saved, dict) else None
+        if (
+            isinstance(pending, list)
+            and all(isinstance(key, str) for key in pending)
+            and isinstance(inflight, list)
+            and all(isinstance(key, str) for key in inflight)
+        ):
+            self._inflight_commands = set(inflight)
+            self._shutdown_obligations = set(pending) | self._inflight_commands
         else:
             # First use and a lost journal are indistinguishable. Establish a
             # confirmed minimum once, even when the restored EMS switch is off.
@@ -191,7 +201,10 @@ class EMSRuntime:
     async def _save_shutdown_obligations(self, pending: set[str] | None = None) -> bool:
         """Persist before sending, and remove only after fresh acknowledgement."""
         try:
-            data = {"pending": sorted(self._shutdown_obligations if pending is None else pending)}
+            data = {
+                "pending": sorted(self._shutdown_obligations if pending is None else pending),
+                "inflight": sorted(self._inflight_commands),
+            }
             await self._shutdown_store.async_save(data)
             # Store can defer writes during shutdown and only log disk write errors.
             if (
@@ -421,6 +434,24 @@ class EMSRuntime:
                 confirmed = await self._hardware_feedback_matches(entity_id, pending.target)
             if not confirmed:
                 if now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
+                    self._shutdown_obligations.add(entity_id)
+                    self._deferred_shutdown.add(entity_id)
+                    await self._save_shutdown_obligations()
+                    self._pending.pop(entity_id, None)
+                    minimum = next(
+                        (
+                            inv.minimum_w
+                            for battery in self._batteries()
+                            for inv in battery.inverters
+                            if inv.key == entity_id and inv.online
+                        ),
+                        None,
+                    )
+                    if minimum is not None:
+                        await self._apply({entity_id: minimum}, now, emergency=True, force=True)
+                        if entity_id in self._pending:
+                            self._shutdown_pending[entity_id] = self._pending.pop(entity_id)
+                            self._deferred_shutdown.discard(entity_id)
                     self.status = "write_error"
                     self.last_error = (
                         f"{entity_id}: command was not acknowledged within "
@@ -438,6 +469,12 @@ class EMSRuntime:
                 )
             ):
                 self.status = "waiting_meter"
+                return False
+        completed = set(self._pending) & self._inflight_commands
+        if completed:
+            self._inflight_commands.difference_update(completed)
+            if not await self._save_shutdown_obligations():
+                self._inflight_commands.update(completed)
                 return False
         self._pending.clear()
         self.last_error = None
@@ -635,6 +672,9 @@ class EMSRuntime:
                         continue
             reported_before = getattr(state, "last_reported", None) or state.last_updated
             _, grid_before = self._grid()
+            self._inflight_commands.add(entity_id)
+            if not await self._save_shutdown_obligations() and not emergency:
+                return
             try:
                 await self.hass.services.async_call(
                     "number",
@@ -644,6 +684,11 @@ class EMSRuntime:
                 )
             except asyncio.CancelledError:
                 task = asyncio.current_task()
+                if emergency and entity_id in self._shutdown_obligations:
+                    self._shutdown_failed_at[entity_id] = now
+                if entity_id in self._inflight_commands:
+                    self._shutdown_obligations.add(entity_id)
+                    self._deferred_shutdown.add(entity_id)
                 if task is not None and task.cancelling():
                     raise
                 self.last_error = f"{entity_id}: Solarman request was cancelled"
@@ -651,6 +696,11 @@ class EMSRuntime:
                 _LOGGER.warning("Inverter command cancelled: %s", entity_id)
                 continue
             except (HomeAssistantError, TimeoutError, OSError, ValueError) as exc:
+                if emergency and entity_id in self._shutdown_obligations:
+                    self._shutdown_failed_at[entity_id] = now
+                if entity_id in self._inflight_commands:
+                    self._shutdown_obligations.add(entity_id)
+                    self._deferred_shutdown.add(entity_id)
                 self.last_error = f"{entity_id}: {exc}"
                 self.status = "write_error"
                 _LOGGER.warning("Unable to set %s limit: %s", entity_id, exc)
@@ -693,17 +743,25 @@ class EMSRuntime:
                 acknowledged.add(entity_id)
             elif now - pending.sent_at >= FEEDBACK_TIMEOUT_SECONDS:
                 failures.append(entity_id)
-                if entity_id not in self._shutdown_retried:
+                if (
+                    entity_id not in self._shutdown_retried
+                    or now - pending.sent_at >= SHUTDOWN_RETRY_BACKOFF_SECONDS
+                ):
                     self._shutdown_retried.add(entity_id)
                     self._shutdown_pending.pop(entity_id)
                     self._deferred_shutdown.add(entity_id)
         if acknowledged:
             remaining = self._shutdown_obligations - acknowledged
+            old_inflight = self._inflight_commands.copy()
+            self._inflight_commands.difference_update(acknowledged)
             if not await self._save_shutdown_obligations(remaining):
+                self._inflight_commands = old_inflight
                 return
             self._shutdown_obligations = remaining
             for entity_id in acknowledged:
                 self._shutdown_pending.pop(entity_id, None)
+                self._shutdown_retried.discard(entity_id)
+                self._shutdown_failed_at.pop(entity_id, None)
             if (
                 not remaining
                 and self.last_error
@@ -751,6 +809,8 @@ class EMSRuntime:
             batteries = self._batteries()
             reconnected = self._reconnected_inverters(batteries)
             if reconnected:
+                for entity_id in reconnected:
+                    self._shutdown_failed_at.pop(entity_id, None)
                 # Reconnection is a new safety boundary even when a prior
                 # disable was fully acknowledged and its journal is empty.
                 # Persist before dispatch; a storage error must never stop
@@ -764,14 +824,22 @@ class EMSRuntime:
                         inverter.key: inverter.minimum_w
                         for battery in self._batteries()
                         for inverter in battery.inverters
-                        if inverter.key in self._deferred_shutdown and inverter.online
+                        if inverter.key in self._deferred_shutdown
+                        and inverter.online
+                        and monotonic() - self._shutdown_failed_at.get(inverter.key, float("-inf"))
+                        >= SHUTDOWN_RETRY_BACKOFF_SECONDS
                     }
                     if recovered:
+                        # A prior normal command must never be mistaken for the
+                        # minimum command, including if this write now fails.
+                        for entity_id in recovered:
+                            self._pending.pop(entity_id, None)
                         await self._apply(recovered, monotonic(), emergency=True, force=True)
-                        sent = self._deferred_shutdown.intersection(self._pending)
+                        sent = recovered.keys() & self._pending.keys()
                         self._deferred_shutdown.difference_update(sent)
-                        self._shutdown_pending.update(self._pending)
-                        self._pending.clear()
+                        self._shutdown_pending.update(
+                            {entity_id: self._pending.pop(entity_id) for entity_id in sent}
+                        )
                         if (
                             not self._deferred_shutdown
                             and self.last_error
@@ -779,15 +847,9 @@ class EMSRuntime:
                         ):
                             self.last_error = None
                 await self._verify_shutdown(monotonic())
-                self._publish()
-                return
-            if self._deferred_shutdown:
-                self.status = "write_error"
-                self.last_error = "Incomplete previous inverter shutdown: " + ", ".join(
-                    sorted(self._deferred_shutdown)
-                )
-                self._publish()
-                return
+                if not self.controller.enabled:
+                    self._publish()
+                    return
             now = monotonic()
             self._start_hold.seconds = float(self.entry.options.get("start_hold_seconds", 30.0))
             self.controller.grid_target_w = float(
@@ -807,7 +869,16 @@ class EMSRuntime:
                 if confirmed_export is not None:
                     grid = min(grid, confirmed_export)
             self._grid_filtered_w = grid
-            batteries = self._batteries()
+            batteries = tuple(
+                replace(
+                    battery,
+                    inverters=tuple(
+                        replace(inv, online=False) if inv.key in self._shutdown_obligations else inv
+                        for inv in battery.inverters
+                    ),
+                )
+                for battery in self._batteries()
+            )
             if self._grid_raw_w is not None and sequence != self._last_raw_grid_sequence:
                 # The 2026-11-04 hardware trace jumped directly from +153 W
                 # to -696 W: do not require an earlier negative meter sample.
@@ -906,7 +977,7 @@ class EMSRuntime:
                     and any(inverter.online for inverter in battery.inverters)
                     for battery in batteries
                 ):
-                    self.status = "waiting"
+                    self.status = "write_error" if self._shutdown_obligations else "waiting"
                     self._publish()
                     return
                 self._seen_valid = True
@@ -969,6 +1040,11 @@ class EMSRuntime:
             await self._apply(outputs, now)
             if self.last_error is None and self._pending:
                 self.status = "waiting_feedback"
+            if self._shutdown_obligations:
+                self.status = "write_error"
+                self.last_error = "Inverter safe minimum not confirmed: " + ", ".join(
+                    sorted(self._shutdown_obligations)
+                )
             # Show requested limits only when actually sent. If a write was
             # rate-limited, keep the confirmed baseline in public diagnostics.
             if not self._pending:

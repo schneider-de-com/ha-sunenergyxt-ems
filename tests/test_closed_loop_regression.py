@@ -296,7 +296,7 @@ async def test_new_load_does_not_override_unacknowledged_command(
     first_limit = hass.services.async_call.await_args.args[2]["value"]
     assert first_limit > 0
 
-    for tick in range(1, 7):
+    for tick in range(1, 6):
         clock[0] = 9000.0 + 5 * tick
         meter = hass.states.get("sensor.grid")
         meter.state = "800"  # household demand changed significantly
@@ -307,3 +307,199 @@ async def test_new_load_does_not_override_unacknowledged_command(
             "Never replace an in-flight command just because the grid load changed"
         )
         assert runtime.status in ("waiting_feedback", "write_error")
+
+
+@pytest.mark.asyncio
+async def test_timeout_requests_safe_minimum_and_rejects_late_positive_ack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unconfirmed increase must not remain the last command indefinitely."""
+    hass, entry = configured_slow_inverter()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [10000.0]
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: clock[0])
+
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] > 0
+    for seconds in (5, 10, 15, 20, 25, 30):
+        clock[0] = 10000.0 + seconds
+        hass.states.get("sensor.grid").last_reported = datetime.now(UTC)
+        await runtime.async_update()
+
+    assert hass.services.async_call.await_count == 2
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+    assert runtime.status == "write_error"
+    assert "acknowledged" in runtime.last_error
+
+    # Late positive feedback is not confirmation of the subsequent zero request.
+    inverter = hass.states.get("number.inverter")
+    inverter.state = "2"
+    inverter.last_reported = datetime.now(UTC) + timedelta(milliseconds=1)
+    clock[0] += 5
+    hass.states.get("sensor.grid").last_reported = datetime.now(UTC)
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 2
+    assert runtime.status == "write_error"
+
+    # Fresh readback of the safe command permits automatic recovery; an old
+    # positive readback above did not.  No manual reset is required.
+    inverter.state = "0"
+    inverter.last_reported = datetime.now(UTC) + timedelta(milliseconds=2)
+    hass.states.get("sensor.grid").last_reported = datetime.now(UTC)
+    clock[0] += 20
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 3
+    assert hass.services.async_call.await_args.args[2]["value"] > 0
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_increase_is_recovered_after_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hass, entry = configured_slow_inverter()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: 20000.0)
+
+    async def check_persisted_before_write(domain, action, data, **kwargs):
+        if data["value"] > 0:
+            assert (await runtime._shutdown_store.async_load())["inflight"] == ["number.inverter"]
+
+    hass.services.async_call.side_effect = check_persisted_before_write
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] > 0
+    assert (await runtime._shutdown_store.async_load())["inflight"] == ["number.inverter"]
+
+    restarted = EMSRuntime(hass, entry)
+    restarted._shutdown_store = runtime._shutdown_store
+    await restarted._load_shutdown_obligations()
+    restarted._running = True
+    await restarted.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+    assert "number.inverter" in restarted._shutdown_obligations
+
+
+@pytest.mark.asyncio
+async def test_increase_is_not_sent_when_journal_write_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hass, entry = configured_slow_inverter()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    runtime._shutdown_store.async_save = AsyncMock(side_effect=OSError("disk full"))
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: 30000.0)
+    await runtime.async_update()
+    hass.services.async_call.assert_not_awaited()
+    assert runtime.status == "write_error"
+    assert "persist" in runtime.last_error.lower()
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_inverter_does_not_block_other_battery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hass, entry = configured_slow_inverter()
+    states = hass.states.get.__self__
+    states["sensor.soc2"] = sample(70, "%")
+    states["number.inverter2"] = sample(0, "%", min=0, max=100, step=1)
+    entry.data["batteries"].append(
+        {
+            "device_id": "bk215-2",
+            "soc": "sensor.soc2",
+            "lower": "number.lower",
+            "upper": "number.upper",
+            "inverters": [{"entity_id": "number.inverter2", "rated_w": 800}],
+        }
+    )
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [40000.0]
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: clock[0])
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["entity_id"] == "number.inverter"
+    clock[0] += 30
+    states["sensor.grid"].last_reported = datetime.now(UTC)
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+    clock[0] += 5
+    states["sensor.grid"].last_reported = datetime.now(UTC)
+    await runtime.async_update()
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert any(call["entity_id"] == "number.inverter2" and call["value"] > 0 for call in commands)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("grid", [-150, -800])
+async def test_unconfirmed_decrease_is_journaled_before_write_and_recovered(
+    monkeypatch: pytest.MonkeyPatch, grid: int
+) -> None:
+    hass, entry = configured_slow_inverter()
+    hass.states.get("number.inverter").state = "50"
+    hass.states.get("sensor.grid").state = str(grid)
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: 25000.0)
+
+    async def verify_journal(domain, action, data, **kwargs):
+        assert data["value"] < 50
+        assert (await runtime._shutdown_store.async_load())["inflight"] == ["number.inverter"]
+
+    hass.services.async_call.side_effect = verify_journal
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 1
+    restarted = EMSRuntime(hass, entry)
+    restarted._shutdown_store = runtime._shutdown_store
+    await restarted._load_shutdown_obligations()
+    assert "number.inverter" in restarted._shutdown_obligations
+
+
+@pytest.mark.asyncio
+async def test_two_feedback_timeouts_each_allow_a_safe_shutdown_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hass, entry = configured_slow_inverter()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [50000.0]
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: clock[0])
+
+    async def tick(seconds):
+        clock[0] += seconds
+        hass.states.get("sensor.grid").last_reported = datetime.now(UTC)
+        await runtime.async_update()
+
+    await runtime.async_update()
+    await tick(30)  # timeout and first safe command
+    await tick(30)  # first safe command is not acknowledged
+    await tick(5)  # retry safe command
+    assert hass.services.async_call.await_count == 3
+    inverter = hass.states.get("number.inverter")
+    inverter.state = "0"
+    inverter.last_reported = datetime.now(UTC) + timedelta(milliseconds=2)
+    await tick(20)  # safe readback and automatic reactivation
+    assert hass.services.async_call.await_args.args[2]["value"] > 0
+    await tick(30)  # next positive command times out
+    await tick(30)  # first safe command is not acknowledged again
+    before_retry = hass.services.async_call.await_count
+    await tick(5)
+    assert hass.services.async_call.await_count == before_retry + 1
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_reserve_reduction_attempted_even_if_journal_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hass, entry = configured_slow_inverter()
+    hass.states.get("number.inverter").state = "50"
+    hass.states.get("sensor.soc").state = "10"
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    runtime._shutdown_store.async_save = AsyncMock(side_effect=OSError("disk full"))
+    monkeypatch.setattr(runtime_module, "monotonic", lambda: 60000.0)
+    await runtime.async_update()
+    assert hass.services.async_call.await_count == 1
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+    assert runtime.status == "write_error"
+    assert "persist" in runtime.last_error.lower()
