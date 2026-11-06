@@ -6,7 +6,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .discovery import Candidate, find_batteries, suggest_grid, suggest_inverter_limit
+from .discovery import (
+    BK_SOURCE_DOMAINS,
+    Candidate,
+    find_batteries,
+    suggest_grid,
+    suggest_inverter_limit,
+)
 
 # These suffixes are from the *registered unique IDs* of the SunEnergyXT
 # integration. They are not entity_id or localized UI-name assumptions.
@@ -23,7 +29,7 @@ def _source_key(entry: er.RegistryEntry) -> str | None:
     """Identify the entity's purpose from its integration-owned unique ID."""
     unique_id = entry.unique_id or ""
     platform = entry.platform.lower()
-    if platform == "sunenergyxt" and entry.config_entry_id:
+    if platform in BK_SOURCE_DOMAINS and entry.config_entry_id:
         prefix = f"{entry.config_entry_id}_"
         if unique_id.startswith(prefix):
             suffix = unique_id[len(prefix) :]

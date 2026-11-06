@@ -24,12 +24,14 @@ _BK_ROLES = {
     "wifi_outputpower_total": "dc_output",
 }
 
+BK_SOURCE_DOMAINS = frozenset(("sunenergyxt", "sunenergyxt_bk"))
+
 
 def find_batteries(entities: Iterable[Candidate]) -> dict[str, dict[str, str]]:
     """Match BK215 sensor/limit entities from the official SunEnergyXT integration."""
     devices: dict[str, dict[str, str]] = {}
     for item in entities:
-        if item.source_domain.lower() != "sunenergyxt" or not item.device_id:
+        if item.source_domain.lower() not in BK_SOURCE_DOMAINS or not item.device_id:
             continue
         role = _BK_ROLES.get(item.translation_key or "")
         if (
