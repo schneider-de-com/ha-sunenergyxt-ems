@@ -423,3 +423,76 @@ async def test_reconfigure_retains_existing_battery_mappings_when_discovery_chan
     await hass.async_block_till_done()
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.parametrize(
+    ("lower", "upper"),
+    [(0, 95), (10, 95), ("number.reserve", "number.upper")],
+)
+async def test_correction_form_preserves_limit_value_types(hass: HomeAssistant, lower, upper):
+    """Real reconfigure form retains numeric zero and numbers or entity IDs."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="household",
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc",
+                    "lower": lower,
+                    "upper": upper,
+                    "inverters": [{"entity_id": "number.inv", "rated_w": 2000}],
+                }
+            ],
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    er.async_get(hass).async_get_or_create("number", "test", "inv", suggested_object_id="inv")
+    hass.states.async_set("number.inv", "0", {"unit_of_measurement": "%"})
+    hass.states.async_set("sensor.grid", "100", {"unit_of_measurement": "W"})
+    with (
+        patch(
+            "custom_components.sunenergyxt_ems.config_flow.battery_suggestions",
+            return_value={"bk1": {"soc": "sensor.soc", "lower": lower, "upper": upper}},
+        ),
+        patch(
+            "custom_components.sunenergyxt_ems.config_flow.inverter_device_suggestions",
+            return_value={"number.inv": "M200"},
+        ),
+        patch("custom_components.sunenergyxt_ems.config_flow.device_rated_w", return_value=2000),
+    ):
+        flow = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        )
+        flow = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {"batteries": ["bk1"], "correct_values": True}
+        )
+        assert flow["step_id"] == "correct"
+        defaults = {
+            str(key): key.default()
+            for key in flow["data_schema"].schema
+            if callable(getattr(key, "default", None))
+        }
+        assert defaults["lower_1"] == lower
+        assert defaults["upper_1"] == upper
+        flow = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {"soc_1": "sensor.soc", "lower_1": lower, "upper_1": upper}
+        )
+        assert flow["step_id"] == "inverters"
+        flow = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {"inverters_1": ["number.inv"]}
+        )
+        assert flow["step_id"] == "grid"
+        flow = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {"grid": "sensor.grid", "invert_grid": False, "ack": True}
+        )
+        assert flow["reason"] == "reconfigure_successful"
+    assert entry.data["batteries"][0]["lower"] == lower
+    assert entry.data["batteries"][0]["upper"] == upper
+    await hass.async_block_till_done()
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()

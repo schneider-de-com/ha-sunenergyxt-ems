@@ -137,7 +137,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 battery[CONF_SOC] = user_input[f"soc_{index}"]
                 battery[CONF_LOWER] = user_input[f"lower_{index}"]
                 upper = user_input.get(f"upper_{index}")
-                if upper:
+                if upper is not None:
                     battery[CONF_UPPER] = upper
                 dc_output = user_input.get(f"dc_output_{index}")
                 if dc_output:
@@ -148,21 +148,23 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             fields[vol.Required(f"soc_{index}", default=battery.get(CONF_SOC))] = (
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
             )
-            lower_kwargs = {"default": battery[CONF_LOWER]} if battery.get(CONF_LOWER) else {}
-            if battery.get(CONF_LOWER):
-                fields[vol.Required(f"lower_{index}", **lower_kwargs)] = selector.EntitySelector(
+            lower = battery.get(CONF_LOWER)
+            if isinstance(lower, str) and lower:
+                fields[vol.Required(f"lower_{index}", default=lower)] = selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="number")
                 )
             else:
-                fields[vol.Required(f"lower_{index}", default=10)] = vol.All(
-                    vol.Coerce(float), vol.Range(min=0, max=90)
+                fields[vol.Required(f"lower_{index}", default=10 if lower is None else lower)] = (
+                    vol.All(vol.Coerce(float), vol.Range(min=0, max=90))
                 )
-            if battery.get(CONF_UPPER):
-                fields[vol.Required(f"upper_{index}", default=battery[CONF_UPPER])] = (
-                    selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
+            upper = battery.get(CONF_UPPER)
+            if isinstance(upper, str) and upper:
+                fields[vol.Required(f"upper_{index}", default=upper)] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="number")
                 )
             else:
-                fields[vol.Optional(f"upper_{index}")] = vol.All(
+                upper_kwargs = {"default": upper} if upper is not None else {}
+                fields[vol.Optional(f"upper_{index}", **upper_kwargs)] = vol.All(
                     vol.Coerce(float), vol.Range(min=70, max=100)
                 )
             fields[
