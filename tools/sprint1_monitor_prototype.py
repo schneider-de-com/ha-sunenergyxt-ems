@@ -72,8 +72,8 @@ class Monitor:
             )
             endpoint = limit_valid and snap.limit_pct in (0, 100)
             current = (
-                snap.meter_fresh
-                and snap.reserve_known
+                snap.meter_fresh is True
+                and snap.reserve_known is True
                 and limit_valid
                 and snap.controller_enabled is True
             )
