@@ -45,6 +45,15 @@ def test_stale_or_missing_safety_context_cannot_be_called_mismatch(tmp_path, fre
     assert monitor.result() == "inconclusive"
 
 
+@pytest.mark.parametrize("field", ["fresh", "reserve"])
+@pytest.mark.parametrize("invalid", [None, "false", 1])
+def test_unconfirmed_context_cannot_abort_or_pass(tmp_path, field, invalid):
+    monitor = Monitor(tmp_path / "monitor.db", 0, 86400)
+    context = {field: invalid}
+    assert monitor.observe(sample(86400, 0, Evidence.MISMATCH, **context)) == "continue"
+    assert monitor.result() == "inconclusive"
+
+
 def test_unknown_endpoint_does_not_silently_pass(tmp_path):
     monitor = Monitor(tmp_path / "monitor.db", 0, 86400)
     assert monitor.observe(sample(86400, 100, Evidence.UNKNOWN)) == "continue"
