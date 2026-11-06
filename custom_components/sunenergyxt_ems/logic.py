@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass, field
+from datetime import datetime
 from math import ceil, isfinite
 from statistics import median
 
@@ -126,10 +127,22 @@ class GridMedianFilter:
         if not isfinite(grid_w) or abs(grid_w) > 100_000:
             self.reset()
             return grid_w
+        if (
+            self._samples
+            and isinstance(sequence, datetime)
+            and isinstance(self._last_sequence, datetime)
+            and sequence <= self._last_sequence
+        ):
+            return float(median(self._samples))
         if not self._samples or sequence != self._last_sequence:
             self._samples.append(grid_w)
             self._last_sequence = sequence
         return float(median(self._samples))
+
+    @property
+    def last_sequence(self) -> object | None:
+        """Identify the newest accepted meter observation."""
+        return self._last_sequence
 
     def sustained_import(self) -> bool:
         """Confirm high import using three distinct recent meter samples."""

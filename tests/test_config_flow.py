@@ -263,6 +263,35 @@ async def test_reconfigure_keeps_existing_batteries_and_preserves_options(flow, 
 
 
 @pytest.mark.asyncio
+async def test_reconfigure_fills_missing_sources_and_discovers_new_batteries(flow, monkeypatch):
+    """Only an already configured source takes precedence over discovery."""
+    entry = SimpleNamespace(
+        data={"batteries": [{"device_id": "battery-1", "soc": "sensor.custom_soc", "lower": 0}]}
+    )
+    monkeypatch.setattr(flow, "_get_reconfigure_entry", lambda: entry)
+    monkeypatch.setattr(
+        flow_module,
+        "battery_suggestions",
+        lambda _: {
+            "battery-1": {
+                "soc": "sensor.discovered_soc",
+                "lower": "number.discovered_lower",
+                "upper": "number.discovered_upper",
+            },
+            "battery-2": {"soc": "sensor.second_soc", "lower": "number.second_lower"},
+        },
+    )
+    result = await flow.async_step_reconfigure({"batteries": ["battery-1", "battery-2"]})
+    assert result["step_id"] == "inverters"
+    first, second = flow._batteries
+    assert first["soc"] == "sensor.custom_soc"
+    assert first["lower"] == 0
+    assert first["upper"] == "number.discovered_upper"
+    assert second["soc"] == "sensor.second_soc"
+    assert second["lower"] == "number.second_lower"
+
+
+@pytest.mark.asyncio
 async def test_setup_options_allow_simple_grid_target(flow, monkeypatch):
     options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
     monkeypatch.setattr(

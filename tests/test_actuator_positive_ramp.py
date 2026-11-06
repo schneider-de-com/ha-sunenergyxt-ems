@@ -289,6 +289,45 @@ def test_sustained_import_requires_three_distinct_samples() -> None:
 
 
 @pytest.mark.asyncio
+async def test_high_import_does_not_bypass_delayed_hardware_readback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sustained load must not override a simulated mismatching device readback."""
+    runtime, hass = runtime_pair()
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
+    runtime._hardware_feedback_matches = AsyncMock(return_value=False)
+    grid = hass.states.get("sensor.grid")
+    inverter = hass.states.get("number.m200")
+
+    await runtime.async_update()
+    first = hass.services.async_call.await_args.args[2]["value"]
+    assert first > 0
+    inverter.state = str(first)
+    inverter.last_reported = datetime.now(UTC) + timedelta(milliseconds=1)
+
+    for seconds in (5, 10, 15, 20, 25):
+        clock[0] = 1000.0 + seconds
+        grid.state = "2300"
+        grid.last_reported = datetime.now(UTC) + timedelta(milliseconds=2 * seconds)
+        await runtime.async_update()
+        assert hass.services.async_call.await_count == 1
+        assert runtime.status == "waiting_feedback"
+
+    assert runtime._grid_filter.sustained_import()
+    runtime._hardware_feedback_matches.return_value = True
+    clock[0] = 1031.0
+    grid.last_reported = datetime.now(UTC) + timedelta(milliseconds=100)
+    await runtime.async_update()
+
+    assert hass.services.async_call.await_count == 2
+    next_limit = hass.services.async_call.await_args.args[2]["value"]
+    assert first < next_limit <= first + 1.0  # At most 20 W on a 2 kW inverter.
+
+
+@pytest.mark.asyncio
 async def test_sustained_high_import_converges_faster_in_closed_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -321,3 +360,110 @@ async def test_sustained_high_import_converges_faster_in_closed_loop(
     assert commands[0][1] <= 0.1
     assert all(b[1] - a[1] <= 1.00001 for a, b in pairwise(commands))
     assert 2000.0 - float(inverter.state) * 20 < 1500.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verified, high_load", [(True, True), (False, True), (True, False)])
+async def test_rounded_readback_can_progress_after_sustained_import(
+    verified: bool, high_load: bool
+) -> None:
+    """Recorded 5.1% command / 5.09% readback permits a verified bounded step."""
+    runtime, hass = runtime_pair()
+    entity_id = "number.m200"
+    runtime._last_sent[entity_id] = 5.1
+    runtime._sent_at[entity_id] = 1000.0
+    hass.states.get(entity_id).state = "5.09"
+    runtime._hardware_feedback_matches = AsyncMock(return_value=verified)
+    for i in range(3):
+        runtime._grid_filter.observe(1100.0 if high_load else 100.0, i)
+    runtime._grid_raw_w = 1100.0 if high_load else 100.0
+
+    await runtime._apply({entity_id: 540}, now=1010.0)
+
+    if high_load:
+        runtime._hardware_feedback_matches.assert_awaited_once_with(entity_id, 5.1)
+    if verified and high_load:
+        assert hass.services.async_call.await_args.args[2]["value"] == 6.1
+    else:
+        hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_out_of_order_grid_cannot_acknowledge_command() -> None:
+    runtime, hass = runtime_pair()
+    grid = hass.states.get("sensor.grid")
+    inverter = hass.states.get("number.m200")
+    t3 = datetime.now(UTC)
+    t1 = t3 - timedelta(seconds=2)
+    t2 = t3 - timedelta(seconds=1)
+    runtime._grid_filter.observe(1100, t3)
+    grid.last_reported = t1
+    await runtime._apply({"number.m200": 520}, now=1000)
+    inverter.state = "0.1"
+    inverter.last_reported = datetime.now(UTC) + timedelta(seconds=1)
+    runtime._hardware_feedback_matches = AsyncMock(return_value=True)
+
+    assert not await runtime._feedback_ready(1010, t2)
+    assert runtime.status == "waiting_meter"
+
+
+@pytest.mark.asyncio
+async def test_out_of_order_grid_does_not_suppress_unacknowledged_command_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, hass = runtime_pair()
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
+    grid = hass.states.get("sensor.grid")
+    t3 = datetime.now(UTC)
+    grid.last_reported = t3
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] == 0.1
+
+    grid.last_reported = t3 - timedelta(seconds=1)
+    clock[0] = 1031.0
+    await runtime.async_update()
+
+    assert runtime.status == "write_error"
+    assert "not acknowledged" in runtime.last_error
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_missing_grid_does_not_hide_unacknowledged_command_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, hass = runtime_pair()
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
+    await runtime.async_update()
+    assert hass.services.async_call.await_args.args[2]["value"] == 0.1
+
+    hass.states.get("sensor.grid").state = "unavailable"
+    clock[0] = 1031.0
+    await runtime.async_update()
+
+    assert runtime.status == "write_error"
+    assert "not acknowledged" in runtime.last_error
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+    assert "number.m200" in runtime._shutdown_obligations
+
+
+@pytest.mark.asyncio
+async def test_missing_grid_does_not_hide_second_actuator_timeout() -> None:
+    runtime, hass = runtime_pair()
+    runtime._hardware_feedback_matches = AsyncMock(return_value=True)
+    await runtime._apply({"number.m200": 520, "number.m80": 500}, now=1000)
+    assert len(runtime._pending) == 2
+    inverter = hass.states.get("number.m200")
+    inverter.state = "0.1"
+    inverter.last_reported = datetime.now(UTC) + timedelta(seconds=1)
+
+    assert not await runtime._feedback_ready(1031, None)
+    assert runtime.status == "write_error"
+    assert "number.m80" in runtime.last_error
+    assert "number.m80" in runtime._shutdown_obligations

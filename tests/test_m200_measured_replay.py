@@ -8,6 +8,7 @@ grid trace would be identical after changing the controller.
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 from custom_components.sunenergyxt_ems.logic import (
@@ -83,3 +84,19 @@ def test_invalid_meter_does_not_get_masked_by_historical_median() -> None:
     assert meter.observe(float("nan"), 5) != meter.observe(float("nan"), 5)
     assert meter.observe(1_000_000.0, 6) == 1_000_000.0
     assert meter.observe(-100.0, 7) == -100.0
+
+
+def test_out_of_order_and_repeated_report_times_do_not_confirm_import() -> None:
+    from datetime import datetime, timedelta
+
+    meter = GridMedianFilter()
+    t1 = datetime(2026, 11, 3, tzinfo=UTC)
+    t2 = t1 + timedelta(seconds=1)
+    assert meter.observe(600.0, t2) == 600.0
+    assert meter.observe(900.0, t1) == 600.0
+    assert meter.observe(900.0, t2) == 600.0
+    assert not meter.sustained_import()
+    meter.observe(650.0, t2 + timedelta(seconds=1))
+    assert not meter.sustained_import()
+    meter.observe(700.0, t2 + timedelta(seconds=2))
+    assert meter.sustained_import()
