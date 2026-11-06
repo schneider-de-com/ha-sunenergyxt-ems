@@ -8,9 +8,10 @@ CI job with pytest-homeassistant-custom-component; no skip-on-missing-plugin.
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -337,3 +338,88 @@ async def test_ha_diagnostics_exposes_selected_mapping_without_secrets(
         ],
     }
     assert "secret" not in json.dumps(body["data"])
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.parametrize("lower", ["number.manually_selected_reserve", 10])
+async def test_reconfigure_retains_existing_battery_mappings_when_discovery_changes(
+    hass: HomeAssistant,
+    lower: str | int,
+) -> None:
+    """Selecting the same battery must not replace its explicitly chosen sources."""
+    original = {
+        "device_id": "bk1",
+        "soc": "sensor.manually_selected_soc",
+        "lower": lower,
+        "upper": "number.manually_selected_upper",
+        "charging": "sensor.manually_selected_charging",
+        "dc_output": "sensor.manually_selected_dc",
+        "inverters": [{"entity_id": "number.inv1", "rated_w": 2000}],
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="household",
+        data={
+            "batteries": [
+                original,
+                {
+                    "device_id": "bk2",
+                    "soc": "sensor.other_soc",
+                    "lower": 10,
+                    "upper": 95,
+                    "inverters": [{"entity_id": "number.inv2", "rated_w": 800}],
+                },
+            ],
+            "grid": "sensor.grid",
+            "invert_grid": False,
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    reg = er.async_get(hass)
+    reg.async_get_or_create("number", "test", "inv1", suggested_object_id="inv1")
+    hass.states.async_set("number.inv1", "0", {"unit_of_measurement": "%"})
+    hass.states.async_set("sensor.grid", "100", {"unit_of_measurement": "W"})
+    with (
+        patch(
+            "custom_components.sunenergyxt_ems.config_flow.battery_suggestions",
+            return_value={
+                "bk1": {
+                    "soc": "sensor.discovered_soc",
+                    "lower": "number.discovered_reserve",
+                    "upper": "number.discovered_upper",
+                    "charging": "sensor.discovered_charging",
+                    "dc_output": "sensor.discovered_dc",
+                }
+            },
+        ),
+        patch(
+            "custom_components.sunenergyxt_ems.config_flow.inverter_device_suggestions",
+            return_value={"number.inv1": "M200"},
+        ),
+        patch("custom_components.sunenergyxt_ems.config_flow.device_rated_w", return_value=2000),
+    ):
+        flow = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        )
+        assert flow["step_id"] == "reconfigure"
+        flow = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {"batteries": ["bk1"], "correct_values": False}
+        )
+        assert flow["step_id"] == "inverters"
+        flow = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {"inverters_1": ["number.inv1"]}
+        )
+        assert flow["step_id"] == "grid"
+        flow = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {"grid": "sensor.grid", "invert_grid": False, "ack": True}
+        )
+        assert flow["reason"] == "reconfigure_successful"
+    restored = entry.data["batteries"][0]
+    assert len(entry.data["batteries"]) == 1
+    for key in ("soc", "lower", "upper", "charging", "dc_output"):
+        assert restored[key] == original[key]
+    await hass.async_block_till_done()
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
