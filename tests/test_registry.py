@@ -120,6 +120,16 @@ def test_live_derived_battery_roles_still_work_after_renames(registry):
     }
 
 
+def test_new_bk_domain_unique_id_must_belong_to_entry(registry):
+    hass, values = registry
+    for entity in values.values():
+        if entity.platform == "sunEnergyXT":
+            entity.platform = "sunenergyxt_bk"
+    assert module.battery_suggestions(hass)["bk1"]["lower"] == "number.changed_low"
+    values["sensor.changed_soc"].unique_id = "other_entry_wifi_soc"
+    assert "bk1" not in module.battery_suggestions(hass)
+
+
 def test_live_derived_energy_meter_is_suggested_after_rename(registry):
     hass, _ = registry
     assert module.suggested_grid(hass) == "sensor.grid_renamed"
