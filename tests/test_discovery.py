@@ -26,6 +26,17 @@ def test_battery_roles_use_device_and_source_keys():
     }
 
 
+def test_new_official_bk_domain_discovers_battery_roles():
+    entities = [
+        Candidate("sensor.soc", "sensor", "bk", "sunenergyxt_bk", "wifi_soc", "%"),
+        Candidate("number.reserve", "number", "bk", "sunenergyxt_bk", "wifi_cnfg_disc_soc_min", "%"),
+        Candidate("sensor.output", "sensor", "bk", "sunenergyxt_bk", "wifi_outputpower_total", "W"),
+    ]
+    assert find_batteries(entities) == {
+        "bk": {"soc": "sensor.soc", "lower": "number.reserve", "dc_output": "sensor.output"}
+    }
+
+
 def test_inverter_suggestion_is_only_a_suggestion():
     items = [
         Candidate(
