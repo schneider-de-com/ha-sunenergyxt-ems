@@ -251,6 +251,15 @@
           "waiting_for_upper_soc": "Wartet auf SoC-Obergrenze"
         }
       },
+      "battery_soc": {
+        "name": "Ladezustand"
+      },
+      "battery_lower_soc": {
+        "name": "Entladegrenze"
+      },
+      "battery_dc_output": {
+        "name": "DC-Ausgangsleistung"
+      },
       "inverter_requested": {
         "name": "Zuletzt an HA übergebenes Wechselrichterlimit"
       },

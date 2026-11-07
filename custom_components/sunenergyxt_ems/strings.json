@@ -251,6 +251,15 @@
           "waiting_for_upper_soc": "Waiting for upper SoC threshold"
         }
       },
+      "battery_soc": {
+        "name": "State of charge"
+      },
+      "battery_lower_soc": {
+        "name": "Discharge limit"
+      },
+      "battery_dc_output": {
+        "name": "DC output power"
+      },
       "inverter_requested": {
         "name": "Last inverter limit sent to HA"
       },

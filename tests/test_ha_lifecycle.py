@@ -100,6 +100,7 @@ async def test_setup_registers_real_integration_devices_and_controls(
                     "device_id": "bk215-1",
                     "label": "BK215 1",
                     "soc": "sensor.soc",
+                    "dc_output": "sensor.battery_dc",
                     "lower": 10,
                     "upper": 90,
                     "inverters": [
@@ -112,6 +113,8 @@ async def test_setup_registers_real_integration_devices_and_controls(
         options={"enabled": False, "feed_in": False, "grid_target_w": 20},
     )
     entry.add_to_hass(hass)
+    hass.states.async_set("sensor.soc", "78", {"unit_of_measurement": "%"})
+    hass.states.async_set("sensor.battery_dc", "120", {"unit_of_measurement": "W"})
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -131,6 +134,9 @@ async def test_setup_registers_real_integration_devices_and_controls(
         f"{entry.entry_id}_status",
         f"{entry.entry_id}_weighted_battery_level",
         f"{entry.entry_id}_battery_bk215-1",
+        f"{entry.entry_id}_battery_bk215-1_soc",
+        f"{entry.entry_id}_battery_bk215-1_lower_soc",
+        f"{entry.entry_id}_battery_bk215-1_dc_output",
         f"{entry.entry_id}_enabled",
         f"{entry.entry_id}_feed_in",
         f"{entry.entry_id}_adaptive_pid",
@@ -164,9 +170,31 @@ async def test_setup_registers_real_integration_devices_and_controls(
     }
     assert all(hass.states.get(entity.entity_id) is not None for entity in entities)
 
+    registry = er.async_get(hass)
+
+    def state_for(kind: str) -> str:
+        entity_id = registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_battery_bk215-1_{kind}"
+        )
+        assert entity_id is not None
+        return hass.states.get(entity_id).state
+
+    assert float(state_for("soc")) == 78
+    assert float(state_for("lower_soc")) == 10
+    assert float(state_for("dc_output")) == 120
+    hass.states.async_set("sensor.soc", "unavailable", {"unit_of_measurement": "%"})
+    hass.data[DOMAIN][entry.entry_id]._publish()
+    await hass.async_block_till_done()
+    assert state_for("soc") == "unavailable"
+
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.NOT_LOADED
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert state_for("soc") == "unavailable"
+    assert float(state_for("lower_soc")) == 10
+    assert len(er.async_entries_for_config_entry(registry, entry.entry_id)) == len(unique_ids)
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")

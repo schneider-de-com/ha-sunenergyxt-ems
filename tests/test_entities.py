@@ -265,7 +265,7 @@ async def test_batteries_have_separate_visible_status_entities(objects):
     runtime.hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     added = []
     await sensors.async_setup_entry(runtime.hass, entry, added.extend)
-    assert len(added) == 4 + len(sensors.PID_VALUES) + 1 + 2 * 5
+    assert len(added) == 4 + len(sensors.PID_VALUES) + 1 + 2 * 8
     by_id = {entity.unique_id: entity for entity in added}
     assert {"ems-entry_status", "ems-entry_battery_bk1", "ems-entry_battery_bk2"} <= set(by_id)
     main = by_id["ems-entry_battery_bk1"]
@@ -276,6 +276,29 @@ async def test_batteries_have_separate_visible_status_entities(objects):
     assert main.extra_state_attributes["soc_pct"] == 75
     assert main.extra_state_attributes["reported_limit_w"] == {}
     assert main.extra_state_attributes["measured_inverter_ac_w"] == {}
+    assert by_id["ems-entry_battery_bk1_soc"].native_value == 75
+    assert by_id["ems-entry_battery_bk2_soc"].native_value == 50
+    assert by_id["ems-entry_battery_bk1_lower_soc"].native_value == 10
+    assert not by_id["ems-entry_battery_bk1_dc_output"].available
+
+
+def test_battery_diagnostics_expose_valid_values_and_reject_missing_data(objects):
+    entry, runtime, _ = objects
+    battery = SimpleNamespace(key="bk", soc=72.0, lower_soc=12.0, dc_output_w=234.0)
+    runtime._batteries = lambda: (battery,)
+    entities = {
+        kind: sensors.BatteryDiagnosticValue(entry, runtime, "bk", "BK", None, kind)
+        for kind in ("soc", "lower_soc", "dc_output")
+    }
+    assert {kind: entity.native_value for kind, entity in entities.items()} == {
+        "soc": 72.0,
+        "lower_soc": 12.0,
+        "dc_output": 234.0,
+    }
+    battery.soc = None
+    battery.lower_soc = 101.0
+    battery.dc_output_w = None
+    assert all(not entity.available for entity in entities.values())
 
 
 def test_unavailable_battery_has_independent_status(objects):

@@ -70,6 +70,10 @@ async def async_setup_entry(
     for record in entry.data["batteries"]:
         key = record["device_id"]
         name = record.get("label", "BK215")
+        for kind in ("soc", "lower_soc", "dc_output"):
+            entities.append(
+                BatteryDiagnosticValue(entry, runtime, key, name, controller_device.id, kind)
+            )
         for kind in ("ev3600_state", "bypass_state"):
             entities.append(
                 BatteryModeStatus(entry, runtime, key, name, controller_device.id, kind)
@@ -326,6 +330,68 @@ class BatteryStatus(SensorEntity):
                 else None
             ),
         }
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._runtime.signal, self._refresh)
+        )
+
+    @callback
+    def _refresh(self) -> None:
+        self.async_write_ha_state()
+
+
+class BatteryDiagnosticValue(SensorEntity):
+    """Expose a battery input used by the controller as an individual sensor."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        runtime: EMSRuntime,
+        device_id: str,
+        label: str,
+        parent_device_id: str | None,
+        kind: str,
+    ) -> None:
+        self._runtime = runtime
+        self._device_id = device_id
+        self._kind = kind
+        self._attr_translation_key = f"battery_{kind}"
+        self._attr_unique_id = f"{entry.entry_id}_battery_{device_id}_{kind}"
+        self._attr_native_unit_of_measurement = "W" if kind == "dc_output" else "%"
+        self._attr_device_class = {
+            "dc_output": SensorDeviceClass.POWER,
+            "soc": SensorDeviceClass.BATTERY,
+            "lower_soc": None,
+        }[kind]
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"battery_{device_id}")},
+            via_device_id=parent_device_id,
+            name=f"{label} (EMS)",
+            manufacturer="Community",
+            model="BK215 EMS controller",
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        battery = next(
+            (item for item in self._runtime._batteries() if item.key == self._device_id),
+            None,
+        )
+        if battery is None:
+            return None
+        value = getattr(battery, "dc_output_w" if self._kind == "dc_output" else self._kind, None)
+        if value is None or (self._kind != "dc_output" and not 0 <= value <= 100):
+            return None
+        return value
+
+    @property
+    def available(self) -> bool:
+        return self.native_value is not None
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(
