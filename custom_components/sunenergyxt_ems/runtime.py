@@ -686,6 +686,7 @@ class EMSRuntime:
                     blocking=True,
                 )
             except asyncio.CancelledError:
+                self._last_dispatched_w.pop(entity_id, None)
                 task = asyncio.current_task()
                 if emergency and entity_id in self._shutdown_obligations:
                     self._shutdown_failed_at[entity_id] = now
@@ -699,6 +700,7 @@ class EMSRuntime:
                 _LOGGER.warning("Inverter command cancelled: %s", entity_id)
                 continue
             except (HomeAssistantError, TimeoutError, OSError, ValueError) as exc:
+                self._last_dispatched_w.pop(entity_id, None)
                 if emergency and entity_id in self._shutdown_obligations:
                     self._shutdown_failed_at[entity_id] = now
                 if entity_id in self._inflight_commands:
