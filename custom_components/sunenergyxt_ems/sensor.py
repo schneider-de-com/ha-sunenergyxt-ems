@@ -288,8 +288,11 @@ class BatteryStatus(SensorEntity):
                 for inverter in battery.inverters
                 if self._runtime.entry.options.get("ac_power", {}).get(inverter.key)
             },
-            "requested_power_w": sum(
-                self._runtime.controller.state.outputs.get(inv.key, 0) for inv in battery.inverters
+            "requested_power_w": (
+                sum(self._runtime._last_dispatched_w[inv.key] for inv in battery.inverters)
+                if battery.inverters
+                and all(inv.key in self._runtime._last_dispatched_w for inv in battery.inverters)
+                else None
             ),
         }
 
@@ -476,7 +479,7 @@ class InverterLimitValue(SensorEntity):
     @property
     def native_value(self) -> float | None:
         if self._kind == "requested":
-            return self._runtime.controller.state.outputs.get(self._inverter_entity_id)
+            return self._runtime._last_dispatched_w.get(self._inverter_entity_id)
         if self._kind == "measured_ac":
             return fresh_power(
                 self._runtime.hass,
