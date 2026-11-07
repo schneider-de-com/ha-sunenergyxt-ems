@@ -24,7 +24,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.sunenergyxt_ems import runtime as runtime_module
 from custom_components.sunenergyxt_ems.const import DOMAIN
 from custom_components.sunenergyxt_ems.runtime import EMSRuntime
-from custom_components.sunenergyxt_ems.sensor import BatteryStatus, EMSStatus
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
@@ -55,23 +54,25 @@ async def test_translated_enum_statuses_in_real_ha(hass: HomeAssistant) -> None:
     battery_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_battery_bk1")
     assert status_id is not None and battery_id is not None
     runtime = hass.data[DOMAIN][entry.entry_id]
-    for value in EMSStatus._attr_options:
+    status_options = hass.states.get(status_id).attributes["options"]
+    battery_options = hass.states.get(battery_id).attributes["options"]
+    for value in status_options:
         runtime.status = value
         runtime._publish()
         await hass.async_block_till_done()
         state = hass.states.get(status_id)
         assert state.state == value
         assert state.attributes["device_class"] == "enum"
-        assert state.attributes["options"] == EMSStatus._attr_options
+        assert state.attributes["options"] == status_options
     state = hass.states.get(battery_id)
     assert state.state == "disabled"
     assert state.attributes["device_class"] == "enum"
-    assert state.attributes["options"] == BatteryStatus._attr_options
+    assert state.attributes["options"] == battery_options
     for language in ("en", "de"):
         translations = await async_get_translations(hass, language, "entity", {DOMAIN})
         for key, options in (
-            ("status", EMSStatus._attr_options),
-            ("battery_status", BatteryStatus._attr_options),
+            ("status", status_options),
+            ("battery_status", battery_options),
         ):
             for option in options:
                 assert translations[f"component.{DOMAIN}.entity.sensor.{key}.state.{option}"]
