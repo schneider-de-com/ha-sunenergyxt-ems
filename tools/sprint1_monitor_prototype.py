@@ -106,7 +106,9 @@ class Monitor:
                     evidence,
                     int(snap.meter_fresh is True),
                     int(snap.reserve_known is True),
-                    None if snap.controller_enabled is None else int(snap.controller_enabled is True),
+                    None
+                    if snap.controller_enabled is None
+                    else int(snap.controller_enabled is True),
                     snap.grid_w,
                     snap.requested_w,
                     snap.reported_w,

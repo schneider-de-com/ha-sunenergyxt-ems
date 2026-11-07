@@ -41,7 +41,10 @@ def test_valid_endpoint_does_not_stop(tmp_path):
 @pytest.mark.parametrize("fresh,reserve", [(False, True), (True, False)])
 def test_stale_or_missing_safety_context_cannot_be_called_mismatch(tmp_path, fresh, reserve):
     monitor = Monitor(tmp_path / "monitor.db", 0, 86400)
-    assert monitor.observe(sample(86400, 0, Evidence.MISMATCH, fresh=fresh, reserve=reserve)) == "continue"
+    assert (
+        monitor.observe(sample(86400, 0, Evidence.MISMATCH, fresh=fresh, reserve=reserve))
+        == "continue"
+    )
     assert monitor.result() == "inconclusive"
 
 
