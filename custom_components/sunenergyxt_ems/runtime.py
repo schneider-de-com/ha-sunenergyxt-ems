@@ -95,6 +95,9 @@ class EMSRuntime:
         self._connection_inverters: dict[str, set[str]] = {}
         self._lock = asyncio.Lock()
         self._last_sent: dict[str, float] = {}
+        # Diagnostic history of successful service dispatches, in watts. This
+        # is a command, not a device acknowledgement or measured power.
+        self._last_dispatched_w: dict[str, float] = {}
         self._sent_at: dict[str, float] = {}
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
@@ -714,6 +717,7 @@ class EMSRuntime:
                 now=now,
             )
             self._last_sent[entity_id] = value
+            self._last_dispatched_w[entity_id] = value * rating / 100 if unit == "%" else value
             self._sent_at[entity_id] = now
             self._pending[entity_id] = PendingCommand(
                 target=value,
