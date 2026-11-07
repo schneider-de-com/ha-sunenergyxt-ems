@@ -135,6 +135,21 @@ class EMSStatus(SensorEntity):
     """Report whether the controller can currently regulate."""
 
     _attr_translation_key = "status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [
+        "waiting",
+        "running",
+        "waiting_feedback",
+        "waiting_meter",
+        "disabled",
+        "shutdown_pending",
+        "write_error",
+        "hardware_limit",
+        "dc_unavailable",
+        "reserve_safety",
+        "grid_unavailable",
+        "switching_main",
+    ]
     _attr_has_entity_name = True
     _attr_should_poll = False
 
@@ -252,6 +267,17 @@ class BatteryStatus(SensorEntity):
     """Expose one device with a status and diagnostics per configured BK215."""
 
     _attr_translation_key = "battery_status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [
+        "disabled",
+        "blocked",
+        "ev3600_charging",
+        "ev3600_unavailable",
+        "unavailable",
+        "main",
+        "support",
+        "standby",
+    ]
     _attr_has_entity_name = True
     _attr_should_poll = False
 

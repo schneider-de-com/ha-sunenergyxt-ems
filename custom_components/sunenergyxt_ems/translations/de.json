@@ -199,10 +199,34 @@
   "entity": {
     "sensor": {
       "status": {
-        "name": "EMS-Status"
+        "name": "EMS-Status",
+        "state": {
+          "waiting": "Wartet auf gültige Eingangswerte",
+          "running": "Regelung aktiv",
+          "waiting_feedback": "Wartet auf Wechselrichter-Rückmeldung",
+          "waiting_meter": "Wartet auf neuen Netzmesswert",
+          "disabled": "Deaktiviert",
+          "shutdown_pending": "Wartet auf Abschaltbestätigung",
+          "write_error": "Kommunikations- oder Steuerungsfehler",
+          "hardware_limit": "DC-Leistungsgrenze überschritten",
+          "dc_unavailable": "DC-Messwert nicht verfügbar",
+          "reserve_safety": "Speicherreserve-Schutz aktiv",
+          "grid_unavailable": "Netzmesswert nicht verfügbar",
+          "switching_main": "Hauptspeicherwechsel läuft"
+        }
       },
       "battery_status": {
-        "name": "Speicherstatus"
+        "name": "Speicherstatus",
+        "state": {
+          "disabled": "Deaktiviert",
+          "blocked": "Gesperrt",
+          "ev3600_charging": "EV3600 lädt",
+          "ev3600_unavailable": "EV3600 nicht verfügbar",
+          "unavailable": "Wechselrichter nicht verfügbar",
+          "main": "Hauptspeicher",
+          "support": "Unterstützender Speicher",
+          "standby": "Bereit"
+        }
       },
       "grid_raw": {
         "name": "Netzleistung roh"

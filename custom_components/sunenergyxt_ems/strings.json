@@ -199,10 +199,34 @@
   "entity": {
     "sensor": {
       "status": {
-        "name": "EMS status"
+        "name": "EMS status",
+        "state": {
+          "waiting": "Waiting for valid inputs",
+          "running": "Running",
+          "waiting_feedback": "Waiting for inverter feedback",
+          "waiting_meter": "Waiting for new grid reading",
+          "disabled": "Disabled",
+          "shutdown_pending": "Waiting for shutdown confirmation",
+          "write_error": "Communication or control error",
+          "hardware_limit": "DC power safety limit",
+          "dc_unavailable": "DC measurement unavailable",
+          "reserve_safety": "Battery reserve protection",
+          "grid_unavailable": "Grid measurement unavailable",
+          "switching_main": "Switching main battery"
+        }
       },
       "battery_status": {
-        "name": "Battery status"
+        "name": "Battery status",
+        "state": {
+          "disabled": "Disabled",
+          "blocked": "Blocked",
+          "ev3600_charging": "EV3600 charging",
+          "ev3600_unavailable": "EV3600 unavailable",
+          "unavailable": "Inverter unavailable",
+          "main": "Main battery",
+          "support": "Support battery",
+          "standby": "Standby"
+        }
       },
       "grid_raw": {
         "name": "Raw grid power"

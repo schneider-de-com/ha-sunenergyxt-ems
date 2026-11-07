@@ -16,6 +16,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.translation import async_get_translations
 from homeassistant.setup import async_setup_component
 from homeassistant.util.file import WriteError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -23,6 +24,57 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.sunenergyxt_ems import runtime as runtime_module
 from custom_components.sunenergyxt_ems.const import DOMAIN
 from custom_components.sunenergyxt_ems.runtime import EMSRuntime
+from custom_components.sunenergyxt_ems.sensor import BatteryStatus, EMSStatus
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_translated_enum_statuses_in_real_ha(hass: HomeAssistant) -> None:
+    """HA receives all supported status states and both languages can display them."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [{"entity_id": "number.inv", "rated_w": 800}],
+                }
+            ],
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    status_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_status")
+    battery_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_battery_bk1")
+    assert status_id is not None and battery_id is not None
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    for value in EMSStatus._attr_options:
+        runtime.status = value
+        runtime._publish()
+        await hass.async_block_till_done()
+        state = hass.states.get(status_id)
+        assert state.state == value
+        assert state.attributes["device_class"] == "enum"
+        assert state.attributes["options"] == EMSStatus._attr_options
+    state = hass.states.get(battery_id)
+    assert state.state == "disabled"
+    assert state.attributes["device_class"] == "enum"
+    assert state.attributes["options"] == BatteryStatus._attr_options
+    for language in ("en", "de"):
+        translations = await async_get_translations(hass, language, "entity", {DOMAIN})
+        for key, options in (
+            ("status", EMSStatus._attr_options),
+            ("battery_status", BatteryStatus._attr_options),
+        ):
+            for option in options:
+                assert translations[f"component.{DOMAIN}.entity.sensor.{key}.state.{option}"]
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
