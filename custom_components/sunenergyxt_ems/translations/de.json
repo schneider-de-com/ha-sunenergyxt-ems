@@ -211,16 +211,16 @@
         "name": "Netzleistung gefiltert"
       },
       "grid_error": {
-        "name": "Regelabweichung"
+        "name": "Regelabweichung (letzte Berechnung)"
       },
       "pid_proportional": {
-        "name": "PID P-Anteil"
+        "name": "PID P-Anteil (letzte Berechnung)"
       },
       "pid_integral": {
-        "name": "PID I-Anteil"
+        "name": "PID I-Anteil (letzte Berechnung)"
       },
       "pid_derivative": {
-        "name": "PID D-Anteil"
+        "name": "PID D-Anteil (letzte Berechnung)"
       },
       "controller_target": {
         "name": "Zuletzt an Home Assistant übergebene Limits (Summe)"

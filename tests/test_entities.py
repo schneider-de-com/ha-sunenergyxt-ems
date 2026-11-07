@@ -234,6 +234,7 @@ async def test_batteries_have_separate_visible_status_entities(objects):
             blocked=set(),
             full=set(),
             outputs={},
+            grid_outage=False,
             ev3600_active=set(),
             ev3600_unknown=set(),
         ),
@@ -368,3 +369,18 @@ def test_safety_paths_do_not_expose_last_pid_cycle_as_current(objects, status):
     assert sensor.native_value == 30
     runtime.controller.state.grid_outage = True
     assert sensor.native_value is None
+
+
+@pytest.mark.parametrize("status", ["waiting_feedback", "waiting_meter"])
+def test_waiting_pid_value_describes_previous_calculation(objects, status):
+    entry, runtime, _ = objects
+    runtime.controller.enabled = True
+    runtime._grid_filtered_w = 50
+    runtime.controller.state.pid_error_w = 30
+    runtime.status = status
+    sensor = sensors.EMSControlValue(entry, runtime, "grid_error", "pid_error_w")
+    assert sensor.native_value == 30
+    assert sensor.extra_state_attributes == {
+        "value_semantics": "last_completed_controller_calculation",
+        "controller_phase": status,
+    }

@@ -221,6 +221,15 @@ class EMSControlValue(SensorEntity):
             return _last_dispatched_total(self._runtime)
         return getattr(self._runtime.controller.state, self._field, None)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        if self._field in ("pid_error_w", "pid_p_w", "pid_i_w", "pid_d_w"):
+            return {
+                "value_semantics": "last_completed_controller_calculation",
+                "controller_phase": self._runtime.status,
+            }
+        return {}
+
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._runtime.signal, self._refresh)
@@ -518,6 +527,11 @@ class InverterLimitValue(SensorEntity):
             battery for battery in self._runtime._batteries() if battery.key == self._device_id
         )
         return self._runtime._reported_outputs(batteries).get(self._inverter_entity_id)
+
+    @property
+    def available(self) -> bool:
+        """Mark missing or untrustworthy AC measurements unavailable in HA."""
+        return self._kind != "measured_ac" or self.native_value is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:

@@ -212,34 +212,41 @@ async def test_inverter_diagnostics_dispatch_and_reload_in_real_ha(hass: HomeAss
     )
     hass.states.async_set("sensor.ac1", "120", {"unit_of_measurement": "W"})
     runtime = hass.data[DOMAIN][entry.entry_id]
-    with patch.object(hass.services, "async_call", new_callable=AsyncMock) as service:
-        await runtime._apply({"number.inv1": 400}, now=100, emergency=True, force=True)
-        assert service.await_count == 1
-        runtime._publish()
-        await hass.async_block_till_done()
-        assert float(hass.states.get(entity_ids[("number.inv1", "requested")]).state) == 400
-        assert float(hass.states.get(entity_ids[("number.inv1", "reported")]).state) == 200
-        assert float(hass.states.get(entity_ids[("number.inv1", "measured_ac")]).state) == 120
-        assert hass.states.get(entity_ids[("number.inv2", "requested")]).state == "unknown"
-        assert float(hass.states.get(entity_ids[("number.inv2", "reported")]).state) == 100
+    commands = []
 
-        hass.states.async_set("number.inv1", "unavailable", {"unit_of_measurement": "%"})
-        hass.states.async_set("number.inv2", "unavailable", {"unit_of_measurement": "W"})
-        runtime._publish()
-        await hass.async_block_till_done()
-        assert hass.states.get(entity_ids[("number.inv1", "measured_ac")]).state == "unknown"
-        assert await hass.config_entries.async_unload(entry.entry_id)
-        await hass.async_block_till_done()
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-        assert service.await_count == 1
-        assert hass.states.get(entity_ids[("number.inv1", "requested")]).state == "unknown"
-        assert {
-            (inverter, kind): registry.async_get_entity_id(
-                "sensor", DOMAIN, f"{entry.entry_id}_inverter_{inverter}_{kind}"
-            )
-            for inverter, kind in entity_ids
-        } == entity_ids
+    async def set_value(call):
+        commands.append(dict(call.data))
+
+    hass.services.async_register("number", "set_value", set_value)
+    await runtime._apply({"number.inv1": 400}, now=100, emergency=True, force=True)
+    assert len(commands) == 1
+    assert commands[0]["entity_id"] == "number.inv1"
+    assert commands[0]["value"] == 20
+    runtime._publish()
+    await hass.async_block_till_done()
+    assert float(hass.states.get(entity_ids[("number.inv1", "requested")]).state) == 400
+    assert float(hass.states.get(entity_ids[("number.inv1", "reported")]).state) == 200
+    assert float(hass.states.get(entity_ids[("number.inv1", "measured_ac")]).state) == 120
+    assert hass.states.get(entity_ids[("number.inv2", "requested")]).state == "unknown"
+    assert float(hass.states.get(entity_ids[("number.inv2", "reported")]).state) == 100
+
+    hass.states.async_set("number.inv1", "unavailable", {"unit_of_measurement": "%"})
+    hass.states.async_set("number.inv2", "unavailable", {"unit_of_measurement": "W"})
+    runtime._publish()
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_ids[("number.inv1", "measured_ac")]).state == "unavailable"
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert len(commands) == 1
+    assert hass.states.get(entity_ids[("number.inv1", "requested")]).state == "unknown"
+    assert {
+        (inverter, kind): registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_inverter_{inverter}_{kind}"
+        )
+        for inverter, kind in entity_ids
+    } == entity_ids
 
 
 @pytest.mark.asyncio
@@ -569,3 +576,60 @@ async def test_correction_form_preserves_limit_value_types(hass: HomeAssistant, 
     await hass.async_block_till_done()
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_grid_loss_and_recovery_do_not_expose_old_error(hass: HomeAssistant, freezer) -> None:
+    """Recovering one meter report must not present an old PID sample as current."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [],
+                }
+            ],
+        },
+        options={"enabled": True, "grid_target_w": 20},
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.grid", "100", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.soc", "80", {"unit_of_measurement": "%"})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    # Simulate a previously running controller without creating actuator writes.
+    runtime._seen_valid = True
+    await runtime.async_update()
+    await hass.async_block_till_done()
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_grid_error"
+    )
+    assert entity_id is not None
+    assert float(hass.states.get(entity_id).state) == 80.0
+
+    runtime.controller.state.last_grid_ok = None
+    hass.states.async_set("sensor.grid", "unavailable", {"unit_of_measurement": "W"})
+    await runtime.async_update()
+    await hass.async_block_till_done()
+    assert runtime.controller.state.grid_outage
+    assert hass.states.get(entity_id).state == "unknown"
+    for reading in (120, 121):
+        freezer.tick(1)
+        hass.states.async_set("sensor.grid", str(reading), {"unit_of_measurement": "W"})
+        await runtime.async_update()
+        await hass.async_block_till_done()
+        assert runtime.controller.state.grid_outage
+        assert hass.states.get(entity_id).state == "unknown"
+    freezer.tick(1)
+    hass.states.async_set("sensor.grid", "122", {"unit_of_measurement": "W"})
+    await runtime.async_update()
+    await hass.async_block_till_done()
+    assert not runtime.controller.state.grid_outage
+    assert float(hass.states.get(entity_id).state) == 101.0

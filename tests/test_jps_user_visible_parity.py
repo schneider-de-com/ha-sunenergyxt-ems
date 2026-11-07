@@ -64,6 +64,11 @@ def entry_and_runtime():
         signal="test_ems_signal",
         controller=Controller(),
         _last_sent={},
+        _last_dispatched_w={},
+        _configured_inverters=lambda: {
+            "number.deye_m200",
+            "number.deye_m80",
+        },
         _pending={},
         _shutdown_pending={},
         _deferred_shutdown=set(),
@@ -180,8 +185,10 @@ async def test_one_sensor_each_for_bypass_ev_and_per_inverter_diagnostics(monkey
         assert f"{entry.entry_id}_battery_{key}_bypass_state" in by_id
     assert by_id[f"{entry.entry_id}_battery_bk1_ev3600_state"].native_value == "not_configured"
     assert by_id[f"{entry.entry_id}_battery_bk1_bypass_state"].native_value == "disabled"
+    assert by_id[f"{entry.entry_id}_status"].extra_state_attributes["requested_total_w"] is None
     assert f"{entry.entry_id}_inverter_number.deye_m200_requested" in by_id
     assert f"{entry.entry_id}_inverter_number.deye_m200_reported" in by_id
     assert f"{entry.entry_id}_inverter_number.deye_m200_measured_ac" in by_id
     # A missing independent AC source is not displayed as a fabricated 0W output.
     assert by_id[f"{entry.entry_id}_inverter_number.deye_m200_measured_ac"].native_value is None
+    assert not by_id[f"{entry.entry_id}_inverter_number.deye_m200_measured_ac"].available

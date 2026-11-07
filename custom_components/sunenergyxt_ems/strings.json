@@ -211,16 +211,16 @@
         "name": "Filtered grid power"
       },
       "grid_error": {
-        "name": "Grid control error"
+        "name": "Grid control error (last calculation)"
       },
       "pid_proportional": {
-        "name": "PID proportional term"
+        "name": "PID proportional term (last calculation)"
       },
       "pid_integral": {
-        "name": "PID integral term"
+        "name": "PID integral term (last calculation)"
       },
       "pid_derivative": {
-        "name": "PID derivative term"
+        "name": "PID derivative term (last calculation)"
       },
       "controller_target": {
         "name": "Last limits dispatched to Home Assistant (total)"
