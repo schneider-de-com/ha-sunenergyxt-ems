@@ -320,4 +320,8 @@ def test_grid_loss_hides_previous_error_and_pid_contributions(objects):
         ("pid_integral", "pid_i_w"),
         ("pid_derivative", "pid_d_w"),
     ):
-        assert sensors.EMSControlValue(entry, runtime, key, field).native_value is None
+        entity = sensors.EMSControlValue(entry, runtime, key, field)
+        assert entity.native_value is None
+        runtime._grid_filtered_w = 12.0
+        assert entity.native_value == getattr(runtime.controller.state, field)
+        runtime._grid_filtered_w = None
