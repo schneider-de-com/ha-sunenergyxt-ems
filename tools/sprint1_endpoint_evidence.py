@@ -50,14 +50,15 @@ def classify_endpoint(value: EndpointContext) -> Evidence:
         value.controller_enabled,
         value.settled,
         value.isolated,
+        value.inverter_available,
     )
     if not all(flag is True for flag in required) or value.feed_in is not False:
         return Evidence.UNKNOWN
 
     if value.limit_pct == 0:
-        if value.reserve_ok is False or value.inverter_available is False:
+        if value.reserve_ok is False:
             return Evidence.FITS
-        if value.reserve_ok is not True or value.inverter_available is not True:
+        if value.reserve_ok is not True:
             return Evidence.UNKNOWN
         return Evidence.MISMATCH if value.grid_w > value.grid_target_w else Evidence.FITS
 

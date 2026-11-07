@@ -27,6 +27,13 @@ class Snapshot:
     meter_fresh: bool
     reserve_known: bool
     controller_enabled: bool | None = None
+    grid_w: float | None = None
+    requested_w: float | None = None
+    reported_w: float | None = None
+    measured_ac_w: float | None = None
+    soc_pct: float | None = None
+    reserve_pct: float | None = None
+    status: str | None = None
 
 
 class Monitor:
@@ -44,6 +51,14 @@ class Monitor:
             "CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK (id = 1), "
             "started REAL NOT NULL, last REAL, gaps INTEGER NOT NULL, "
             "unknown INTEGER NOT NULL, aborted INTEGER NOT NULL)"
+        )
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS observations ("
+            "at REAL PRIMARY KEY, limit_pct REAL, evidence TEXT NOT NULL, "
+            "meter_fresh INTEGER NOT NULL, reserve_known INTEGER NOT NULL, "
+            "controller_enabled INTEGER, grid_w REAL, requested_w REAL, "
+            "reported_w REAL, measured_ac_w REAL, soc_pct REAL, reserve_pct REAL, "
+            "status TEXT)"
         )
         inserted = self.db.execute(
             "INSERT OR IGNORE INTO state VALUES (1, ?, NULL, 0, 0, 0)", (started_at,)
@@ -82,6 +97,25 @@ class Monitor:
             )
             unknown += undecidable
             aborted = int(current and endpoint and snap.evidence is Evidence.MISMATCH)
+            evidence = snap.evidence.value if isinstance(snap.evidence, Evidence) else "invalid"
+            self.db.execute(
+                "INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    snap.at,
+                    snap.limit_pct,
+                    evidence,
+                    int(snap.meter_fresh is True),
+                    int(snap.reserve_known is True),
+                    None if snap.controller_enabled is None else int(snap.controller_enabled is True),
+                    snap.grid_w,
+                    snap.requested_w,
+                    snap.reported_w,
+                    snap.measured_ac_w,
+                    snap.soc_pct,
+                    snap.reserve_pct,
+                    snap.status,
+                ),
+            )
             self.db.execute(
                 "UPDATE state SET last=?,gaps=?,unknown=?,aborted=? WHERE id=1",
                 (snap.at, gaps, unknown, aborted),

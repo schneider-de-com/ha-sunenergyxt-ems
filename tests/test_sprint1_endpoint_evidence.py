@@ -34,9 +34,11 @@ def test_zero_at_target_or_when_reserve_blocks_discharge_fits(context):
     assert classify_endpoint(replace(context, reserve_ok=False)) is Evidence.FITS
 
 
-def test_zero_with_unavailable_inverter_fits_but_unknown_availability_does_not(context):
-    assert classify_endpoint(replace(context, inverter_available=False)) is Evidence.FITS
+def test_unavailable_or_unknown_inverter_is_not_endpoint_evidence(context):
+    assert classify_endpoint(replace(context, inverter_available=False)) is Evidence.UNKNOWN
     assert classify_endpoint(replace(context, inverter_available=None)) is Evidence.UNKNOWN
+    upper = replace(context, limit_pct=100, grid_w=-1)
+    assert classify_endpoint(replace(upper, inverter_available=False)) is Evidence.UNKNOWN
 
 
 def test_hundred_below_target_is_mismatch_and_continued_import_fits(context):

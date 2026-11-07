@@ -114,3 +114,30 @@ def test_nonfinite_timestamp_is_not_accepted(tmp_path):
     monitor = Monitor(tmp_path / "monitor.db", 0, 60)
     with pytest.raises(ValueError):
         monitor.observe(sample(float("nan")))
+
+
+def test_raw_requested_reported_and_physical_evidence_is_retained(tmp_path):
+    monitor = Monitor(tmp_path / "monitor.db", 0, 60)
+    snapshot = Snapshot(
+        at=5,
+        limit_pct=42,
+        evidence=Evidence.UNKNOWN,
+        meter_fresh=True,
+        reserve_known=True,
+        controller_enabled=True,
+        grid_w=21.5,
+        requested_w=840,
+        reported_w=840,
+        measured_ac_w=None,
+        soc_pct=55,
+        reserve_pct=10,
+        status="running",
+    )
+
+    monitor.observe(snapshot)
+
+    row = monitor.db.execute(
+        "SELECT grid_w,requested_w,reported_w,measured_ac_w,soc_pct,reserve_pct,status "
+        "FROM observations WHERE at=5"
+    ).fetchone()
+    assert row == (21.5, 840, 840, None, 55, 10, "running")
