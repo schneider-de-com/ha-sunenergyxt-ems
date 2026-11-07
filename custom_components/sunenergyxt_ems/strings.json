@@ -267,7 +267,7 @@
         "name": "Inverter limit reported by HA"
       },
       "inverter_measured_ac": {
-        "name": "Inverter AC power (HA source)"
+        "name": "Inverter AC power reported by HA"
       },
       "weighted_battery_level": {
         "name": "Capacity-weighted battery level"

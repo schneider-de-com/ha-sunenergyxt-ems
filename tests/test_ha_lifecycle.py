@@ -647,14 +647,14 @@ async def test_grid_loss_and_recovery_do_not_expose_old_error(hass: HomeAssistan
     await runtime.async_update()
     await hass.async_block_till_done()
     assert runtime.controller.state.grid_outage
-    assert hass.states.get(entity_id).state == "unknown"
+    assert hass.states.get(entity_id).state == "unavailable"
     for reading in (120, 121):
         freezer.tick(1)
         hass.states.async_set("sensor.grid", str(reading), {"unit_of_measurement": "W"})
         await runtime.async_update()
         await hass.async_block_till_done()
         assert runtime.controller.state.grid_outage
-        assert hass.states.get(entity_id).state == "unknown"
+        assert hass.states.get(entity_id).state == "unavailable"
     freezer.tick(1)
     hass.states.async_set("sensor.grid", "122", {"unit_of_measurement": "W"})
     await runtime.async_update()

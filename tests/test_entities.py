@@ -275,7 +275,7 @@ async def test_batteries_have_separate_visible_status_entities(objects):
     assert main.device_info["identifiers"] != support.device_info["identifiers"]
     assert main.extra_state_attributes["soc_pct"] == 75
     assert main.extra_state_attributes["reported_limit_w"] == {}
-    assert main.extra_state_attributes["measured_inverter_ac_w"] == {}
+    assert main.extra_state_attributes["reported_inverter_ac_w"] == {}
     assert by_id["ems-entry_battery_bk1_soc"].native_value == 75
     assert by_id["ems-entry_battery_bk2_soc"].native_value == 50
     assert by_id["ems-entry_battery_bk1_lower_soc"].native_value == 10

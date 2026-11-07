@@ -267,7 +267,7 @@
         "name": "Von HA gemeldetes Wechselrichterlimit"
       },
       "inverter_measured_ac": {
-        "name": "Wechselrichter-AC-Leistung (HA-Quelle)"
+        "name": "Von HA gemeldete Wechselrichter-AC-Leistung"
       },
       "weighted_battery_level": {
         "name": "Gewichteter Speicherstand"

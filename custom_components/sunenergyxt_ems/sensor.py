@@ -234,6 +234,10 @@ class EMSControlValue(SensorEntity):
             }
         return {}
 
+    @property
+    def available(self) -> bool:
+        return self.native_value is not None
+
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._runtime.signal, self._refresh)
@@ -314,7 +318,7 @@ class BatteryStatus(SensorEntity):
             "full_charge_bypass": self._device_id in self._runtime.controller.state.full,
             "ev3600_charging": battery.ev3600_charging,
             "reported_limit_w": self._runtime._reported_outputs((battery,)),
-            "measured_inverter_ac_w": {
+            "reported_inverter_ac_w": {
                 inverter.key: observed_ac_power(
                     self._runtime.hass,
                     self._runtime.entry.options.get("ac_power", {}).get(inverter.key),

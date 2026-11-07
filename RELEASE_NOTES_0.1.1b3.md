@@ -1,4 +1,4 @@
-# SunEnergyXT EMS 0.1.1b3 — experimental beta
+# SunEnergyXT EMS v0.1.1b3 — experimental beta
 
 - Add individual battery state-of-charge, discharge-limit and DC-output diagnostics.
 - Distinguish the last limit passed to Home Assistant, the limit reported by its
