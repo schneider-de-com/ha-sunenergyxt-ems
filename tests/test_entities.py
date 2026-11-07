@@ -38,6 +38,7 @@ def objects():
         signal="ems_updated",
         controller=Controller(),
         _last_sent={},
+        _last_dispatched_w={},
         _pending={},
         _shutdown_pending={},
         _deferred_shutdown=set(),
@@ -102,6 +103,19 @@ def test_positive_status_sensor_reports_waiting_and_running(objects):
     assert diagnostics["requested_total_w"] == 0
     assert diagnostics["pending_actuator_reads"] == []
     assert diagnostics["pending_shutdown_reads"] == []
+
+
+def test_inverter_requested_diagnostic_uses_dispatched_not_planned_output(objects):
+    entry, runtime, _ = objects
+    runtime.controller.state.outputs = {"number.one": 800}
+    entity = sensors.InverterLimitValue(
+        entry, runtime, "bk1", "BK215", None, "number.one", "requested"
+    )
+    assert entity.native_value is None
+    runtime._last_dispatched_w["number.one"] = 120
+    # A later plan or reported output must not be presented as a new command.
+    runtime.controller.state.outputs["number.one"] = 400
+    assert entity.native_value == 120
 
 
 def test_negative_status_sensor_exposes_write_failure(objects):
