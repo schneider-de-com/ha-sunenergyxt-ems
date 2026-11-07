@@ -186,6 +186,11 @@ class EMSControlValue(SensorEntity):
 
     @property
     def native_value(self) -> float | None:
+        if self._field in ("pid_error_w", "pid_p_w", "pid_i_w", "pid_d_w") and (
+            not self._runtime.controller.enabled or self._runtime._grid_filtered_w is None
+        ):
+            # Contributions from the last cycle are not current after meter loss.
+            return None
         if not self._runtime.controller.enabled and self._field in (
             "raw_grid_w",
             "effective_grid_w",
