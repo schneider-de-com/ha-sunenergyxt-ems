@@ -56,6 +56,30 @@ async def test_translated_enum_statuses_in_real_ha(hass: HomeAssistant) -> None:
     runtime = hass.data[DOMAIN][entry.entry_id]
     status_options = hass.states.get(status_id).attributes["options"]
     battery_options = hass.states.get(battery_id).attributes["options"]
+    assert set(status_options) == {
+        "waiting",
+        "running",
+        "waiting_feedback",
+        "waiting_meter",
+        "disabled",
+        "shutdown_pending",
+        "write_error",
+        "hardware_limit",
+        "dc_unavailable",
+        "reserve_safety",
+        "grid_unavailable",
+        "switching_main",
+    }
+    assert set(battery_options) == {
+        "disabled",
+        "blocked",
+        "ev3600_charging",
+        "ev3600_unavailable",
+        "unavailable",
+        "main",
+        "support",
+        "standby",
+    }
     for value in status_options:
         runtime.status = value
         runtime._publish()
