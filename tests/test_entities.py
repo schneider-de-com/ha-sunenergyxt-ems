@@ -303,3 +303,21 @@ def test_disabled_grid_diagnostics_do_not_display_last_running_power(objects):
     ):
         sensor = sensors.EMSControlValue(entry, runtime, key, field)
         assert sensor.native_value is None
+
+
+def test_grid_loss_hides_previous_error_and_pid_contributions(objects):
+    """Old controller terms are not current diagnostics after the meter is lost."""
+    entry, runtime, _ = objects
+    runtime.controller.enabled = True
+    runtime.controller.state.pid_error_w = 42.0
+    runtime.controller.state.pid_p_w = 20.0
+    runtime.controller.state.pid_i_w = 10.0
+    runtime.controller.state.pid_d_w = 5.0
+    runtime._grid_filtered_w = None
+    for key, field in (
+        ("grid_error", "pid_error_w"),
+        ("pid_proportional", "pid_p_w"),
+        ("pid_integral", "pid_i_w"),
+        ("pid_derivative", "pid_d_w"),
+    ):
+        assert sensors.EMSControlValue(entry, runtime, key, field).native_value is None
