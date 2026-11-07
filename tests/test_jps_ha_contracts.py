@@ -13,6 +13,7 @@ from custom_components.sunenergyxt_ems import runtime as module  # noqa: E402
 from custom_components.sunenergyxt_ems.inputs import (  # noqa: E402
     ev3600_charging,
     fresh_power,
+    observed_ac_power,
 )
 from custom_components.sunenergyxt_ems.runtime import EMSRuntime  # noqa: E402
 
@@ -25,6 +26,23 @@ def sample(value: object, unit: str = "W", *, seconds_old: int = 0):
         last_reported=stamp,
         last_updated=stamp,
     )
+
+
+def test_ac_diagnostics_do_not_treat_cached_reports_as_fresh_device_samples():
+    now = datetime.now(UTC)
+    reading = sample(150)
+    reading.last_changed = now
+    hass = SimpleNamespace(states=SimpleNamespace(get=lambda _: reading))
+    assert observed_ac_power(hass, "sensor.ac", inverter_online=True) == 150
+    # Repeated identical HA reports can carry a cached Solarman register.
+    reading.last_changed = now - timedelta(seconds=91)
+    reading.last_reported = datetime.now(UTC)
+    assert observed_ac_power(hass, "sensor.ac", inverter_online=True) is None
+    # A real new HA state can be displayed with its explicitly limited evidence.
+    reading.state = "180"
+    reading.last_changed = datetime.now(UTC)
+    assert observed_ac_power(hass, "sensor.ac", inverter_online=True) == 180
+    assert observed_ac_power(hass, "sensor.ac", inverter_online=False) is None
 
 
 def configured():

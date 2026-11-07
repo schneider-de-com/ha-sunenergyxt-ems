@@ -223,7 +223,7 @@
         "name": "PID D-Anteil"
       },
       "controller_target": {
-        "name": "Angefordertes Gesamtlimit"
+        "name": "Zuletzt an Home Assistant übergebene Limits (Summe)"
       },
       "startup_hold_remaining": {
         "name": "Verbleibende Anlaufzeit"
@@ -252,13 +252,13 @@
         }
       },
       "inverter_requested": {
-        "name": "Angefordertes Wechselrichterlimit"
+        "name": "Zuletzt an HA übergebenes Wechselrichterlimit"
       },
       "inverter_reported": {
-        "name": "Gemeldetes Wechselrichterlimit"
+        "name": "Von HA gemeldetes Wechselrichterlimit"
       },
       "inverter_measured_ac": {
-        "name": "Gemessene Wechselrichter-AC-Leistung"
+        "name": "Wechselrichter-AC-Leistung (HA-Quelle)"
       },
       "weighted_battery_level": {
         "name": "Gewichteter Speicherstand"

@@ -169,6 +169,79 @@ async def test_setup_registers_real_integration_devices_and_controls(
     assert entry.state is ConfigEntryState.NOT_LOADED
 
 
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_inverter_diagnostics_dispatch_and_reload_in_real_ha(hass: HomeAssistant) -> None:
+    """The dispatched command, HA readback and independent AC source remain distinct."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [
+                        {"entity_id": "number.inv1", "rated_w": 2000},
+                        {"entity_id": "number.inv2", "rated_w": 800},
+                    ],
+                }
+            ],
+        },
+        options={"enabled": False, "ac_power": {"number.inv1": "sensor.ac1"}},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    entity_ids = {
+        (inverter, kind): registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_inverter_{inverter}_{kind}"
+        )
+        for inverter in ("number.inv1", "number.inv2")
+        for kind in ("requested", "reported", "measured_ac")
+    }
+    assert all(entity_ids.values())
+    hass.states.async_set(
+        "number.inv1", "10", {"unit_of_measurement": "%", "min": 0, "max": 100, "step": 0.1}
+    )
+    hass.states.async_set(
+        "number.inv2", "100", {"unit_of_measurement": "W", "min": 0, "max": 800, "step": 1}
+    )
+    hass.states.async_set("sensor.ac1", "120", {"unit_of_measurement": "W"})
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    with patch.object(hass.services, "async_call", new_callable=AsyncMock) as service:
+        await runtime._apply({"number.inv1": 400}, now=100, emergency=True, force=True)
+        assert service.await_count == 1
+        runtime._publish()
+        await hass.async_block_till_done()
+        assert float(hass.states.get(entity_ids[("number.inv1", "requested")]).state) == 400
+        assert float(hass.states.get(entity_ids[("number.inv1", "reported")]).state) == 200
+        assert float(hass.states.get(entity_ids[("number.inv1", "measured_ac")]).state) == 120
+        assert hass.states.get(entity_ids[("number.inv2", "requested")]).state == "unknown"
+        assert float(hass.states.get(entity_ids[("number.inv2", "reported")]).state) == 100
+
+        hass.states.async_set("number.inv1", "unavailable", {"unit_of_measurement": "%"})
+        hass.states.async_set("number.inv2", "unavailable", {"unit_of_measurement": "W"})
+        runtime._publish()
+        await hass.async_block_till_done()
+        assert hass.states.get(entity_ids[("number.inv1", "measured_ac")]).state == "unknown"
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert service.await_count == 1
+        assert hass.states.get(entity_ids[("number.inv1", "requested")]).state == "unknown"
+        assert {
+            (inverter, kind): registry.async_get_entity_id(
+                "sensor", DOMAIN, f"{entry.entry_id}_inverter_{inverter}_{kind}"
+            )
+            for inverter, kind in entity_ids
+        } == entity_ids
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failed_write", [False, True])
 async def test_offline_shutdown_survives_runtime_reload_in_real_ha(

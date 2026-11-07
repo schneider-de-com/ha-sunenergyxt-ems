@@ -223,7 +223,7 @@
         "name": "PID derivative"
       },
       "controller_target": {
-        "name": "Requested total limit"
+        "name": "Last limits dispatched to Home Assistant (total)"
       },
       "startup_hold_remaining": {
         "name": "Startup hold remaining"
@@ -252,13 +252,13 @@
         }
       },
       "inverter_requested": {
-        "name": "Requested inverter limit"
+        "name": "Last inverter limit sent to HA"
       },
       "inverter_reported": {
-        "name": "Reported inverter limit"
+        "name": "Inverter limit reported by HA"
       },
       "inverter_measured_ac": {
-        "name": "Measured inverter AC power"
+        "name": "Inverter AC power (HA source)"
       },
       "weighted_battery_level": {
         "name": "Capacity-weighted battery level"

@@ -25,6 +25,20 @@ def fresh_power(hass, source: str | None) -> float | None:
     return watts if 0 <= watts <= 10000 else None
 
 
+def observed_ac_power(hass, source: str | None, *, inverter_online: bool) -> float | None:
+    """Use a conservative HA state-change age; it is not a device sample timestamp."""
+    if not source or not inverter_online:
+        return None
+    state = hass.states.get(source)
+    changed = getattr(state, "last_changed", None)
+    if changed is None:
+        return None
+    age = datetime.now(UTC) - changed
+    if age < timedelta(seconds=-5) or age > timedelta(seconds=90):
+        return None
+    return fresh_power(hass, source)
+
+
 def ev3600_charging(hass, options: dict | None) -> bool | None:
     """False when not configured, otherwise do not guess on stale inputs."""
     if not options:

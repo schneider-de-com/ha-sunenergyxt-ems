@@ -39,6 +39,7 @@ def objects():
         controller=Controller(),
         _last_sent={},
         _last_dispatched_w={},
+        _configured_inverters=lambda: set(),
         _pending={},
         _shutdown_pending={},
         _deferred_shutdown=set(),
@@ -100,7 +101,7 @@ def test_positive_status_sensor_reports_waiting_and_running(objects):
     diagnostics = entity.extra_state_attributes
     assert diagnostics["last_error"] is None
     assert diagnostics["control_mode"] == "proportional"
-    assert diagnostics["requested_total_w"] == 0
+    assert diagnostics["requested_total_w"] is None
     assert diagnostics["pending_actuator_reads"] == []
     assert diagnostics["pending_shutdown_reads"] == []
 
@@ -309,6 +310,7 @@ def test_grid_loss_hides_previous_error_and_pid_contributions(objects):
     """Old controller terms are not current diagnostics after the meter is lost."""
     entry, runtime, _ = objects
     runtime.controller.enabled = True
+    runtime.status = "running"
     runtime.controller.state.pid_error_w = 42.0
     runtime.controller.state.pid_p_w = 20.0
     runtime.controller.state.pid_i_w = 10.0
@@ -325,3 +327,44 @@ def test_grid_loss_hides_previous_error_and_pid_contributions(objects):
         runtime._grid_filtered_w = 12.0
         assert entity.native_value == getattr(runtime.controller.state, field)
         runtime._grid_filtered_w = None
+
+
+def test_aggregate_is_last_dispatched_limits_not_stale_controller_plan(objects):
+    entry, runtime, _ = objects
+    runtime.status = "running"
+    runtime.controller.enabled = True
+    runtime._configured_inverters = lambda: {"number.one", "number.two"}
+    runtime._grid_filtered_w = 20
+    runtime.controller.state.target_w = 900
+    runtime._last_dispatched_w = {"number.one": 100}
+    sensor = sensors.EMSControlValue(entry, runtime, "controller_target", "target_w")
+    status = sensors.EMSStatus(entry, runtime)
+    assert sensor.native_value is None
+    assert status.extra_state_attributes["requested_total_w"] is None
+    runtime._last_dispatched_w["number.two"] = 200
+    assert sensor.native_value == 300
+    assert status.extra_state_attributes["requested_total_w"] == 300
+    # A partial emergency update must not substitute a stale 900 W plan.
+    runtime.status = "reserve_safety"
+    runtime._last_dispatched_w["number.one"] = 0
+    assert sensor.native_value == 200
+    assert status.extra_state_attributes["requested_total_w"] == 200
+    del runtime._last_dispatched_w["number.two"]
+    assert sensor.native_value is None
+
+
+@pytest.mark.parametrize(
+    "status", ["hardware_limit", "dc_unavailable", "reserve_safety", "write_error", "waiting"]
+)
+def test_safety_paths_do_not_expose_last_pid_cycle_as_current(objects, status):
+    entry, runtime, _ = objects
+    runtime.controller.enabled = True
+    runtime._grid_filtered_w = 50
+    runtime.controller.state.pid_error_w = 30
+    runtime.status = status
+    sensor = sensors.EMSControlValue(entry, runtime, "grid_error", "pid_error_w")
+    assert sensor.native_value is None
+    runtime.status = "running"
+    assert sensor.native_value == 30
+    runtime.controller.state.grid_outage = True
+    assert sensor.native_value is None
