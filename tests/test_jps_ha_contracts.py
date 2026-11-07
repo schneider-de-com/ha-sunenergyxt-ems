@@ -84,6 +84,21 @@ async def test_ev3600_charging_blocks_commands_on_only_its_tower():
 
 
 @pytest.mark.asyncio
+async def test_dispatched_diagnostic_converts_percent_and_ignores_failed_dispatch():
+    hass, entry, states = configured()
+    entry.options["ev3600"] = {}
+    states["number.inverter"].attributes.update(unit_of_measurement="%", max=100, step=0.1)
+    runtime = EMSRuntime(hass, entry)
+    await runtime._apply({"number.inverter": 400}, now=100)
+    sent_pct = hass.services.async_call.await_args.args[2]["value"]
+    assert runtime._last_dispatched_w["number.inverter"] == pytest.approx(sent_pct * 8)
+    before = runtime._last_dispatched_w.copy()
+    hass.services.async_call.side_effect = TimeoutError("unconfirmed")
+    await runtime._apply({"number.inverter": 0}, now=200, emergency=True, force=True)
+    assert runtime._last_dispatched_w == before
+
+
+@pytest.mark.asyncio
 async def test_ev3600_starts_mid_command_emergency_zero_bypasses_ack_wait():
     hass, entry, states = configured()
     runtime = EMSRuntime(hass, entry)
