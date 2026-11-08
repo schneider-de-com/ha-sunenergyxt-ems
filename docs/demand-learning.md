@@ -1,0 +1,38 @@
+# Household demand forecast (Sprint 2)
+
+`demand_forecast` learns a local-clock half-hour profile from measured household
+energy. It is pure domain logic; HA history acquisition, persisted measurements,
+source verification and runtime fallback are subsequent integration work in
+#13/#92. This module alone changes no controller behavior.
+
+Input intervals must be complete, reliable, chronological, non-overlapping
+30-minute UTC slots with nonnegative household energy. Missing intervals remain
+absent. A grid-only reading while solar/storage supplies the house is not total
+household demand. The HA boundary must establish either an independent household
+measurement or synchronized signed grid plus all independent AC contributions;
+missing inverter measurements must not become zero. Device commands, BK DC output
+and forecast values are not measurements of AC household consumption.
+
+The learner uses up to 28 days, grouping by local clock half-hour. More recent
+behavior has exponentially greater weight, with a seven-day half-life. Each
+requested clock bucket needs measurements on at least three distinct local dates
+and one measurement no older than three days. These are conservative engineering
+eligibility thresholds, not a claim of calibrated prediction accuracy. Insufficient
+or stale support raises `ForecastError`; it does not create a default household
+profile. Seasonal/cycle objectives remain the planner's responsibility.
+
+Repeated autumn clock hours are averaged within their local date and count as
+one support day. Output intervals remain contiguous absolute UTC time and may
+clip the current and final half-hour, up to a 48-hour horizon. Each interval
+retains its number of supporting days. The result reports the newest actual
+history endpoint, not the time a prediction happened to be requested.
+
+Lower/upper values are the observed minimum/maximum of the matching bucket in
+the retained history. They are empirical variability bounds, not probabilities
+or guarantees about future events. The planner must still assess uncertainty
+and may retain ordinary household regulation even with a valid forecast. No
+weekday/weekend distinction or learned appliance schedule is claimed.
+
+Synthetic tests cover clock profiles, recency weighting, sparse/stale history,
+invalid energy, duplicate/future/partial samples, midnight and both DST changes.
+They are not evidence of real installed learning or seven-day feature acceptance.
