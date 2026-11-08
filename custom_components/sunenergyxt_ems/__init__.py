@@ -15,6 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Start one household controller only after valid sensor data is available."""
     from homeassistant.const import Platform
 
+    from .observer import DemandObserver
     from .runtime import EMSRuntime
 
     runtime = EMSRuntime(hass, entry)
@@ -24,6 +25,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await runtime.async_start()
+    runtime.observer = DemandObserver(hass, entry, runtime.household_observation)
+    await runtime.observer.async_start()
     return True
 
 

@@ -13,6 +13,7 @@ from custom_components.sunenergyxt_ems import (  # noqa: E402
     async_setup_entry,
     async_unload_entry,
 )
+from custom_components.sunenergyxt_ems import observer as observer_module  # noqa: E402
 from custom_components.sunenergyxt_ems import runtime as runtime_module  # noqa: E402
 
 
@@ -22,8 +23,14 @@ def lifecycle(monkeypatch):
         async_start=AsyncMock(),
         async_stop=AsyncMock(),
         async_change_options=AsyncMock(),
+        household_observation=Mock(),
     )
     monkeypatch.setattr(runtime_module, "EMSRuntime", lambda hass, entry: controller)
+    monkeypatch.setattr(
+        observer_module,
+        "DemandObserver",
+        lambda *args: SimpleNamespace(async_start=AsyncMock(), async_stop=AsyncMock()),
+    )
     config_entries = SimpleNamespace(
         async_forward_entry_setups=AsyncMock(),
         async_unload_platforms=AsyncMock(return_value=True),

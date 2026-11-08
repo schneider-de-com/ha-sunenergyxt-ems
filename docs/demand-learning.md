@@ -57,3 +57,39 @@ This class does not access the filesystem or schedule collection itself.
 The seven-day acceptance evidence additionally needs an operating/gap ledger;
 the absence of intervals alone does not explain when or why observation failed.
 That ledger and actual HA storage lifecycle remain separate integration work.
+
+## Passive Home Assistant collection
+
+An entry now owns a separate `DemandObserver`: it reads cached HA states every
+five seconds, even while ordinary control waits for feedback or is switched off.
+It does not poll devices or call services. Unload cancels its callback and flushes
+storage; the existing controller retains all hardware writes and safety gates.
+
+The observation is signed grid power plus every configured inverter's independent
+AC source. Missing/offline/stale sources, duplicate AC mappings, known DC/PV sources
+mapped as AC, implausible totals and source times more than 30 seconds apart are
+ineligible. AC uses the existing conservative state-change freshness contract;
+unchanged reports and offline inverters can therefore leave learning gaps. HA
+timestamps are not guarantees of synchronized physical sampling. Every additional
+generation path must be represented before this reconstruction is suitable.
+
+The HA `Store` checkpoints completed history and a separate quality-transition
+ledger each minute and at unload, with immediate readback. A crash can lose up to
+the last checkpoint period and the current partial half-hour; restart marks the
+unconfirmed period as `observer_gap` rather than bridging it. Corrupt/unreadable
+stored evidence is preserved and collection remains ineligible until it can be
+read. Failed saves/readback set `persistence_ok: false`, independently of hardware
+control. This flag must gate subsequent planning/evidence claims. Source changes
+discard incompatible training and retain a marked source change in the ledger.
+
+The ledger retains two weeks of quality transitions, one preceding anchor and
+the last poll timestamp. It records observation quality, not active planning or
+proof of continuous hardware operation. Diagnostics expose current quality,
+checkpoint errors and recent transitions; they omit raw household traces.
+Forecast binding, plan decisions and installed feature acceptance remain later
+work. No acceptance window starts merely because passive collection exists.
+
+Core's JSON-corruption recovery (rename, Repair, `None`) is detected through its
+persistent storage-corruption Repair. It is not treated as first use: observation
+stays ineligible while the checkpoint cannot be recovered. Future-tolerated HA
+source times also cannot create measured energy beyond the observer's wall time.

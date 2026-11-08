@@ -23,7 +23,8 @@ class DemandHistory:
         """Return completed observations; gaps remain absent."""
         return tuple(self._intervals)
 
-    def _break_coverage(self) -> None:
+    def break_coverage(self) -> None:
+        """Keep completed measurements and discard any held/partial observation."""
         self._last_watts = None
         self._slot = None
         self._watt_microseconds = 0.0
@@ -38,19 +39,19 @@ class DemandHistory:
         try:
             at = _utc(at)
         except ForecastError:
-            self._break_coverage()
+            self.break_coverage()
             raise
         if watts is not None and (
             isinstance(watts, bool)
             or not isinstance(watts, (int, float))
             or not 0 <= watts <= 100_000
         ):
-            self._break_coverage()
+            self.break_coverage()
             raise ForecastError("invalid_demand_power")
         if self._last_at is not None and at <= self._last_at:
             if at == self._last_at and watts == self._last_watts:
                 return
-            self._break_coverage()
+            self.break_coverage()
             raise ForecastError("unordered_demand_sample")
         self._intervals = [s for s in self._intervals if s.end > at - timedelta(days=28)]
         if (
@@ -59,7 +60,7 @@ class DemandHistory:
             or self._last_at is None
             or at - self._last_at > timedelta(seconds=90)
         ):
-            self._break_coverage()
+            self.break_coverage()
         else:
             cursor = self._last_at
             while cursor < at:
