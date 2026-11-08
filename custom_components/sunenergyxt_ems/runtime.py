@@ -37,8 +37,9 @@ from .const import (
     DOMAIN,
     FEED_IN_MODE_PV,
 )
-from .inputs import ev3600_charging, fresh_power
+from .inputs import ev3600_charging, fresh_power, observed_ac_power
 from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
+from .observer import DemandObserver, HouseholdObservation
 from .pid import PIDGains
 from .registry import registered_connection, registered_dc_output
 
@@ -123,6 +124,7 @@ class EMSRuntime:
         self._start_hold = StartHold(seconds=30.0)
         self._running = False
         self._seen_valid = False
+        self.observer: DemandObserver | None = None
 
     @property
     def signal(self) -> str:
@@ -235,6 +237,8 @@ class EMSRuntime:
         if self._unsubscribe_connections is not None:
             self._unsubscribe_connections()
             self._unsubscribe_connections = None
+        if self.observer is not None:
+            await self.observer.async_stop()
 
     def _float(self, source: str | float | int | None) -> float | None:
         if isinstance(source, (int, float)):
@@ -358,6 +362,48 @@ class EMSRuntime:
         if self.entry.data.get(CONF_GRID_INVERT):
             number = -number
         return number, sample_time
+
+    def household_observation(self) -> HouseholdObservation:
+        """Reconstruct demand only with every independent AC contribution.
+
+        Cached HA time alignment is a conservative eligibility check, not a
+        device sampling guarantee. Do not replace offline AC with a DC estimate.
+        """
+        grid, sequence = self._grid()
+        if grid is None or not isinstance(sequence, datetime) or abs(grid) > 100_000:
+            return HouseholdObservation(None, None, "grid_unavailable")
+        inverters = [inv for battery in self._batteries() for inv in battery.inverters]
+        keys = [inv.key for inv in inverters]
+        if not keys or set(keys) != self._configured_inverters() or len(keys) != len(set(keys)):
+            return HouseholdObservation(sequence, None, "mapping_incomplete")
+        mapping = self.entry.options.get("ac_power", {})
+        sources = [mapping.get(key) for key in keys]
+        forbidden = {self.entry.data[CONF_GRID], *self._dc_monitored.values()}
+        forbidden.update(
+            record.get(role)
+            for record in self.entry.data[CONF_BATTERIES]
+            for role in ("dc_output", "charging")
+            if isinstance(record.get(role), str)
+        )
+        forbidden.update(self.entry.options.get("pv_input", {}).values())
+        if any(not source or source in forbidden for source in sources) or len(set(sources)) != len(
+            sources
+        ):
+            return HouseholdObservation(sequence, None, "mapping_incomplete")
+        total = grid
+        for inv, source in zip(inverters, sources, strict=True):
+            if not inv.online:
+                return HouseholdObservation(sequence, None, "inverter_offline")
+            power = observed_ac_power(self.hass, source, inverter_online=True)
+            if power is None or power > inv.rated_w:
+                return HouseholdObservation(sequence, None, "ac_unavailable")
+            state = self.hass.states.get(source)
+            if abs((sequence - state.last_changed).total_seconds()) > 30:
+                return HouseholdObservation(sequence, None, "unsynchronized")
+            total += power
+        if not 0 <= total <= 100_000:
+            return HouseholdObservation(sequence, None, "implausible_demand")
+        return HouseholdObservation(sequence, total, "measured")
 
     def _reported_outputs(self, batteries: tuple[Battery, ...]) -> dict[str, float]:
         """Read reported inverter limit entities, not unexecuted planned outputs."""
