@@ -24,24 +24,12 @@ def _bucket(stamp: datetime, timezone: ZoneInfo) -> int:
     return local.hour * 2 + local.minute // 30
 
 
-def demand_forecast(
-    history: Sequence[EnergyInterval],
-    *,
-    now: datetime,
-    required_until: datetime,
-    timezone: ZoneInfo,
-) -> DemandForecast:
-    """Use complete measured half-hours, with a seven-day recency half-life.
-
-    The HA boundary must establish genuine household energy and coverage before
-    calling this function. Missing intervals are absent, never zero-filled. The
-    three-day support floor is a conservative eligibility rule, not a calibrated
-    statistical confidence claim. Repeated DST hours count as one local day.
-    """
-    now, until = _utc(now), _utc(required_until)
-    if not timedelta() < until - now <= timedelta(days=2):
-        raise ForecastError("invalid_horizon")
-    buckets: dict[int, dict[date, list[EnergyInterval]]] = {}
+def validated_demand_history(
+    history: Sequence[EnergyInterval], *, now: datetime
+) -> tuple[EnergyInterval, ...]:
+    """Validate measured slots and retain the most recent 28 days."""
+    now = _utc(now)
+    retained: list[EnergyInterval] = []
     previous_end: datetime | None = None
     for sample in history:
         start, end = _utc(sample.start), _utc(sample.end)
@@ -64,7 +52,30 @@ def demand_forecast(
             raise ForecastError("invalid_demand_energy")
         if end <= now - timedelta(days=28):
             continue
-        normalized = EnergyInterval(start, end, float(value))
+        retained.append(EnergyInterval(start, end, float(value)))
+    return tuple(retained)
+
+
+def demand_forecast(
+    history: Sequence[EnergyInterval],
+    *,
+    now: datetime,
+    required_until: datetime,
+    timezone: ZoneInfo,
+) -> DemandForecast:
+    """Use complete measured half-hours, with a seven-day recency half-life.
+
+    The HA boundary must establish genuine household energy and coverage before
+    calling this function. Missing intervals are absent, never zero-filled. The
+    three-day support floor is a conservative eligibility rule, not a calibrated
+    statistical confidence claim. Repeated DST hours count as one local day.
+    """
+    now, until = _utc(now), _utc(required_until)
+    if not timedelta() < until - now <= timedelta(days=2):
+        raise ForecastError("invalid_horizon")
+    buckets: dict[int, dict[date, list[EnergyInterval]]] = {}
+    for normalized in validated_demand_history(history, now=now):
+        start = normalized.start
         local_date = start.astimezone(timezone).date()
         buckets.setdefault(_bucket(start, timezone), {}).setdefault(local_date, []).append(
             normalized

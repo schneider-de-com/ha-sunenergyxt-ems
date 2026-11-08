@@ -36,3 +36,24 @@ weekday/weekend distinction or learned appliance schedule is claimed.
 Synthetic tests cover clock profiles, recency weighting, sparse/stale history,
 invalid energy, duplicate/future/partial samples, midnight and both DST changes.
 They are not evidence of real installed learning or seven-day feature acceptance.
+
+## Collecting complete intervals
+
+`DemandHistory` integrates previously validated household power observations,
+holding a value only until the next observation, at most 90 seconds later.
+This is sampled-power integration, not an exact billing meter or a claim about
+unobserved load changes. Missing values, long silence, invalid measurements,
+out-of-order timestamps and conflicting duplicates break coverage. Only complete
+UTC half-hours enter learning; starting mid-slot leaves the prefix unknown.
+Explicit measured zero power is allowed; a missing reading is not zero.
+
+The versioned JSON representation contains complete intervals only. Restoring it
+validates chronology, duration, values and future times, retaining up to 28 days.
+Partial slots and held power do not survive a restart, so downtime cannot be
+bridged. The caller must actually persist the representation, handle a failed
+save, and collect verified HA sources before this becomes installed learning.
+This class does not access the filesystem or schedule collection itself.
+
+The seven-day acceptance evidence additionally needs an operating/gap ledger;
+the absence of intervals alone does not explain when or why observation failed.
+That ledger and actual HA storage lifecycle remain separate integration work.
