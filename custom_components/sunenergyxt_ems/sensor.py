@@ -626,8 +626,8 @@ class InverterLimitValue(SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Mark missing or untrustworthy AC measurements unavailable in HA."""
-        return self._kind != "measured_ac" or self.native_value is not None
+        """Mark unavailable observations as such without hiding unsent requests."""
+        return self._kind == "requested" or self.native_value is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
