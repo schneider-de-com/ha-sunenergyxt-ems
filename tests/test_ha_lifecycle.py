@@ -340,6 +340,9 @@ async def test_inverter_diagnostics_dispatch_and_reload_in_real_ha(hass: HomeAss
     runtime._publish()
     await hass.async_block_till_done()
     assert hass.states.get(entity_ids[("number.inv1", "measured_ac")]).state == "unavailable"
+    assert hass.states.get(entity_ids[("number.inv1", "reported")]).state == "unavailable"
+    assert hass.states.get(entity_ids[("number.inv2", "reported")]).state == "unavailable"
+    assert float(hass.states.get(entity_ids[("number.inv1", "requested")]).state) == 400
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert await hass.config_entries.async_setup(entry.entry_id)
