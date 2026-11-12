@@ -8,7 +8,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
@@ -37,6 +37,7 @@ from .registry import (
     device_label,
     device_rated_w,
     inverter_device_suggestions,
+    suggested_forecasts,
     suggested_grid,
 )
 
@@ -428,6 +429,29 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             requested = dict(user_input)
+            forecast_maps = {}
+            for device, suffix, old in [
+                ("aggregate", "", self.config_entry.options.get("pv_forecast", {})),
+                *(
+                    (
+                        battery[CONF_DEVICE],
+                        f"_{index}",
+                        self.config_entry.options.get("pv_forecast_by_battery", {}).get(
+                            battery[CONF_DEVICE], {}
+                        ),
+                    )
+                    for index, battery in enumerate(existing, 1)
+                ),
+            ]:
+                selected = {
+                    role: requested.pop(f"pv_forecast_{role}{suffix}", old.get(role))
+                    for role in ("today", "tomorrow", "updated")
+                }
+                if any(selected.values()) and not all(selected.values()):
+                    errors["base"] = "incomplete_forecast_mapping"
+                forecast_maps[device] = {
+                    role: source for role, source in selected.items() if source
+                }
             # Stage changes to existing upper SoC mappings. HA's Options Flow
             # must not mutate config-entry data before all validation succeeds.
             new_batteries = [dict(battery) for battery in existing]
@@ -536,7 +560,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     self.hass.config_entries.async_update_entry(self.config_entry, data=updated)
                 settings = {
                     key: value
-                    for key, value in requested.items()
+                    for key, value in {**self.config_entry.options, **requested}.items()
                     if key
                     in (
                         CONF_ENABLED,
@@ -551,12 +575,17 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                         "pid_ki",
                         "pid_kd",
                         "start_hold_seconds",
+                        "planning_enabled",
                     )
                 }
                 settings["pv_input"] = pv_map
                 settings["ev3600"] = ev_map
                 settings["ac_power"] = ac_map
                 settings["capacity_wh"] = capacities
+                settings["pv_forecast"] = forecast_maps.pop("aggregate")
+                settings["pv_forecast_by_battery"] = {
+                    device: sources for device, sources in forecast_maps.items() if sources
+                }
                 settings[CONF_DC_TRIPPED] = (
                     [] if reset_trip else list(self.config_entry.options.get(CONF_DC_TRIPPED, ()))
                 )
@@ -601,6 +630,36 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 "adaptive_pid", default=self.config_entry.options.get("adaptive_pid", False)
             )
         ] = selector.BooleanSelector()
+        fields[
+            vol.Optional(
+                "planning_enabled", default=self.config_entry.options.get("planning_enabled", False)
+            )
+        ] = selector.BooleanSelector()
+        defaults = self.config_entry.options.get("pv_forecast") or (
+            suggested_forecasts(self.hass)
+            if isinstance(getattr(self, "hass", None), HomeAssistant)
+            else {}
+        )
+        for suffix, sources in [
+            ("", defaults),
+            *(
+                (
+                    f"_{index}",
+                    self.config_entry.options.get("pv_forecast_by_battery", {}).get(
+                        battery[CONF_DEVICE], {}
+                    ),
+                )
+                for index, battery in enumerate(existing, 1)
+            ),
+        ]:
+            for role in ("today", "tomorrow", "updated"):
+                key = vol.Optional(
+                    f"pv_forecast_{role}{suffix}",
+                    **({"default": sources[role]} if sources.get(role) else {}),
+                )
+                fields[key] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                )
         for key, default, minimum, maximum in (
             ("start_hold_seconds", 30, 5, 60),
             ("pid_kp_min", 0.5, 0, 2),
