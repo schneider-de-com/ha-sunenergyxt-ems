@@ -98,3 +98,16 @@ def test_fractional_time_maximum_power_roundtrips_its_own_checkpoint():
     saved = history.as_dict()
     restored = OperatingHistory.from_dict(saved, now=NOW + timedelta(minutes=10))
     assert restored.as_dict() == saved
+
+
+def test_internal_summary_reports_all_retained_coverage_beyond_recent_preview():
+    history = OperatingHistory()
+    for seconds in range(0, 601, 5):
+        history.observe(sample(seconds, grid=3600 if seconds <= 30 else None, dc=720))
+    report = history.summary()
+    assert len(report["recent_rows"]) == 5
+    assert report["retained_elapsed_seconds"] == 600
+    assert report["channels"]["grid"]["positive_wh"] == 30
+    assert report["channels"]["grid"]["covered_seconds"] == 30
+    assert report["channels"]["dc:store"]["covered_seconds"] == 600
+    assert report["states"] == {"running": 600}

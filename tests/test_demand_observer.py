@@ -126,6 +126,28 @@ async def test_evidence_checkpoint_copy_does_not_block_hardware_event_loop(
 
 
 @pytest.mark.asyncio
+async def test_retained_evidence_summary_runs_off_loop_and_labels_checkpoint(
+    setup_observer, monkeypatch
+):
+    create, _, _, _, _, _ = setup_observer
+    observer = create()
+    threads = []
+    original = observer.operating.summary
+
+    def traced():
+        threads.append(threading.get_ident())
+        return original()
+
+    monkeypatch.setattr(observer.operating, "summary", traced)
+    await observer.async_start()
+    result = await observer.async_operating_summary()
+    assert result["verified_checkpoint_at"] == START.isoformat()
+    assert result["may_include_uncheckpointed_tail"] is True
+    assert threads and all(identity != threading.get_ident() for identity in threads)
+    await observer.async_stop()
+
+
+@pytest.mark.asyncio
 async def test_delayed_timer_callback_does_not_erase_completed_history(setup_observer, monkeypatch):
     create, sample, _, _, _, _ = setup_observer
     observer = create()

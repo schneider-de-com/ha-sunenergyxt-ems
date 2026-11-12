@@ -45,6 +45,14 @@ summary; detailed retained data stay in the authorized HA installation, not in
 GitHub fixtures or a new dashboard. Floating restoration tolerances cover only
 arithmetic rounding, not hardware/export acceptance.
 
+Internal diagnostics also aggregate all retained channel energy/coverage and
+state durations, beyond the five-minute preview. This scan runs in an executor
+under the observer lock. Totals describe the retained evidence, not an arbitrary
+acceptance window or full-day extrapolation; partial coverage stays explicit.
+The verified checkpoint timestamp identifies the last successful durable
+readback. The diagnostic snapshot can include the newer uncheckpointed tail,
+which is explicitly labeled. Missing channels remain absent, never zero-filled.
+
 This capture does not automatically start or complete Sprint-2 acceptance. The
 start must be recorded separately with the installed version/commit after
 planning and capture have been checked. Earlier controller/learning records
