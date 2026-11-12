@@ -126,6 +126,35 @@ async def test_evidence_checkpoint_copy_does_not_block_hardware_event_loop(
 
 
 @pytest.mark.asyncio
+async def test_delayed_timer_callback_does_not_erase_completed_history(setup_observer, monkeypatch):
+    create, sample, _, _, _, _ = setup_observer
+    observer = create()
+    await observer.async_start()
+    await advance(observer, sample)
+    before = observer.history.intervals
+    assert len(before) == 1
+    monkeypatch.setattr(module.dt_util, "utcnow", lambda: sample["at"])
+    await observer.async_refresh(sample["at"] - timedelta(seconds=30))
+    assert observer.history.intervals == before
+    assert observer.reason == "measured"
+    await observer.async_stop()
+
+
+@pytest.mark.asyncio
+async def test_actual_wall_clock_reversal_still_invalidates_planning(setup_observer, monkeypatch):
+    create, sample, _, _, _, _ = setup_observer
+    observer = create()
+    await observer.async_start()
+    sample["at"] += timedelta(seconds=30)
+    await observer.async_refresh(sample["at"])
+    monkeypatch.setattr(module.dt_util, "utcnow", lambda: START)
+    await observer.async_refresh(START)
+    assert observer.reason == "observer_clock_reversed"
+    assert not observer.persistence_ok
+    await observer.async_stop()
+
+
+@pytest.mark.asyncio
 async def test_missing_ac_never_produces_household_zeroes(setup_observer):
     create, sample, saved, _, _, _ = setup_observer
     observer = create()

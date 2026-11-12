@@ -28,7 +28,10 @@ physical regulation. Absolute timestamps support later local day/night analysis.
 The last 14 days of minute rows are stored atomically in the same HA Core Store
 checkpoint as demand history and quality events, with readback. Snapshot copying
 and restored evidence validation run in executor workers while the observer lock
-prevents mutation; hardware-control callbacks keep running. Legacy checkpoints
+prevents mutation; hardware-control callbacks keep running. Callbacks use the
+wall clock when a delayed timer obtains the observer lock, so stale
+scheduled timestamps cannot erase valid history or label current states future.
+Genuine wall-clock reversal still fails closed. Legacy checkpoints
 without operating rows retain demand history and begin new operating evidence
 without inventing preceding coverage. Corrupt stores/readback errors fail closed
 for planning and are not overwritten as an empty first install. A failed current

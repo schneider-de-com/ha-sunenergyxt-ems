@@ -767,6 +767,11 @@ async def test_demand_observer_uses_real_ha_store_and_preserves_restart_gap(
             await observer.async_refresh(dt_util.utcnow())
         await observer.async_stop()
         key = f"{DOMAIN}.demand.{entry.entry_id}"
+        assert hass_storage[key]["data"]["history"]["intervals"], (
+            observer.reason,
+            observer.events,
+            observer.last_poll_at,
+        )
         assert hass_storage[key]["data"]["history"]["intervals"][0]["energy_wh"] == 300
         freezer.tick(300)
         restarted = DemandObserver(hass, entry, reading)

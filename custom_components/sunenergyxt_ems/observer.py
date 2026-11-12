@@ -205,7 +205,10 @@ class DemandObserver:
         async with self._lock:
             if not self._running:
                 return
-            now = _utc(now)
+            # A timer can wait behind a checkpoint worker. Its scheduled time
+            # then predates the states we are about to read. Refresh that time
+            # under the lock; a real wall-clock reversal still stays reversed.
+            now = max(_utc(now), _utc(dt_util.utcnow()))
             if not self._loaded:
                 try:
                     await self._restore(now)
@@ -214,6 +217,7 @@ class DemandObserver:
                     self.persistence_ok = False
                     self.reason = "storage_unavailable"
                     return  # Do not overwrite unreadable existing evidence.
+            now = max(now, _utc(dt_util.utcnow()))
             if self.last_poll_at is not None and now < self.last_poll_at:
                 self.history = DemandHistory()
                 self.operating.break_coverage()

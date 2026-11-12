@@ -1,6 +1,6 @@
 # SunEnergyXT EMS for Home Assistant
 
-> **Experimental beta 0.1.1b4. Optional forecast planning and passive demand learning; unattended hardware control is not approved.**
+> **Experimental beta 0.1.1b5. Optional forecast planning, passive learning and operating evidence; unattended hardware control is not approved.**
 >
 > Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
@@ -22,6 +22,8 @@ It does **not** speak directly to batteries or inverters.
 
 Optional forecast planning is off by default. See [planning configuration and limitations](docs/horizon-planning.md). Passive demand learning requires complete fresh grid and independently measured inverter AC data; missing samples remain gaps. This beta does not start Sprint-2 acceptance or provide measured savings.
 
+Internal [operating evidence](docs/operating-evidence.md) retains individual source coverage and restart gaps. The [strategy cost comparison](docs/internal-comparison.md) is a model, with no active dynamic tariff control or comparison dashboard.
+
 ## Requirements
 
 - A current Home Assistant version using Python 3.14.
@@ -36,7 +38,7 @@ Optional forecast planning is off by default. See [planning configuration and li
 > This is a custom repository, not a default Marketplace catalog entry.
 
 1. On **Home Assistant 2026.11 or later**, go to **Settings → Marketplace**. Earlier versions (including 2026.10.4) use **HACS**.
-2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.1b4` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
+2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.1b5` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
 3. Install **SunEnergyXT EMS** from the Marketplace or HACS. Restart Home Assistant if requested. Adding files does not start inverter control.
 4. Ensure your inverter controls and grid meter are ready before setup.
 5. For a live setup: **turn off all existing automations writing to the selected inverter power-limit entities before completing the EMS config flow.** Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
@@ -82,4 +84,4 @@ Every commit should reference its relevant issue.
 
 [Apache License 2.0](LICENSE).
 
-Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.1b4.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.
+Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.1b5.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.
