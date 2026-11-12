@@ -43,4 +43,18 @@ async def async_get_config_entry_diagnostics(
             "complete_intervals": len(observer.history.intervals),
             "recent_quality_events": observer.events[-10:],
         }
+    horizon = getattr(runtime, "horizon", None)
+    if horizon is not None:
+        decision = horizon.decision
+        result["planning"] = {
+            "reason": horizon.reason,
+            "detail": horizon.detail,
+            "horizon_until": horizon.horizon_until.isoformat() if horizon.horizon_until else None,
+            "model_only": True,
+            "expected_advantage_wh": decision.expected_advantage_wh if decision else None,
+            "minimum_tested_advantage_wh": decision.minimum_tested_advantage_wh
+            if decision
+            else None,
+            "priority": list(runtime.controller.planning_order),
+        }
     return result

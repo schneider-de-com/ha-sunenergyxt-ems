@@ -56,6 +56,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [EMSStatus(entry, runtime)]
     entities.extend(EMSControlValue(entry, runtime, key, field) for key, field in PID_VALUES)
     entities.append(EMSWeightedBatteryLevel(entry, runtime))
+    entities.append(EMSPlanningStatus(entry, runtime))
     entities.extend(
         BatteryStatus(
             entry,
@@ -193,6 +194,48 @@ class EMSStatus(SensorEntity):
     @callback
     def _refresh(self) -> None:
         self.async_write_ha_state()
+
+
+class EMSPlanningStatus(EMSStatus):
+    """Explain a forecast hint separately from actual hardware/control state."""
+
+    _attr_translation_key = "planning_status"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_options = [
+        "evaluating",
+        "disabled",
+        "ems_disabled",
+        "storage_unavailable",
+        "measurements_unavailable",
+        "operating_priority",
+        "demand_history_unavailable",
+        "pv_forecast_unavailable",
+        "pv_allocation_unavailable",
+        "capacity_unavailable",
+        "no_expected_advantage",
+        "expected_pv_loss_reduction",
+        "invalid_data",
+    ]
+
+    def __init__(self, entry: ConfigEntry, runtime: EMSRuntime) -> None:
+        super().__init__(entry, runtime)
+        self._attr_unique_id = f"{entry.entry_id}_planning_status"
+
+    @property
+    def native_value(self) -> str:
+        return self._runtime.horizon.reason if self._runtime.horizon is not None else "disabled"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        horizon = self._runtime.horizon
+        return {
+            "decision_kind": "forecast_priority_hint_not_measured_savings",
+            "horizon_until": horizon.horizon_until.isoformat()
+            if horizon and horizon.horizon_until
+            else None,
+            "detail": horizon.detail if horizon else None,
+            "suggested_priority": list(self._runtime.controller.planning_order),
+        }
 
 
 class EMSControlValue(SensorEntity):

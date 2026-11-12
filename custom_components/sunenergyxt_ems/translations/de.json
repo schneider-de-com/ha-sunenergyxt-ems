@@ -183,7 +183,26 @@
           "capacity_wh_7": "Speicher 7: Gesamtkapazität einschließlich Erweiterungen (Wh)",
           "capacity_wh_8": "Speicher 8: Gesamtkapazität einschließlich Erweiterungen (Wh)",
           "capacity_wh_9": "Speicher 9: Gesamtkapazität einschließlich Erweiterungen (Wh)",
-          "capacity_wh_10": "Speicher 10: Gesamtkapazität einschließlich Erweiterungen (Wh)"
+          "capacity_wh_10": "Speicher 10: Gesamtkapazität einschließlich Erweiterungen (Wh)",
+          "planning_enabled": "Prognosebasierte Speicherpriorität aktivieren",
+          "pv_forecast_today": "Gesamte Solarprognose: heute",
+          "pv_forecast_tomorrow": "Gesamte Solarprognose: morgen",
+          "pv_forecast_updated": "Gesamte Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_1": "Speicher 1: Solarprognose: heute",
+          "pv_forecast_tomorrow_1": "Speicher 1: Solarprognose: morgen",
+          "pv_forecast_updated_1": "Speicher 1: Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_2": "Speicher 2: Solarprognose: heute",
+          "pv_forecast_tomorrow_2": "Speicher 2: Solarprognose: morgen",
+          "pv_forecast_updated_2": "Speicher 2: Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_3": "Speicher 3: Solarprognose: heute",
+          "pv_forecast_tomorrow_3": "Speicher 3: Solarprognose: morgen",
+          "pv_forecast_updated_3": "Speicher 3: Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_4": "Speicher 4: Solarprognose: heute",
+          "pv_forecast_tomorrow_4": "Speicher 4: Solarprognose: morgen",
+          "pv_forecast_updated_4": "Speicher 4: Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_5": "Speicher 5: Solarprognose: heute",
+          "pv_forecast_tomorrow_5": "Speicher 5: Solarprognose: morgen",
+          "pv_forecast_updated_5": "Speicher 5: Solarprognose: letzter erfolgreicher API-Abruf"
         },
         "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
       }
@@ -193,7 +212,8 @@
       "disable_before_trip_reset": "Vor dem Zurücksetzen der DC-Schutzsperre zuerst EMS deaktivieren.",
       "trip_reset_unconfirmed": "Zurücksetzen verweigert: BK215-DC-Ausgangsleistung fehlt, ist veraltet oder liegt über 100 W.",
       "incomplete_ev3600": "EV3600-Schalter und Ladeleistungssensor gemeinsam auswählen.",
-      "invalid_pid_gains": "PID Kp-Maximum muss mindestens dem Minimum entsprechen."
+      "invalid_pid_gains": "PID Kp-Maximum muss mindestens dem Minimum entsprechen.",
+      "incomplete_forecast_mapping": "Alle drei Solarprognose-Quellen auswählen oder die Gruppe leeren."
     }
   },
   "entity": {
@@ -295,6 +315,24 @@
       },
       "weighted_battery_level": {
         "name": "Gewichteter Speicherstand"
+      },
+      "planning_status": {
+        "name": "Prognoseplanung",
+        "state": {
+          "disabled": "Prognoseplanung ausgeschaltet",
+          "ems_disabled": "EMS ausgeschaltet",
+          "storage_unavailable": "Hauslastregelung: Historienspeicherung nicht bestätigt",
+          "measurements_unavailable": "Hauslastregelung: vollständige Messungen fehlen",
+          "operating_priority": "Bestehende Betriebsart hat Vorrang",
+          "demand_history_unavailable": "Hauslastregelung: Lernhistorie reicht nicht aus",
+          "pv_forecast_unavailable": "Hauslastregelung: Solarprognose nicht verfügbar",
+          "pv_allocation_unavailable": "Hauslastregelung: Solarzuordnung zu Speichern unbekannt",
+          "capacity_unavailable": "Hauslastregelung: nutzbare Kapazität unbekannt",
+          "no_expected_advantage": "Hauslastregelung: kein belastbarer Planungsvorteil",
+          "expected_pv_loss_reduction": "Speichervorrang zur Verringerung erwarteter Solarverluste",
+          "invalid_data": "Hauslastregelung: Planungsdaten ungültig",
+          "evaluating": "Prognose wird geprüft; Hauslastregelung bleibt aktiv"
+        }
       }
     },
     "switch": {

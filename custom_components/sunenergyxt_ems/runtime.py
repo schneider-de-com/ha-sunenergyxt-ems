@@ -37,6 +37,7 @@ from .const import (
     DOMAIN,
     FEED_IN_MODE_PV,
 )
+from .horizon import HorizonPlanner
 from .inputs import ev3600_charging, fresh_power, observed_ac_power
 from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
 from .observer import DemandObserver, HouseholdObservation
@@ -125,6 +126,7 @@ class EMSRuntime:
         self._running = False
         self._seen_valid = False
         self.observer: DemandObserver | None = None
+        self.horizon: HorizonPlanner | None = None
 
     @property
     def signal(self) -> str:
@@ -237,6 +239,8 @@ class EMSRuntime:
         if self._unsubscribe_connections is not None:
             self._unsubscribe_connections()
             self._unsubscribe_connections = None
+        if self.horizon is not None:
+            await self.horizon.async_stop()
         if self.observer is not None:
             await self.observer.async_stop()
 
@@ -1022,6 +1026,9 @@ class EMSRuntime:
                 self._publish()
                 return
 
+            if self.horizon is not None:
+                self.horizon.refresh()
+
             if not self._seen_valid:
                 if grid is None or not any(
                     battery.soc is not None
@@ -1107,6 +1114,8 @@ class EMSRuntime:
         """One-shot safe command when the user deliberately disables EMS."""
         async with self._lock:
             self.controller.enabled = False
+            if self.horizon is not None:
+                self.horizon.refresh()
             self._grid_filter.reset()
             self._start_hold.reset()
             self._startup_export_trip = False
@@ -1159,6 +1168,8 @@ class EMSRuntime:
     async def async_change_options(self) -> None:
         """Apply an options-flow update without restarting the control loop."""
         enabled = bool(self.entry.options.get(CONF_ENABLED, True))
+        if self.horizon is not None:
+            self.horizon.invalidate()
         if not enabled:
             # A deliberate reset in Configure is permitted only while EMS is off.
             self._overload_latched = set(self.entry.options.get(CONF_DC_TRIPPED, ()))
@@ -1179,4 +1190,6 @@ class EMSRuntime:
             self._seen_valid = False
             self.status = "waiting"
             await self.async_update()
+        if self.horizon is not None:
+            self.horizon.refresh()
         self._publish()

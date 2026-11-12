@@ -160,6 +160,8 @@ class Controller:
         self.pid_gains = PIDGains()
         self.adaptive_pid = False
         self.pid_hold = False
+        self.planning_order: tuple[str, ...] = ()
+        self.planning_expires_at: float | None = None
 
     def _reset_pid(self) -> None:
         self.state.pid_p_w = 0.0
@@ -316,6 +318,9 @@ class Controller:
             )
 
         ranked = sorted(batteries, key=score, reverse=True)
+        if self.planning_order and len(set(self.planning_order)) == len(self.planning_order):
+            priority = {key: index for index, key in enumerate(self.planning_order)}
+            ranked.sort(key=lambda battery: priority.get(battery.key, len(priority)))
         self.state.main = ranked[0].key if ranked else None
         self.state.support = ranked[1].key if len(ranked) > 1 else None
         return ranked
@@ -329,6 +334,12 @@ class Controller:
         sequence: object | None = None,
     ) -> dict[str, float]:
         safe = self._safe_limits(batteries)
+        if (
+            self.planning_expires_at is None
+            or not isfinite(self.planning_expires_at)
+            or now >= self.planning_expires_at
+        ):
+            self.planning_order = ()
         if not self.enabled:
             self._reset_pid()
             return safe
