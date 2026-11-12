@@ -669,8 +669,8 @@ class InverterLimitValue(SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Mark missing or untrustworthy AC measurements unavailable in HA."""
-        return self._kind != "measured_ac" or self.native_value is not None
+        """Preserve dispatch history and expose missing observations as unavailable."""
+        return self._kind == "requested" or self.native_value is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
