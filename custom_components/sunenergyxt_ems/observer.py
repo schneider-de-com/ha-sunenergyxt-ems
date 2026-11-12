@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import partial
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant
@@ -19,6 +20,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN
 from .demand_history import DemandHistory
 from .forecast import ForecastError, _utc
+from .operating_history import OperatingHistory, OperatingSample
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +42,8 @@ class DemandObserver:
     ) -> None:
         self.hass, self.entry, self.read = hass, entry, read
         self.history = DemandHistory()
+        self.operating = OperatingHistory()
+        self.read_operating: Callable[[datetime], OperatingSample] | None = None
         self.last_poll_at: datetime | None = None
         self.storage_error: str | None = None
         self.persistence_ok = False
@@ -126,6 +130,13 @@ class DemandObserver:
             ):
                 raise ForecastError("invalid_observer_store")
             history = DemandHistory.from_dict(saved.get("history"), now=now)
+            operating = (
+                await self.hass.async_add_executor_job(
+                    partial(OperatingHistory.from_dict, saved["operating_history"], now=now)
+                )
+                if "operating_history" in saved
+                else OperatingHistory()
+            )
             raw_events, raw_poll = saved.get("events"), saved.get("last_poll_at")
             if not isinstance(raw_events, list) or not isinstance(raw_poll, str):
                 raise ForecastError("invalid_observer_store")
@@ -155,6 +166,7 @@ class DemandObserver:
             ):
                 raise ForecastError("invalid_observer_store")
             self._events, self.last_poll_at = events, poll
+            self.operating = operating
             self._restart_gap = now > poll
             if saved["source_key"] == self._source_key:
                 self.history = history
@@ -167,6 +179,9 @@ class DemandObserver:
             "version": 1,
             "source_key": self._source_key,
             "history": self.history.as_dict(),
+            # The observer lock prevents mutation while the worker snapshots
+            # up to two weeks of minute rows. Hardware control keeps running.
+            "operating_history": await self.hass.async_add_executor_job(self.operating.as_dict),
             "events": deepcopy(self._events),
             "last_poll_at": self.last_poll_at.isoformat() if self.last_poll_at else None,
         }
@@ -190,7 +205,10 @@ class DemandObserver:
         async with self._lock:
             if not self._running:
                 return
-            now = _utc(now)
+            # A timer can wait behind a checkpoint worker. Its scheduled time
+            # then predates the states we are about to read. Refresh that time
+            # under the lock; a real wall-clock reversal still stays reversed.
+            now = max(_utc(now), _utc(dt_util.utcnow()))
             if not self._loaded:
                 try:
                     await self._restore(now)
@@ -199,8 +217,10 @@ class DemandObserver:
                     self.persistence_ok = False
                     self.reason = "storage_unavailable"
                     return  # Do not overwrite unreadable existing evidence.
+            now = max(now, _utc(dt_util.utcnow()))
             if self.last_poll_at is not None and now < self.last_poll_at:
                 self.history = DemandHistory()
+                self.operating.break_coverage()
                 self.reason = "observer_clock_reversed"
                 self.persistence_ok = False
                 return
@@ -217,6 +237,7 @@ class DemandObserver:
             if source_key != self._source_key:
                 self._source_key = source_key
                 self.history = DemandHistory()
+                self.operating.break_coverage()
                 self._last_measurement = None
                 self._event(now, "source_changed")
             try:
@@ -237,6 +258,23 @@ class DemandObserver:
             except ForecastError:
                 self.reason = "invalid_measurement_sequence"
             self._event(now, self.reason)
+            if self.read_operating is not None:
+                try:
+                    operating = self.read_operating(now)
+                    if _utc(operating.at) != now:
+                        raise ForecastError("operating_observation_time_mismatch")
+                    self.operating.observe(operating)
+                except (
+                    HomeAssistantError,
+                    ForecastError,
+                    TypeError,
+                    ValueError,
+                    OverflowError,
+                ) as exc:
+                    self.operating.break_coverage()
+                    self.reason = "operating_observation_error"
+                    self._event(now, self.reason)
+                    _LOGGER.warning("Cannot capture operating evidence: %s", exc)
             self.last_poll_at = now
             if self._last_save_at is None or now - self._last_save_at >= timedelta(minutes=1):
                 await self._save()

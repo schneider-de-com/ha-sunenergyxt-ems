@@ -29,7 +29,7 @@ jobs:
         run: ruff format --check custom_components tests
       - name: Security audit (Bandit)
         run: python -m bandit -q -r custom_components/sunenergyxt_ems
-      - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/logic.py custom_components/sunenergyxt_ems/discovery.py custom_components/sunenergyxt_ems/pid.py custom_components/sunenergyxt_ems/forecast.py custom_components/sunenergyxt_ems/demand_forecast.py custom_components/sunenergyxt_ems/demand_history.py custom_components/sunenergyxt_ems/planning.py custom_components/sunenergyxt_ems/comparison.py
+      - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/logic.py custom_components/sunenergyxt_ems/discovery.py custom_components/sunenergyxt_ems/pid.py custom_components/sunenergyxt_ems/forecast.py custom_components/sunenergyxt_ems/demand_forecast.py custom_components/sunenergyxt_ems/demand_history.py custom_components/sunenergyxt_ems/planning.py custom_components/sunenergyxt_ems/comparison.py custom_components/sunenergyxt_ems/operating_history.py
 
   hassfest:
     name: Home Assistant hassfest

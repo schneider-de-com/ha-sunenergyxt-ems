@@ -767,6 +767,11 @@ async def test_demand_observer_uses_real_ha_store_and_preserves_restart_gap(
             await observer.async_refresh(dt_util.utcnow())
         await observer.async_stop()
         key = f"{DOMAIN}.demand.{entry.entry_id}"
+        assert hass_storage[key]["data"]["history"]["intervals"], (
+            observer.reason,
+            observer.events,
+            observer.last_poll_at,
+        )
         assert hass_storage[key]["data"]["history"]["intervals"][0]["energy_wh"] == 300
         freezer.tick(300)
         restarted = DemandObserver(hass, entry, reading)
@@ -775,6 +780,58 @@ async def test_demand_observer_uses_real_ha_store_and_preserves_restart_gap(
         assert restarted.history.intervals[0].energy_wh == 300
         assert any(event["reason"] == "observer_gap" for event in restarted.events)
         await restarted.async_stop()
+        services.assert_not_called()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_actual_entry_captures_partial_power_channels_and_restores_evidence(
+    hass: HomeAssistant, freezer, hass_storage
+) -> None:
+    from homeassistant.util import dt as dt_util
+
+    freezer.move_to("2026-11-12T12:00:00+00:00")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "dc_output": "sensor.dc",
+                    "charging": "sensor.pv",
+                    "inverters": [],
+                }
+            ],
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.grid", "3600", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.dc", "720", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.pv", "unavailable", {"unit_of_measurement": "W"})
+    with patch.object(type(hass.services), "async_call", new_callable=AsyncMock) as services:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        observer = hass.data[DOMAIN][entry.entry_id].observer
+        freezer.tick(5)
+        await observer.async_refresh(dt_util.utcnow())
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        key = f"{DOMAIN}.demand.{entry.entry_id}"
+        channels = hass_storage[key]["data"]["operating_history"]["rows"][0]["channels"]
+        assert channels["grid:sensor.grid"]["positive_wh"] == 5
+        assert channels["dc_output:bk:sensor.dc"]["positive_wh"] == 1
+        assert "pv:bk:sensor.pv" not in channels
+        freezer.tick(120)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        restored = hass.data[DOMAIN][entry.entry_id].observer.operating
+        assert sum(row["states"].get("observer_gap", 0) for row in restored.rows) == 120
+        assert restored.rows[0]["channels"]["grid:sensor.grid"]["positive_wh"] == 5
+        assert await hass.config_entries.async_unload(entry.entry_id)
         services.assert_not_called()
 
 

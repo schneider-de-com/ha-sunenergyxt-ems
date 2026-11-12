@@ -1,5 +1,7 @@
 """HA observation storage must preserve gaps without writing hardware."""
 
+import asyncio
+import threading
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -10,6 +12,7 @@ import pytest
 pytest.importorskip("homeassistant")
 from custom_components.sunenergyxt_ems import observer as module  # noqa: E402
 from custom_components.sunenergyxt_ems.observer import DemandObserver, HouseholdObservation  # noqa: E402
+from custom_components.sunenergyxt_ems.operating_history import OperatingSample  # noqa: E402
 
 START = datetime(2026, 11, 8, 12, tzinfo=UTC)
 
@@ -49,7 +52,7 @@ def setup_observer(monkeypatch):
 
     def create():
         return DemandObserver(
-            SimpleNamespace(),
+            SimpleNamespace(async_add_executor_job=lambda fn, *args: asyncio.to_thread(fn, *args)),
             entry,
             lambda: HouseholdObservation(sample["at"], sample["watts"], sample["reason"]),
         )
@@ -78,6 +81,77 @@ async def test_collected_energy_is_persisted_and_read_back_after_restart(
     await restarted.async_start()
     assert restarted.history.intervals[0].energy_wh == 300
     await restarted.async_stop()
+
+
+@pytest.mark.asyncio
+async def test_real_power_evidence_survives_entry_restart_without_bridging_downtime(
+    setup_observer, monkeypatch
+):
+    create, sample, saved, _, _, _ = setup_observer
+    observer = create()
+    observer.read_operating = lambda at: OperatingSample(at, {"grid": 3600}, "disabled")
+    await observer.async_start()
+    sample["at"] += timedelta(seconds=5)
+    await observer.async_refresh(sample["at"])
+    await observer.async_stop()
+    assert saved["value"]["operating_history"]["rows"][0]["channels"]["grid"]["positive_wh"] == 5
+    sample["at"] += timedelta(minutes=2)
+    monkeypatch.setattr(module.dt_util, "utcnow", lambda: sample["at"])
+    restarted = create()
+    restarted.read_operating = observer.read_operating
+    await restarted.async_start()
+    assert sum(row["states"].get("observer_gap", 0) for row in restarted.operating.rows) == 120
+    assert restarted.operating.rows[0]["channels"]["grid"]["positive_wh"] == 5
+    assert restarted.persistence_ok
+    await restarted.async_stop()
+
+
+@pytest.mark.asyncio
+async def test_evidence_checkpoint_copy_does_not_block_hardware_event_loop(
+    setup_observer, monkeypatch
+):
+    create, _, _, _, _, _ = setup_observer
+    observer = create()
+    threads = []
+    original = observer.operating.as_dict
+
+    def traced():
+        threads.append(threading.get_ident())
+        return original()
+
+    monkeypatch.setattr(observer.operating, "as_dict", traced)
+    await observer.async_start()
+    await observer.async_stop()
+    assert threads and all(identity != threading.get_ident() for identity in threads)
+
+
+@pytest.mark.asyncio
+async def test_delayed_timer_callback_does_not_erase_completed_history(setup_observer, monkeypatch):
+    create, sample, _, _, _, _ = setup_observer
+    observer = create()
+    await observer.async_start()
+    await advance(observer, sample)
+    before = observer.history.intervals
+    assert len(before) == 1
+    monkeypatch.setattr(module.dt_util, "utcnow", lambda: sample["at"])
+    await observer.async_refresh(sample["at"] - timedelta(seconds=30))
+    assert observer.history.intervals == before
+    assert observer.reason == "measured"
+    await observer.async_stop()
+
+
+@pytest.mark.asyncio
+async def test_actual_wall_clock_reversal_still_invalidates_planning(setup_observer, monkeypatch):
+    create, sample, _, _, _, _ = setup_observer
+    observer = create()
+    await observer.async_start()
+    sample["at"] += timedelta(seconds=30)
+    await observer.async_refresh(sample["at"])
+    monkeypatch.setattr(module.dt_util, "utcnow", lambda: START)
+    await observer.async_refresh(START)
+    assert observer.reason == "observer_clock_reversed"
+    assert not observer.persistence_ok
+    await observer.async_stop()
 
 
 @pytest.mark.asyncio

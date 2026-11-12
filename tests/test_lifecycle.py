@@ -20,11 +20,16 @@ from custom_components.sunenergyxt_ems import runtime as runtime_module  # noqa:
 
 @pytest.fixture
 def lifecycle(monkeypatch):
+    monkeypatch.setattr(
+        "homeassistant.loader.async_get_integration",
+        AsyncMock(return_value=SimpleNamespace(version="test")),
+    )
     controller = SimpleNamespace(
         async_start=AsyncMock(),
         async_stop=AsyncMock(),
         async_change_options=AsyncMock(),
         household_observation=Mock(),
+        operating_observation=Mock(),
         _publish=Mock(),
     )
     monkeypatch.setattr(runtime_module, "EMSRuntime", lambda hass, entry: controller)
