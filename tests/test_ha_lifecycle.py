@@ -214,6 +214,7 @@ async def test_setup_registers_real_integration_devices_and_controls(
     unique_ids = {entity.unique_id for entity in entities}
     assert unique_ids == {
         f"{entry.entry_id}_status",
+        f"{entry.entry_id}_planning_status",
         f"{entry.entry_id}_weighted_battery_level",
         f"{entry.entry_id}_battery_bk215-1",
         f"{entry.entry_id}_battery_bk215-1_soc",
@@ -865,3 +866,40 @@ async def test_core_json_corruption_cannot_be_mistaken_for_first_use(hass: HomeA
             rename.assert_called_once()
         finally:
             await observer.async_stop()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_planning_status_registers_translates_and_preserves_disabled_ems(hass: HomeAssistant):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"grid": "sensor.grid", "batteries": []},
+        options={"enabled": False, "planning_enabled": True},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_planning_status"
+    )
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state.state == "ems_disabled"
+    assert state.attributes["decision_kind"] == "forecast_priority_hint_not_measured_savings"
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    assert runtime.controller.enabled is False
+    for language in ("en", "de"):
+        translations = await async_get_translations(hass, language, "entity", integrations={DOMAIN})
+        assert translations[f"component.{DOMAIN}.entity.sensor.planning_status.state.ems_disabled"]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert hass.states.get(entity_id).state == "unavailable"
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert (
+        er.async_get(hass).async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_planning_status"
+        )
+        == entity_id
+    )
+    assert hass.states.get(entity_id).state == "ems_disabled"
+    assert await hass.config_entries.async_unload(entry.entry_id)

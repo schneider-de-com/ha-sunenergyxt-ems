@@ -13,6 +13,7 @@ from custom_components.sunenergyxt_ems import (  # noqa: E402
     async_setup_entry,
     async_unload_entry,
 )
+from custom_components.sunenergyxt_ems import horizon as horizon_module  # noqa: E402
 from custom_components.sunenergyxt_ems import observer as observer_module  # noqa: E402
 from custom_components.sunenergyxt_ems import runtime as runtime_module  # noqa: E402
 
@@ -24,8 +25,12 @@ def lifecycle(monkeypatch):
         async_stop=AsyncMock(),
         async_change_options=AsyncMock(),
         household_observation=Mock(),
+        _publish=Mock(),
     )
     monkeypatch.setattr(runtime_module, "EMSRuntime", lambda hass, entry: controller)
+    monkeypatch.setattr(
+        horizon_module, "HorizonPlanner", lambda *args: SimpleNamespace(refresh=Mock())
+    )
     monkeypatch.setattr(
         observer_module,
         "DemandObserver",

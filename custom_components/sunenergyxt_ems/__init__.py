@@ -15,18 +15,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Start one household controller only after valid sensor data is available."""
     from homeassistant.const import Platform
 
+    from .horizon import HorizonPlanner
     from .observer import DemandObserver
     from .runtime import EMSRuntime
 
     runtime = EMSRuntime(hass, entry)
+    runtime.observer = DemandObserver(hass, entry, runtime.household_observation)
+    runtime.horizon = HorizonPlanner(hass, entry, runtime, runtime.observer)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
     await hass.config_entries.async_forward_entry_setups(
         entry, (Platform.SENSOR, Platform.SWITCH, Platform.NUMBER)
     )
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await runtime.async_start()
-    runtime.observer = DemandObserver(hass, entry, runtime.household_observation)
     await runtime.observer.async_start()
+    runtime.horizon.refresh()
+    runtime._publish()
     return True
 
 
