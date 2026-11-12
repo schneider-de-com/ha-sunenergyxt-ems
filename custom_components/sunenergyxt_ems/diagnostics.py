@@ -43,6 +43,7 @@ async def async_get_config_entry_diagnostics(
             "complete_intervals": len(observer.history.intervals),
             "recent_quality_events": observer.events[-10:],
         }
+        result["operating_evidence"] = observer.operating.summary()
     horizon = getattr(runtime, "horizon", None)
     if horizon is not None:
         decision = horizon.decision

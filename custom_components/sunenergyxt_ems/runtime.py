@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -41,6 +42,7 @@ from .horizon import HorizonPlanner
 from .inputs import ev3600_charging, fresh_power, observed_ac_power
 from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
 from .observer import DemandObserver, HouseholdObservation
+from .operating_history import OperatingSample
 from .pid import PIDGains
 from .registry import registered_connection, registered_dc_output
 
@@ -126,6 +128,7 @@ class EMSRuntime:
         self._running = False
         self._seen_valid = False
         self.observer: DemandObserver | None = None
+        self.version = "unknown"
         self.horizon: HorizonPlanner | None = None
 
     @property
@@ -408,6 +411,36 @@ class EMSRuntime:
         if not 0 <= total <= 100_000:
             return HouseholdObservation(sequence, None, "implausible_demand")
         return HouseholdObservation(sequence, total, "measured")
+
+    def operating_observation(self, at: datetime) -> OperatingSample:
+        """Read independent power channels without commands or device polling."""
+        grid, _ = self._grid()
+        watts: dict[str, float | None] = {f"grid:{self.entry.data[CONF_GRID]}": grid}
+        for battery in self.entry.data[CONF_BATTERIES]:
+            key = battery[CONF_DEVICE]
+            for role, source in (
+                ("pv", self.entry.options.get("pv_input", {}).get(key) or battery.get("charging")),
+                ("dc_output", battery.get("dc_output") or self._dc_monitored.get(key)),
+            ):
+                if source:
+                    watts[f"{role}:{key}:{source}"] = fresh_power(self.hass, source)
+        for battery_state in self._batteries():
+            for inverter in battery_state.inverters:
+                source = self.entry.options.get("ac_power", {}).get(inverter.key)
+                if source:
+                    watts[f"ac:{inverter.key}:{source}"] = observed_ac_power(
+                        self.hass, source, inverter_online=inverter.online
+                    )
+        state = json.dumps(
+            {
+                "enabled": self.controller.enabled,
+                "version": self.version,
+                "control": self.status,
+                "planning": self.horizon.reason if self.horizon else "unavailable",
+            },
+            sort_keys=True,
+        )
+        return OperatingSample(at, watts, state)
 
     def _reported_outputs(self, batteries: tuple[Battery, ...]) -> dict[str, float]:
         """Read reported inverter limit entities, not unexecuted planned outputs."""
