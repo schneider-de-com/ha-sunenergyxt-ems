@@ -77,6 +77,19 @@ def test_missing_per_storage_solar_forecast_is_not_assumed_zero():
         plan(pv={})
 
 
+def test_replay_excludes_inverters_rejected_by_the_live_allocator():
+    battery = Battery(
+        "store",
+        90,
+        10,
+        100,
+        (Inverter("good", 400), Inverter("invalid", 800, minimum_w=900)),
+    )
+    result = plan_priority((battery,), {"store": 4300}, forecast([1000]), {"store": forecast([0])})
+    assert result.baseline.import_wh == pytest.approx(300)
+    assert result.order == ()
+
+
 def test_misaligned_or_gapped_forecasts_cannot_authorize_priority():
     with pytest.raises(ForecastError):
         plan(load=forecast([500] * 8)[::2])

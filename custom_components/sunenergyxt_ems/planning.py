@@ -150,7 +150,7 @@ def _replay(
         for battery in ranked:
             maximum = min(
                 min(1920.0, battery.output_limit_w) * efficiency,
-                sum(inv.rated_w for inv in battery.inverters if inv.online),
+                sum(inv.rated_w for inv in battery.inverters if policy._valid_inverter(inv)),
             )
             supplied = min(remaining, available[battery.key] * efficiency, maximum * hours)
             dc_used = supplied / efficiency
