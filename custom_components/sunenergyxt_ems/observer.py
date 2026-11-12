@@ -77,6 +77,20 @@ class DemandObserver:
             [self.entry.data.get("grid"), self.entry.data.get("invert_grid", False), inverters]
         )
 
+    async def async_operating_summary(self) -> dict[str, object]:
+        """Aggregate retained evidence off-loop without racing the collector."""
+        async with self._lock:
+            summary: dict[str, object] = await self.hass.async_add_executor_job(
+                self.operating.summary
+            )
+            summary["verified_checkpoint_at"] = (
+                self._last_save_at.isoformat()
+                if self.persistence_ok and self._last_save_at is not None
+                else None
+            )
+            summary["may_include_uncheckpointed_tail"] = True
+            return summary
+
     def _event(self, at: datetime, reason: str) -> None:
         if (
             not self._events

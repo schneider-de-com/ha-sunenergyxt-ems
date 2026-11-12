@@ -63,12 +63,27 @@ class OperatingHistory:
         return tuple(deepcopy(self._rows))
 
     def summary(self) -> dict[str, object]:
-        """Bound diagnostic output without copying the full retained timeline."""
+        """Summarize retained coverage; callers run the full scan off the event loop."""
+        channels: dict[str, Channel] = {}
+        states: dict[str, float] = {}
+        for row in self._rows:
+            for key, value in row["channels"].items():
+                total = channels.setdefault(
+                    key, {"positive_wh": 0.0, "negative_wh": 0.0, "covered_seconds": 0.0}
+                )
+                total["positive_wh"] += value["positive_wh"]
+                total["negative_wh"] += value["negative_wh"]
+                total["covered_seconds"] += value["covered_seconds"]
+            for state, seconds in row["states"].items():
+                states[state] = states.get(state, 0.0) + seconds
         return {
             "semantics": "integrated_cached_power_estimate_not_energy_meter_or_savings",
             "minute_rows": len(self._rows),
             "first_minute": self._rows[0]["start"] if self._rows else None,
             "seen_until": self._seen_until.isoformat() if self._seen_until else None,
+            "retained_elapsed_seconds": sum(row["elapsed_seconds"] for row in self._rows),
+            "channels": channels,
+            "states": states,
             "recent_rows": deepcopy(self._rows[-5:]),
         }
 
