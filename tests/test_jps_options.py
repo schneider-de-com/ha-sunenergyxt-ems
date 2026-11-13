@@ -11,6 +11,11 @@ from custom_components.sunenergyxt_ems import config_flow as flow  # noqa: E402
 @pytest.fixture
 def options(monkeypatch):
     handler = flow.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    handler.hass = SimpleNamespace(
+        states=SimpleNamespace(
+            get=lambda entity: SimpleNamespace(attributes={"unit_of_measurement": "W"})
+        )
+    )
     entry = SimpleNamespace(
         data={
             "batteries": [

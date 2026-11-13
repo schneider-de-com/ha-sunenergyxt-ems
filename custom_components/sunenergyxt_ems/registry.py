@@ -25,6 +25,28 @@ BK_REGISTRY_SUFFIXES = {
 }
 
 
+def suggested_forecasts(hass: HomeAssistant) -> dict[str, str]:
+    """Suggest only one complete Solcast entry using provider-owned identities."""
+    roles = {
+        "total_kwh_forecast_today": "today",
+        "total_kwh_forecast_tomorrow": "tomorrow",
+        "lastupdated": "updated",
+    }
+    groups: dict[str, dict[str, str]] = {}
+    for entity in getattr(er.async_get(hass), "entities", {}).values():
+        role = roles.get(entity.unique_id)
+        if (
+            role
+            and entity.platform == "solcast_solar"
+            and entity.domain == "sensor"
+            and entity.config_entry_id
+            and entity.disabled_by is None
+        ):
+            groups.setdefault(entity.config_entry_id, {})[role] = entity.entity_id
+    complete = [group for group in groups.values() if len(group) == 3]
+    return complete[0] if len(complete) == 1 else {}
+
+
 def _source_key(entry: er.RegistryEntry) -> str | None:
     """Identify the entity's purpose from its integration-owned unique ID."""
     unique_id = entry.unique_id or ""

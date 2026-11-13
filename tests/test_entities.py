@@ -34,6 +34,7 @@ def objects():
     )
     runtime = SimpleNamespace(
         status="waiting",
+        horizon=None,
         last_error=None,
         signal="ems_updated",
         controller=Controller(),
@@ -165,7 +166,7 @@ async def test_positive_sensor_setup_creates_status(objects):
     hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     created = []
     await sensors.async_setup_entry(hass, entry, created.extend)
-    assert len(created) == 3 + len(sensors.PID_VALUES)
+    assert len(created) == 4 + len(sensors.PID_VALUES)
     assert created[0].unique_id == "ems-entry_status"
     assert {entity.unique_id for entity in created[1 : 1 + len(sensors.PID_VALUES)]} == {
         f"ems-entry_{key}" for key, _ in sensors.PID_VALUES
@@ -265,7 +266,7 @@ async def test_batteries_have_separate_visible_status_entities(objects):
     runtime.hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     added = []
     await sensors.async_setup_entry(runtime.hass, entry, added.extend)
-    assert len(added) == 4 + len(sensors.PID_VALUES) + 1 + 2 * 8
+    assert len(added) == 5 + len(sensors.PID_VALUES) + 1 + 2 * 8
     by_id = {entity.unique_id: entity for entity in added}
     assert {"ems-entry_status", "ems-entry_battery_bk1", "ems-entry_battery_bk2"} <= set(by_id)
     main = by_id["ems-entry_battery_bk1"]
