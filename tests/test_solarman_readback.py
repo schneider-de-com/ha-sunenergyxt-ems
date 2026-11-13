@@ -149,7 +149,7 @@ async def test_optimistic_positive_command_cannot_open_feedback_gate(solarman_pa
     runtime, hardware, _, states = solarman_pair
     await runtime._apply({"number.m200": 20}, now=1000)
     assert states["number.m200"].state == "1.0"
-    states["sensor.grid"].last_reported += timedelta(seconds=2)
+    states["sensor.grid"].last_reported += timedelta(seconds=6)
     grid_time = states["sensor.grid"].last_reported
     assert not await runtime._feedback_ready(now=1010, grid_seq=grid_time)
     assert "number.m200" in runtime._pending

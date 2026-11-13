@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from math import isfinite
 from time import monotonic
 from typing import Any
@@ -18,6 +18,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.helpers.storage import Store
+from homeassistant.util.dt import utcnow
 
 from .const import (
     CONF_BATTERIES,
@@ -77,6 +78,7 @@ class PendingCommand:
     entity_reported_before: datetime
     sent_at: float
     grid_reported_before: datetime | None
+    meter_settled_after: datetime | None = None
 
 
 class EMSRuntime:
@@ -274,7 +276,7 @@ class EMSRuntime:
             if state is None:
                 return None
             sample_time = getattr(state, "last_reported", None) or state.last_updated
-            age = datetime.now(UTC) - sample_time
+            age = utcnow() - sample_time
             if age < timedelta(seconds=-5) or age > MAX_SOC_AGE:
                 return None
         return self._float(source)
@@ -287,7 +289,7 @@ class EMSRuntime:
         if state is None or state.attributes.get("unit_of_measurement") != "W":
             return None
         stamp = getattr(state, "last_reported", None) or state.last_updated
-        age = datetime.now(UTC) - stamp
+        age = utcnow() - stamp
         if age < timedelta(seconds=-5) or age > MAX_DC_AGE:
             return None
         value = self._float(state.state)
@@ -356,7 +358,7 @@ class EMSRuntime:
         if state is None:
             return None, None
         sample_time = getattr(state, "last_reported", None) or state.last_updated
-        age = datetime.now(UTC) - sample_time
+        age = utcnow() - sample_time
         if age < timedelta(seconds=-5) or age > MAX_GRID_AGE:
             return None, None
         number = self._float(state.state)
@@ -552,6 +554,8 @@ class EMSRuntime:
             if (
                 now - pending.sent_at < FEEDBACK_SETTLE_SECONDS
                 or grid_seq is None
+                or pending.meter_settled_after is None
+                or grid_seq <= pending.meter_settled_after
                 or (
                     pending.grid_reported_before is not None
                     and grid_seq <= pending.grid_reported_before
@@ -836,6 +840,9 @@ class EMSRuntime:
                 entity_reported_before=reported_before,
                 sent_at=now,
                 grid_reported_before=grid_before,
+                # Timestamp after the blocking service completes: a sample
+                # from inside the settling period cannot acknowledge output.
+                meter_settled_after=utcnow() + timedelta(seconds=FEEDBACK_SETTLE_SECONDS),
             )
 
     async def _verify_shutdown(self, now: float) -> None:

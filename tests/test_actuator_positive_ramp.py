@@ -211,7 +211,9 @@ async def test_acknowledged_m200_reaches_household_load_within_five_minutes(
     commands: list[tuple[float, float]] = []
     grid = hass.states.get("sensor.grid")
     inverter = hass.states.get("number.m200")
-    stamp = datetime.now(UTC)
+    origin = datetime.now(UTC)
+    monkeypatch.setattr(module, "utcnow", lambda: origin + timedelta(seconds=clock[0] - 1000))
+    stamp = module.utcnow()
 
     async def acknowledge(domain, service, data, **kwargs):
         assert domain == "number" and service == "set_value"
@@ -223,7 +225,7 @@ async def test_acknowledged_m200_reaches_household_load_within_five_minutes(
     hass.services.async_call.side_effect = acknowledge
     for tick in range(61):
         clock[0] = 1000.0 + tick * 5
-        stamp = datetime.now(UTC)
+        stamp = module.utcnow()
         grid.state = str(load_w - float(inverter.state) * 20)
         grid.last_reported = stamp
         await runtime.async_update()
@@ -320,6 +322,8 @@ async def test_high_import_does_not_bypass_delayed_hardware_readback(
     runtime, hass = runtime_pair()
     runtime._running = True
     clock = [1000.0]
+    origin = datetime.now(UTC)
+    monkeypatch.setattr(module, "utcnow", lambda: origin + timedelta(seconds=clock[0] - 1000))
     monkeypatch.setattr(module, "monotonic", lambda: clock[0])
     monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
     runtime._hardware_feedback_matches = AsyncMock(return_value=False)
@@ -330,12 +334,12 @@ async def test_high_import_does_not_bypass_delayed_hardware_readback(
     first = hass.services.async_call.await_args.args[2]["value"]
     assert first > 0
     inverter.state = str(first)
-    inverter.last_reported = datetime.now(UTC) + timedelta(milliseconds=1)
+    inverter.last_reported = origin + timedelta(milliseconds=1)
 
     for seconds in (5, 10, 15, 20, 25):
         clock[0] = 1000.0 + seconds
         grid.state = "2300"
-        grid.last_reported = datetime.now(UTC) + timedelta(milliseconds=2 * seconds)
+        grid.last_reported = module.utcnow()
         await runtime.async_update()
         assert hass.services.async_call.await_count == 1
         assert runtime.status == "waiting_feedback"
@@ -343,7 +347,7 @@ async def test_high_import_does_not_bypass_delayed_hardware_readback(
     assert runtime._grid_filter.sustained_import()
     runtime._hardware_feedback_matches.return_value = True
     clock[0] = 1031.0
-    grid.last_reported = datetime.now(UTC) + timedelta(milliseconds=100)
+    grid.last_reported = module.utcnow()
     await runtime.async_update()
 
     assert hass.services.async_call.await_count == 2
@@ -364,7 +368,9 @@ async def test_sustained_high_import_converges_faster_in_closed_loop(
     commands: list[tuple[float, float]] = []
     grid = hass.states.get("sensor.grid")
     inverter = hass.states.get("number.m200")
-    stamp = datetime.now(UTC)
+    origin = datetime.now(UTC)
+    monkeypatch.setattr(module, "utcnow", lambda: origin + timedelta(seconds=clock[0] - 1000))
+    stamp = module.utcnow()
 
     async def acknowledge(domain, service, data, **kwargs):
         assert domain == "number" and service == "set_value"
@@ -374,9 +380,10 @@ async def test_sustained_high_import_converges_faster_in_closed_loop(
             commands.append((clock[0], data["value"]))
 
     hass.services.async_call.side_effect = acknowledge
-    for tick in range(37):
+    # Strictly post-settle samples arrive on the next five-second tick.
+    for tick in range(61):
         clock[0] = 1000.0 + tick * 5
-        stamp = datetime.now(UTC)
+        stamp = module.utcnow()
         grid.state = str(2000.0 - float(inverter.state) * 20)
         grid.last_reported = stamp
         await runtime.async_update()
@@ -410,6 +417,26 @@ async def test_rounded_readback_can_progress_after_sustained_import(
         assert hass.services.async_call.await_args.args[2]["value"] == 6.1
     else:
         hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_meter_sample_during_settling_cannot_release_next_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, hass = runtime_pair()
+    dispatched = datetime.now(UTC)
+    monkeypatch.setattr(module, "utcnow", lambda: dispatched)
+    await runtime._apply({"number.m200": 520}, now=1000)
+    inverter = hass.states.get("number.m200")
+    inverter.state = "0.1"
+    inverter.last_reported = dispatched + timedelta(seconds=1)
+    runtime._hardware_feedback_matches = AsyncMock(return_value=True)
+
+    assert not await runtime._feedback_ready(1010, dispatched + timedelta(seconds=1))
+    assert runtime.status == "waiting_meter"
+    assert runtime._pending
+    assert await runtime._feedback_ready(1010, dispatched + timedelta(seconds=6))
+    assert not runtime._pending
 
 
 @pytest.mark.asyncio

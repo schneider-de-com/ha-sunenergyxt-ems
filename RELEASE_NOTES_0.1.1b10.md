@@ -12,6 +12,11 @@ faster real convergence from this candidate there. No setting is changed to
 force a favorable demonstration. Missing/backward meter samples still allow
 unacknowledged commands to time out, including multiple outstanding actuators.
 
+The meter gate also requires a sample timestamp strictly after the completed
+command's five-second settling period. A sample received during settling cannot
+be reused later merely because the monotonic wait has elapsed. Both clocks
+remain checked; this may conservatively delay the next step by a meter tick.
+
 Measured incident replays and ideal closed-loop simulations are test evidence,
 not a measured counterfactual or hardware-transfer-function certification. The
 known firmware/register startup transient remains under #53. The 500 W sample
