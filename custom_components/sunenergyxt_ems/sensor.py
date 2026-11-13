@@ -12,6 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import CONF_FEED_IN, CONF_FEED_IN_MODE, DOMAIN, FEED_IN_MODE_PV
 from .inputs import observed_ac_power
@@ -228,6 +229,7 @@ class EMSPlanningStatus(EMSStatus):
     @property
     def extra_state_attributes(self) -> dict[str, object]:
         horizon = self._runtime.horizon
+        observer = getattr(self._runtime, "observer", None)
         return {
             "decision_kind": "forecast_priority_hint_not_measured_savings",
             "horizon_until": horizon.horizon_until.isoformat()
@@ -235,6 +237,16 @@ class EMSPlanningStatus(EMSStatus):
             else None,
             "detail": horizon.detail if horizon else None,
             "suggested_priority": list(self._runtime.controller.planning_order),
+            "household_measurement_quality": observer.reason if observer is not None else None,
+            "complete_household_intervals": len(observer.history.intervals)
+            if observer is not None
+            else None,
+            "capture_persistence_ok": observer.persistence_ok if observer is not None else None,
+            "forecast_solar_sources": [
+                source.describe(dt_util.utcnow())
+                for source in getattr(horizon, "forecast_solar_sources", {}).values()
+                if source.entry_id is not None
+            ],
         }
 
 

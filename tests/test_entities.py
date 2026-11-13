@@ -97,6 +97,7 @@ def test_positive_status_sensor_reports_waiting_and_running(objects):
     entry, runtime, _ = objects
     entity = sensors.EMSStatus(entry, runtime)
     assert entity.native_value == "waiting"
+
     runtime.status = "running"
     assert entity.native_value == "running"
     diagnostics = entity.extra_state_attributes
@@ -105,6 +106,15 @@ def test_positive_status_sensor_reports_waiting_and_running(objects):
     assert diagnostics["requested_total_w"] is None
     assert diagnostics["pending_actuator_reads"] == []
     assert diagnostics["pending_shutdown_reads"] == []
+
+
+def test_planning_status_does_not_invent_collector_results_before_setup(objects):
+    entry, runtime, _ = objects
+    attrs = sensors.EMSPlanningStatus(entry, runtime).extra_state_attributes
+    assert attrs["complete_household_intervals"] is None
+    assert attrs["household_measurement_quality"] is None
+    assert attrs["capture_persistence_ok"] is None
+    assert attrs["forecast_solar_sources"] == []
 
 
 def test_inverter_requested_diagnostic_uses_dispatched_not_planned_output(objects):
