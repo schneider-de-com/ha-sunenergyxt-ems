@@ -128,3 +128,17 @@ claim a completed Sprint-2 planning feature.
 [provider]: https://doc.forecast.solar/doku.php?id=api:estimate#content
 [fixtures]: https://github.com/home-assistant-libs/forecast_solar/tree/v5.0.1/tests/fixtures
 [update-coordinator]: https://github.com/home-assistant/core/blob/2026.11.1/homeassistant/helpers/update_coordinator.py#L80-L190
+
+### Provider starting after EMS setup
+
+The existing five-second runtime callback synchronizes selected source owners
+before any control-only return. If Forecast.Solar and its entity states become
+available after EMS setup, its consumer therefore attaches while control is
+still off or another control gate is active. This is cache-owner discovery, not
+a provider refresh or an inverter command. Planning evaluation and every
+control gate remain in their existing path. A closed planner cannot reattach.
+
+Attaching to the late owner's existing cache still leaves receipt time unknown;
+only a future successful owner update supplies a receipt. The normal registered
+HA timer and real coordinator are covered with both startup orders, disabled
+control, source ageing, unload and no extra cache-service calls.

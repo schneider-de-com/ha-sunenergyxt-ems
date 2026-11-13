@@ -24,7 +24,7 @@ from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.setup import async_setup_component
 from homeassistant.util.file import WriteError
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.sunenergyxt_ems import runtime as runtime_module
 from custom_components.sunenergyxt_ems.const import DOMAIN
@@ -36,15 +36,21 @@ _CORE_STORE_ASYNC_LOAD = HAStore._async_load
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.parametrize("owner_ready", [True, False])
 @pytest.mark.asyncio
-async def test_forecast_solar_real_coordinator_receipts_service_and_unload(hass, freezer):
+async def test_forecast_solar_real_coordinator_receipts_service_and_unload(
+    hass, freezer, owner_ready
+):
     """Core's coordinator and response service cross the actual EMS lifecycle."""
     from custom_components.sunenergyxt_ems.diagnostics import async_get_config_entry_diagnostics
     from custom_components.sunenergyxt_ems.forecast import ForecastError
 
     at = datetime(2026, 11, 13, 12, tzinfo=UTC)
     freezer.move_to(at)
-    owner = MockConfigEntry(domain="forecast_solar", state=ConfigEntryState.LOADED)
+    owner = MockConfigEntry(
+        domain="forecast_solar",
+        state=ConfigEntryState.LOADED if owner_ready else ConfigEntryState.NOT_LOADED,
+    )
     owner.add_to_hass(hass)
     coordinator = DataUpdateCoordinator(
         hass, logging.getLogger(__name__), name="source contract", config_entry=owner
@@ -62,7 +68,8 @@ async def test_forecast_solar_real_coordinator_receipts_service_and_unload(hass,
             suggested_object_id=f"forecast_{role}",
         )
         selected[role] = sensor.entity_id
-        hass.states.async_set(sensor.entity_id, value, {"unit_of_measurement": "kWh"})
+        if owner_ready:
+            hass.states.async_set(sensor.entity_id, value, {"unit_of_measurement": "kWh"})
     times = [at - timedelta(hours=1), at, at + timedelta(hours=1), at + timedelta(days=1)]
     response = {
         "watts": {t.isoformat(): 9000 for t in times},
@@ -86,6 +93,24 @@ async def test_forecast_solar_real_coordinator_receipts_service_and_unload(hass,
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     runtime = hass.data[DOMAIN][entry.entry_id]
+    if not owner_ready:
+        assert runtime.horizon.forecast_solar_sources == {}
+        owner._async_set_state(hass, ConfigEntryState.LOADED, None)
+        for role, value in (("today", "0.3"), ("tomorrow", "0")):
+            hass.states.async_set(selected[role], value, {"unit_of_measurement": "kWh"})
+        # Advance both the real HA timer and the synthetic cache horizon.
+        at += timedelta(seconds=5)
+        response = {
+            key: {
+                (datetime.fromisoformat(stamp) + timedelta(seconds=5)).isoformat(): value
+                for stamp, value in series.items()
+            }
+            for key, series in response.items()
+        }
+        freezer.move_to(at)
+        async_fire_time_changed(hass, at)
+        await hass.async_block_till_done()
+        assert runtime.controller.enabled is False
     source = runtime.horizon.forecast_solar_sources[owner.entry_id]
     planning_id = registry.async_get_entity_id(
         "sensor", DOMAIN, f"{entry.entry_id}_planning_status"
