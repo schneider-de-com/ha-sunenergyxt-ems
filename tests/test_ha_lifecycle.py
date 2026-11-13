@@ -8,16 +8,20 @@ CI job with pytest-homeassistant-custom-component; no skip-on-missing-plugin.
 from __future__ import annotations
 
 import json
+import logging
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store as HAStore
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.setup import async_setup_component
 from homeassistant.util.file import WriteError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -29,6 +33,185 @@ from custom_components.sunenergyxt_ems.runtime import EMSRuntime
 
 # Preserve Core's decoder before test fixtures replace disk reads with dicts.
 _CORE_STORE_ASYNC_LOAD = HAStore._async_load
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_forecast_solar_real_coordinator_receipts_service_and_unload(hass, freezer):
+    """Core's coordinator and response service cross the actual EMS lifecycle."""
+    from custom_components.sunenergyxt_ems.diagnostics import async_get_config_entry_diagnostics
+    from custom_components.sunenergyxt_ems.forecast import ForecastError
+
+    at = datetime(2026, 11, 13, 12, tzinfo=UTC)
+    freezer.move_to(at)
+    owner = MockConfigEntry(domain="forecast_solar", state=ConfigEntryState.LOADED)
+    owner.add_to_hass(hass)
+    coordinator = DataUpdateCoordinator(
+        hass, logging.getLogger(__name__), name="source contract", config_entry=owner
+    )
+    coordinator.data = SimpleNamespace(timezone="UTC")
+    owner.runtime_data = coordinator
+    registry = er.async_get(hass)
+    selected = {}
+    for role, value in (("today", "0.3"), ("tomorrow", "0")):
+        sensor = registry.async_get_or_create(
+            "sensor",
+            "forecast_solar",
+            f"{owner.entry_id}_energy_production_{role}",
+            config_entry=owner,
+            suggested_object_id=f"forecast_{role}",
+        )
+        selected[role] = sensor.entity_id
+        hass.states.async_set(sensor.entity_id, value, {"unit_of_measurement": "kWh"})
+    times = [at - timedelta(hours=1), at, at + timedelta(hours=1), at + timedelta(days=1)]
+    response = {
+        "watts": {t.isoformat(): 9000 for t in times},
+        "wh_period": {t.isoformat(): wh for t, wh in zip(times[:-1], (100, 200, 0), strict=True)},
+    }
+    calls = []
+
+    async def cached(call):
+        calls.append(dict(call.data))
+        return response
+
+    hass.services.async_register(
+        "forecast_solar", "get_forecast", cached, supports_response=SupportsResponse.ONLY
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"grid": "sensor.grid", "batteries": []},
+        options={"enabled": False, "planning_enabled": True, "pv_forecast": selected},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    source = runtime.horizon.forecast_solar_sources[owner.entry_id]
+    assert calls == []
+    with pytest.raises(ForecastError, match="receipt_unknown"):
+        source.forecast(
+            now=at,
+            required_until=at + timedelta(hours=2),
+            source_entities=(selected["today"], selected["tomorrow"]),
+        )
+    coordinator.async_set_updated_data(SimpleNamespace(timezone="UTC"))
+    await hass.async_block_till_done()
+    point = source.forecast(
+        now=at,
+        required_until=at + timedelta(hours=2),
+        source_entities=(selected["today"], selected["tomorrow"]),
+    )
+    assert sum(slot.energy_wh for slot in point.expected) == 200
+    assert point.provider_issued_at is None and point.lower is None and point.upper is None
+    assert calls == [{"config_entry": owner.entry_id, "resolution": "raw"}]
+    # Even a current nominal forecast cannot masquerade as planner confidence.
+    with pytest.raises(ForecastError, match="uncertainty_not_supplied"):
+        runtime.horizon._solar(selected, at, at + timedelta(hours=2))
+    assert runtime.controller.planning_order == ()
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+    description = diagnostics["forecast_sources"]["forecast_solar"][0]
+    assert description["received_at"] == at.isoformat()
+    assert description["uncertainty"] == "not_supplied"
+    assert "watts" not in description and "api_key" not in description
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    coordinator.async_set_updated_data(SimpleNamespace(timezone="UTC"))
+    await hass.async_block_till_done()
+    assert len(calls) == 1
+    # The owner fixture supplies a cache contract, not a fully set-up cloud integration.
+    owner._async_set_state(hass, ConfigEntryState.NOT_LOADED, None)
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_options_select_forecast_solar_pair_without_reusing_solcast_timestamp(hass):
+    """A provider switch retains control settings and drops the inapplicable timestamp."""
+    provider = MockConfigEntry(domain="forecast_solar")
+    provider.add_to_hass(hass)
+    registry = er.async_get(hass)
+    selected = {}
+    for role, key in (
+        ("today", "energy_production_today"),
+        ("tomorrow", "energy_production_tomorrow"),
+    ):
+        source = registry.async_get_or_create(
+            "sensor",
+            "forecast_solar",
+            f"{provider.entry_id}_{key}",
+            config_entry=provider,
+            suggested_object_id=f"new_{role}",
+        )
+        selected[role] = source.entity_id
+        hass.states.async_set(source.entity_id, "1.2", {"unit_of_measurement": "kWh"})
+    original = {
+        "enabled": False,
+        "feed_in": True,
+        "grid_target_w": 20,
+        "pid_ki": 0.07,
+        "pv_forecast": {
+            "today": "sensor.old_today",
+            "tomorrow": "sensor.old_tomorrow",
+            "updated": "sensor.old_api_success",
+        },
+    }
+    entry = MockConfigEntry(domain=DOMAIN, data={"batteries": []}, options=original)
+    entry.add_to_hass(hass)
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"],
+        {"pv_forecast_today": selected["today"], "pv_forecast_tomorrow": selected["tomorrow"]},
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options["pv_forecast"] == selected
+    for key in ("enabled", "feed_in", "grid_target_w", "pid_ki"):
+        assert entry.options[key] == original[key]
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.parametrize(
+    "fault", ["mixed_entry", "wrong_role", "wrong_unit", "disabled", "partial"]
+)
+@pytest.mark.asyncio
+async def test_options_reject_invalid_forecast_solar_binding_without_mutation(hass, fault):
+    provider, other = (
+        MockConfigEntry(domain="forecast_solar"),
+        MockConfigEntry(domain="forecast_solar"),
+    )
+    provider.add_to_hass(hass)
+    other.add_to_hass(hass)
+    registry = er.async_get(hass)
+    selected = {}
+    for role in ("today", "tomorrow"):
+        owner = other if fault == "mixed_entry" and role == "tomorrow" else provider
+        key = (
+            "energy_current_hour"
+            if fault == "wrong_role" and role == "tomorrow"
+            else f"energy_production_{role}"
+        )
+        source = registry.async_get_or_create(
+            "sensor",
+            "forecast_solar",
+            f"{owner.entry_id}_{key}",
+            config_entry=owner,
+            suggested_object_id=f"candidate_{role}",
+        )
+        selected[role] = source.entity_id
+        unit = "W" if fault == "wrong_unit" and role == "tomorrow" else "kWh"
+        hass.states.async_set(source.entity_id, "1.2", {"unit_of_measurement": unit})
+        if fault == "disabled" and role == "tomorrow":
+            registry.async_update_entity(
+                source.entity_id, disabled_by=er.RegistryEntryDisabler.USER
+            )
+    original = {"enabled": False, "feed_in": True, "grid_target_w": 20, "pid_ki": 0.07}
+    entry = MockConfigEntry(domain=DOMAIN, data={"batteries": []}, options=original)
+    entry.add_to_hass(hass)
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    data = {"pv_forecast_today": selected["today"]}
+    if fault != "partial":
+        data["pv_forecast_tomorrow"] = selected["tomorrow"]
+    result = await hass.config_entries.options.async_configure(form["flow_id"], data)
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "incomplete_forecast_mapping"}
+    assert entry.options == original
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
@@ -550,6 +733,89 @@ async def test_real_ha_captures_sub_five_second_solarman_link_flap(
     ), "A 4.83 s offline/on cycle must reissue zero before the next scheduled poll"
     assert "number.m80" in runtime._shutdown_obligations
     await runtime.async_stop()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+async def test_diagnostics_distinguishes_cached_reports_from_device_samples(
+    hass: HomeAssistant, hass_client, freezer
+) -> None:
+    """The download explains constant, unavailable and missing AC sources without polling."""
+    attributes = {"unit_of_measurement": "W", "token": "source-secret"}
+    hass.states.async_set("sensor.constant_ac", "0", attributes)
+    original_change = hass.states.get("sensor.constant_ac").last_changed
+    freezer.tick(300)
+    hass.states.async_set("sensor.constant_ac", "0", attributes)
+    hass.states.async_set("sensor.offline_ac", "unavailable", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.invalid_ac", "raw-state-secret", {"unit_of_measurement": "kWh"})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "lower": 10,
+                    "inverters": [
+                        {"entity_id": f"number.inv{index}", "rated_w": 800} for index in (1, 2)
+                    ],
+                },
+                {
+                    "device_id": "bk2",
+                    "lower": 10,
+                    "inverters": [
+                        {"entity_id": f"number.inv{index}", "rated_w": 800} for index in (3, 4)
+                    ],
+                },
+            ],
+        },
+        options={
+            "enabled": False,
+            "ac_power": {
+                "number.inv1": "sensor.constant_ac",
+                "number.inv2": "sensor.offline_ac",
+                "number.inv3": "sensor.invalid_ac",
+                "number.inv4": "sensor.missing_ac",
+            },
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, "diagnostics", {})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    client = await hass_client()
+    before = dict(entry.options)
+    with patch.object(type(hass.services), "async_call", new_callable=AsyncMock) as calls:
+        response = await client.get(f"/api/diagnostics/config_entry/{entry.entry_id}")
+        assert response.status == 200
+        body = await response.json()
+        calls.assert_not_awaited()
+    sources = body["data"]["measurement_sources"]
+    assert sources["semantics"] == "ha_cached_state_timestamps_not_device_samples"
+    constant, offline, invalid, missing = sources["ac_sources"]
+    assert constant["entity_id"] == "sensor.constant_ac"
+    assert constant["state_status"] == "present"
+    assert constant["last_changed"] == original_change.isoformat()
+    assert constant["value_change_age_seconds"] == 300
+    assert constant["report_age_seconds"] == 0
+    assert constant["device_sample_at"] is None
+    assert offline["state_status"] == "unavailable"
+    assert offline["device_sample_at"] is None
+    assert invalid["state_status"] == "present"
+    assert invalid["power_unit_supported"] is False
+    assert missing["state_status"] == "missing"
+    assert missing["report_age_seconds"] is None
+    assert "source-secret" not in json.dumps(sources)
+    assert "raw-state-secret" not in json.dumps(sources)
+    assert entry.options == before
+    assert hass.states.get("sensor.constant_ac").last_changed == original_change
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    with patch.object(type(hass.services), "async_call", new_callable=AsyncMock) as calls:
+        response = await client.get(f"/api/diagnostics/config_entry/{entry.entry_id}")
+        assert response.status == 200
+        unloaded = await response.json()
+        calls.assert_not_awaited()
+    assert unloaded["data"]["measurement_sources"] == sources
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
