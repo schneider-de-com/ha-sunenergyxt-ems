@@ -57,8 +57,8 @@ claim follows from unvalidated gross values.
 
 Assume a stable uniform monotone 100 Wh quantizer (fixed truncation/rounding), valid
 aligned endpoints, no resets and no missing period. Then delta quantization
-error is less than 100 Wh per counter, hence less than 200 Wh for two inverters:
-less than 400 W averaged over 30 min, or less than 100 W over 2 h. These are **conditional
+error is at most 100 Wh per counter, hence at most 200 Wh for two inverters:
+at most 400 W averaged over 30 min, or at most 100 W over 2 h. These are **conditional
 arithmetic bounds, not measured accuracy/confidence**. Grid quantization,
 acquisition lag, alignment, resets, missing periods and meter error are extra.
 No hard acquisition-lag bound or physical maximum follows from the nominal
