@@ -27,6 +27,58 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
+def period_energy_forecast(
+    periods: Sequence[EnergyInterval], *, now: datetime, required_until: datetime
+) -> tuple[EnergyInterval, ...]:
+    """Resample documented period Wh onto half hours, conserving source energy.
+
+    Uniform energy distribution *within* each supplied period is an explicit
+    forecast model, not reconstructed measurement. Missing periods are errors.
+    Long zero-energy periods must be supplied explicitly (e.g. source night).
+    """
+    now, until = _utc(now), _utc(required_until)
+    if not timedelta() < until - now <= timedelta(days=2):
+        raise ForecastError("invalid_horizon")
+    checked: list[EnergyInterval] = []
+    previous: datetime | None = None
+    for period in periods:
+        start, end, value = _utc(period.start), _utc(period.end), period.energy_wh
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(value)
+            or not 0 <= value <= 100_000
+            or not timedelta() < end - start <= timedelta(days=1)
+            or (value > 0 and end - start > timedelta(hours=1))
+        ):
+            raise ForecastError("invalid_energy_period")
+        if previous is not None and start != previous:
+            raise ForecastError("noncontiguous_intervals")
+        checked.append(EnergyInterval(start, end, float(value)))
+        previous = end
+    index = 0
+    while index < len(checked) and checked[index].end <= now:
+        index += 1
+    result: list[EnergyInterval] = []
+    cursor = now
+    while cursor < until:
+        boundary = cursor.replace(minute=cursor.minute // 30 * 30, second=0, microsecond=0)
+        end = min(until, boundary + timedelta(minutes=30))
+        position, energy = cursor, 0.0
+        while position < end:
+            if index >= len(checked) or not checked[index].start <= position < checked[index].end:
+                raise ForecastError("incomplete_horizon")
+            period = checked[index]
+            stop = min(end, period.end)
+            energy += period.energy_wh * ((stop - position) / (period.end - period.start))
+            position = stop
+            if position == period.end:
+                index += 1
+        result.append(EnergyInterval(cursor, end, energy))
+        cursor = end
+    return tuple(result)
+
+
 def power_forecast(
     rows: Sequence[Mapping[str, object]],
     *,

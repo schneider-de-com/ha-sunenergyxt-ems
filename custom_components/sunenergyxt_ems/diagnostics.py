@@ -90,6 +90,13 @@ async def async_get_config_entry_diagnostics(
         result["operating_evidence"] = await observer.async_operating_summary()
     horizon = getattr(runtime, "horizon", None)
     if horizon is not None:
+        result["forecast_sources"] = {
+            "forecast_solar": [
+                source.describe(at)
+                for source in getattr(horizon, "forecast_solar_sources", {}).values()
+                if source.entry_id is not None
+            ]
+        }
         decision = horizon.decision
         result["planning"] = {
             "reason": horizon.reason,

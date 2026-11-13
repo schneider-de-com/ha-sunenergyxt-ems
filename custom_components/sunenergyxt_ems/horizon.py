@@ -21,11 +21,12 @@ from homeassistant.util import dt as dt_util
 
 from .demand_forecast import DemandForecast, demand_forecast
 from .forecast import ForecastError
+from .forecast_solar_source import ForecastSolarSource
 from .forecast_sources import SolarForecast, solcast_forecast
 from .logic import Battery, ControllerState
 from .observer import DemandObserver
 from .planning import PriorityPlan, plan_priority, validate_planning_inputs
-from .registry import suggested_forecasts
+from .registry import forecast_solar_entry, suggested_forecasts
 
 if TYPE_CHECKING:
     from .runtime import EMSRuntime
@@ -93,6 +94,36 @@ class HorizonPlanner:
         self._generation = 0
         self._input_token: object = None
         self._closed = False
+        self.forecast_solar_sources: dict[str, ForecastSolarSource] = {}
+
+    def _source_changed(self) -> None:
+        if not self._closed:
+            self.invalidate()
+            self.refresh()
+            self.runtime._publish()
+
+    def _sync_forecast_solar(self) -> None:
+        mappings = [self.entry.options.get("pv_forecast", {})]
+        per_battery = self.entry.options.get("pv_forecast_by_battery", {})
+        if isinstance(per_battery, Mapping):
+            mappings.extend(per_battery.values())
+        selected: set[str] = set()
+        for mapping in mappings:
+            try:
+                owner = forecast_solar_entry(self.hass, mapping)
+            except ForecastError:
+                continue
+            if owner:
+                selected.add(owner)
+        for owner in selected:
+            if owner not in self.forecast_solar_sources:
+                self.forecast_solar_sources[owner] = ForecastSolarSource(
+                    self.hass, self._source_changed
+                )
+            self.forecast_solar_sources[owner].bind(owner)
+        for owner, source in self.forecast_solar_sources.items():
+            if owner not in selected:
+                source.bind(None)
 
     def invalidate(self) -> None:
         """Discard a decision immediately after operating options change."""
@@ -109,6 +140,8 @@ class HorizonPlanner:
         """Cancel result delivery; a running pure worker cannot touch hardware."""
         self._closed = True
         self._fallback("disabled")
+        for source in self.forecast_solar_sources.values():
+            await source.async_stop()
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
@@ -148,6 +181,19 @@ class HorizonPlanner:
     def _solar(self, mapping: Mapping[str, str], now: datetime, until: datetime) -> SolarForecast:
         if not isinstance(mapping, Mapping):
             raise ForecastError("invalid_forecast_mapping")
+        owner = forecast_solar_entry(self.hass, mapping)
+        if owner:
+            source = self.forecast_solar_sources.get(owner)
+            if source is None:
+                raise ForecastError("forecast_solar_receipt_unknown")
+            source.forecast(
+                now=now,
+                required_until=until,
+                source_entities=(mapping["today"], mapping["tomorrow"]),
+            )
+            # A verified nominal curve is not a provider uncertainty interval.
+            # Do not manufacture P10/P90 or authorize priorities from point data.
+            raise ForecastError("forecast_uncertainty_not_supplied")
         ids = [mapping.get(role) for role in ("today", "tomorrow", "updated")]
         if any(not source for source in ids):
             raise ForecastError("forecast_sources_not_configured")
@@ -169,6 +215,7 @@ class HorizonPlanner:
         now = dt_util.utcnow()
         if self._closed:
             return
+        self._sync_forecast_solar()
         if not self.entry.options.get("planning_enabled", False):
             self._fallback("disabled")
             return
