@@ -102,7 +102,10 @@ class HorizonPlanner:
             self.refresh()
             self.runtime._publish()
 
-    def _sync_forecast_solar(self) -> None:
+    def sync_forecast_sources(self) -> None:
+        """Attach late owner caches even while control or other gates are off."""
+        if self._closed:
+            return
         mappings = [self.entry.options.get("pv_forecast", {})]
         per_battery = self.entry.options.get("pv_forecast_by_battery", {})
         if isinstance(per_battery, Mapping):
@@ -215,7 +218,7 @@ class HorizonPlanner:
         now = dt_util.utcnow()
         if self._closed:
             return
-        self._sync_forecast_solar()
+        self.sync_forecast_sources()
         if not self.entry.options.get("planning_enabled", False):
             self._fallback("disabled")
             return

@@ -233,6 +233,8 @@ class EMSRuntime:
 
     async def _async_on_interval(self, _now: datetime) -> None:
         """Run scheduled updates in Home Assistant's event loop, never its executor."""
+        if self.horizon is not None:
+            self.horizon.sync_forecast_sources()
         await self.async_update()
 
     async def async_stop(self) -> None:
