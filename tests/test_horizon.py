@@ -37,6 +37,7 @@ def setup_horizon(monkeypatch):
             return NOW
 
     monkeypatch.setattr(runtime_module, "datetime", Clock)
+    monkeypatch.setattr(runtime_module, "utcnow", lambda: NOW)
     monkeypatch.setattr(module.dt_util, "utcnow", lambda: NOW)
     monkeypatch.setattr(
         module, "get_astral_event_date", lambda *args: NOW.replace(hour=8) + timedelta(days=1)

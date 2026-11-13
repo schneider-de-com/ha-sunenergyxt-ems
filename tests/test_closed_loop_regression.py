@@ -251,6 +251,10 @@ async def test_ack_and_new_grid_sample_allow_next_bounded_command(
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     clock = [8000.0]
+    origin = datetime.now(UTC)
+    monkeypatch.setattr(
+        runtime_module, "utcnow", lambda: origin + timedelta(seconds=clock[0] - 8000)
+    )
     monkeypatch.setattr(runtime_module, "monotonic", lambda: clock[0])
 
     await runtime.async_update()
@@ -271,7 +275,7 @@ async def test_ack_and_new_grid_sample_allow_next_bounded_command(
     # A newer meter reading after the hold and the acknowledged actuator update
     # must allow the next bounded correction; old observations may not be reused.
     clock[0] += 11.0
-    hass.states.get("sensor.grid").last_reported = datetime.now(UTC) + timedelta(milliseconds=3)
+    hass.states.get("sensor.grid").last_reported = runtime_module.utcnow()
     await runtime.async_update()
 
     assert hass.services.async_call.await_count == 2

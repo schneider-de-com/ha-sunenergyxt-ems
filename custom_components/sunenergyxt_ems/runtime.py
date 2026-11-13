@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from math import isfinite
 from time import monotonic
 from typing import Any
@@ -18,6 +18,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.helpers.storage import Store
+from homeassistant.util.dt import utcnow
 
 from .const import (
     CONF_BATTERIES,
@@ -77,6 +78,7 @@ class PendingCommand:
     entity_reported_before: datetime
     sent_at: float
     grid_reported_before: datetime | None
+    meter_settled_after: datetime | None = None
 
 
 class EMSRuntime:
@@ -274,7 +276,7 @@ class EMSRuntime:
             if state is None:
                 return None
             sample_time = getattr(state, "last_reported", None) or state.last_updated
-            age = datetime.now(UTC) - sample_time
+            age = utcnow() - sample_time
             if age < timedelta(seconds=-5) or age > MAX_SOC_AGE:
                 return None
         return self._float(source)
@@ -287,7 +289,7 @@ class EMSRuntime:
         if state is None or state.attributes.get("unit_of_measurement") != "W":
             return None
         stamp = getattr(state, "last_reported", None) or state.last_updated
-        age = datetime.now(UTC) - stamp
+        age = utcnow() - stamp
         if age < timedelta(seconds=-5) or age > MAX_DC_AGE:
             return None
         value = self._float(state.state)
@@ -356,7 +358,7 @@ class EMSRuntime:
         if state is None:
             return None, None
         sample_time = getattr(state, "last_reported", None) or state.last_updated
-        age = datetime.now(UTC) - sample_time
+        age = utcnow() - sample_time
         if age < timedelta(seconds=-5) or age > MAX_GRID_AGE:
             return None, None
         number = self._float(state.state)
@@ -503,7 +505,10 @@ class EMSRuntime:
         """Wait for a changed reported limit and a later, settled meter sample."""
         if not self._pending:
             return True
-        for entity_id, pending in self._pending.items():
+        waiting_feedback = False
+        timed_out = False
+        waiting_meter = False
+        for entity_id, pending in list(self._pending.items()):
             state = self.hass.states.get(entity_id)
             current = self._float(state.state) if state else None
             reported = (
@@ -538,24 +543,34 @@ class EMSRuntime:
                         if entity_id in self._pending:
                             self._shutdown_pending[entity_id] = self._pending.pop(entity_id)
                             self._deferred_shutdown.discard(entity_id)
-                    self.status = "write_error"
+                    timed_out = True
                     self.last_error = (
                         f"{entity_id}: command was not acknowledged within "
                         f"{FEEDBACK_TIMEOUT_SECONDS:g} seconds"
                     )
                 else:
-                    self.status = "waiting_feedback"
-                return False
+                    waiting_feedback = True
+                continue
             if (
                 now - pending.sent_at < FEEDBACK_SETTLE_SECONDS
                 or grid_seq is None
+                or pending.meter_settled_after is None
+                or grid_seq <= pending.meter_settled_after
                 or (
                     pending.grid_reported_before is not None
                     and grid_seq <= pending.grid_reported_before
                 )
             ):
-                self.status = "waiting_meter"
-                return False
+                waiting_meter = True
+        if timed_out or waiting_feedback or waiting_meter:
+            self.status = (
+                "write_error"
+                if timed_out
+                else "waiting_feedback"
+                if waiting_feedback
+                else "waiting_meter"
+            )
+            return False
         completed = set(self._pending) & self._inflight_commands
         if completed:
             self._inflight_commands.difference_update(completed)
@@ -622,6 +637,13 @@ class EMSRuntime:
         self, targets: dict[str, float], now: float, *, emergency: bool = False, force: bool = False
     ) -> None:
         for entity_id, target in targets.items():
+            high_import = (
+                self._grid_raw_w is not None
+                and self._grid_filter.sustained_import()
+                and not self.controller.feed_in
+                and not self._start_hold.active(entity_id, now)
+            )
+            interval = self._minimum_interval(entity_id)
             state = self.hass.states.get(entity_id)
             if state is None or state.state in ("unknown", "unavailable"):
                 continue
@@ -683,7 +705,8 @@ class EMSRuntime:
                         and 0 < previous_command - reported < precision / 2
                         and target > previous_command * rating / 100
                         and entity_id not in self._pending
-                        and now - self._sent_at.get(entity_id, 0) >= 20.0
+                        and now - self._sent_at.get(entity_id, 0)
+                        >= (interval if high_import else max(interval, 20.0))
                         and await self._hardware_feedback_matches(entity_id, previous_command)
                     ):
                         baseline_w = previous_command * rating / 100
@@ -728,7 +751,6 @@ class EMSRuntime:
                 and abs(reported_value - value) <= max(step / 2, 0.01)
             ):
                 continue
-            interval = self._minimum_interval(entity_id)
             if previous is not None and not force:
                 # A finely controlled percent actuator needs its 0.1pp
                 # steps to *pass* the old 10 W deadband. The 20-second
@@ -753,11 +775,20 @@ class EMSRuntime:
                         value < previous or (reported_value is not None and value < reported_value)
                     )
                 ):
-                    required = max(interval, 20.0) if value > previous else interval
+                    # After sustained high import, allow the same bounded
+                    # 20 W steps at the device's normal interval. First start,
+                    # actuator acknowledgements, and meter gating remain unchanged.
+                    required = interval if value <= previous or high_import else max(interval, 20.0)
                     if elapsed < required:
                         continue
             reported_before = getattr(state, "last_reported", None) or state.last_updated
             _, grid_before = self._grid()
+            last_grid = self._grid_filter.last_sequence
+            if isinstance(last_grid, datetime) and (
+                grid_before is None
+                or (isinstance(grid_before, datetime) and last_grid > grid_before)
+            ):
+                grid_before = last_grid
             self._inflight_commands.add(entity_id)
             if not await self._save_shutdown_obligations() and not emergency:
                 return
@@ -809,6 +840,9 @@ class EMSRuntime:
                 entity_reported_before=reported_before,
                 sent_at=now,
                 grid_reported_before=grid_before,
+                # Timestamp after the blocking service completes: a sample
+                # from inside the settling period cannot acknowledge output.
+                meter_settled_after=utcnow() + timedelta(seconds=FEEDBACK_SETTLE_SECONDS),
             )
 
     async def _verify_shutdown(self, now: float) -> None:
@@ -1074,13 +1108,28 @@ class EMSRuntime:
                     return
                 self._seen_valid = True
             if grid is None:
+                await self._feedback_ready(now, None)
+                feedback_error = self.status == "write_error"
                 outputs = self.controller.update(batteries, grid, now, sequence=sequence)
-                self.status = "grid_unavailable"
+                if not feedback_error:
+                    self.status = "grid_unavailable"
                 await self._apply(outputs, now, emergency=True)
                 self._publish()
                 return
 
-            if not await self._feedback_ready(now, sequence):
+            last_grid = self._grid_filter.last_sequence
+            stale_grid = (
+                isinstance(sequence, datetime)
+                and isinstance(last_grid, datetime)
+                and sequence < last_grid
+            )
+            # Check pending commands even when the meter goes backwards, so
+            # missing device feedback can still trigger the safety timeout.
+            if not await self._feedback_ready(now, None if stale_grid else sequence):
+                self._publish()
+                return
+            if stale_grid:
+                self.status = "waiting_meter"
                 self._publish()
                 return
 
