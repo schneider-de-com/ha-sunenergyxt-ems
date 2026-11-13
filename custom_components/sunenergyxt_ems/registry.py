@@ -6,7 +6,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .discovery import Candidate, find_batteries, suggest_grid, suggest_inverter_limit
+from .discovery import (
+    BK_SOURCE_DOMAINS,
+    Candidate,
+    find_batteries,
+    suggest_grid,
+    suggest_inverter_limit,
+)
 
 # These suffixes are from the *registered unique IDs* of the SunEnergyXT
 # integration. They are not entity_id or localized UI-name assumptions.
@@ -19,11 +25,33 @@ BK_REGISTRY_SUFFIXES = {
 }
 
 
+def suggested_forecasts(hass: HomeAssistant) -> dict[str, str]:
+    """Suggest only one complete Solcast entry using provider-owned identities."""
+    roles = {
+        "total_kwh_forecast_today": "today",
+        "total_kwh_forecast_tomorrow": "tomorrow",
+        "lastupdated": "updated",
+    }
+    groups: dict[str, dict[str, str]] = {}
+    for entity in getattr(er.async_get(hass), "entities", {}).values():
+        role = roles.get(entity.unique_id)
+        if (
+            role
+            and entity.platform == "solcast_solar"
+            and entity.domain == "sensor"
+            and entity.config_entry_id
+            and entity.disabled_by is None
+        ):
+            groups.setdefault(entity.config_entry_id, {})[role] = entity.entity_id
+    complete = [group for group in groups.values() if len(group) == 3]
+    return complete[0] if len(complete) == 1 else {}
+
+
 def _source_key(entry: er.RegistryEntry) -> str | None:
     """Identify the entity's purpose from its integration-owned unique ID."""
     unique_id = entry.unique_id or ""
     platform = entry.platform.lower()
-    if platform == "sunenergyxt" and entry.config_entry_id:
+    if platform in BK_SOURCE_DOMAINS and entry.config_entry_id:
         prefix = f"{entry.config_entry_id}_"
         if unique_id.startswith(prefix):
             suffix = unique_id[len(prefix) :]

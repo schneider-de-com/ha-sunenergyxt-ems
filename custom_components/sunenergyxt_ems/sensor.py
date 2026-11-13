@@ -14,7 +14,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_FEED_IN, CONF_FEED_IN_MODE, DOMAIN, FEED_IN_MODE_PV
-from .inputs import fresh_power
+from .inputs import observed_ac_power
 from .logic import weighted_battery_level
 from .runtime import EMSRuntime
 
@@ -27,6 +27,18 @@ PID_VALUES = (
     ("pid_derivative", "pid_d_w"),
     ("controller_target", "target_w"),
 )
+
+
+def _last_dispatched_total(runtime: EMSRuntime) -> float | None:
+    """Sum historical HA dispatches only when every configured inverter is known.
+
+    These can be from different cycles; neither an HA service return nor this
+    aggregate establishes that an inverter accepted or still uses a limit.
+    """
+    configured = runtime._configured_inverters()
+    if not configured or not configured <= runtime._last_dispatched_w.keys():
+        return None
+    return sum(runtime._last_dispatched_w[key] for key in configured)
 
 
 async def async_setup_entry(
@@ -44,6 +56,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [EMSStatus(entry, runtime)]
     entities.extend(EMSControlValue(entry, runtime, key, field) for key, field in PID_VALUES)
     entities.append(EMSWeightedBatteryLevel(entry, runtime))
+    entities.append(EMSPlanningStatus(entry, runtime))
     entities.extend(
         BatteryStatus(
             entry,
@@ -58,6 +71,10 @@ async def async_setup_entry(
     for record in entry.data["batteries"]:
         key = record["device_id"]
         name = record.get("label", "BK215")
+        for kind in ("soc", "lower_soc", "dc_output"):
+            entities.append(
+                BatteryDiagnosticValue(entry, runtime, key, name, controller_device.id, kind)
+            )
         for kind in ("ev3600_state", "bypass_state"):
             entities.append(
                 BatteryModeStatus(entry, runtime, key, name, controller_device.id, kind)
@@ -119,6 +136,21 @@ class EMSStatus(SensorEntity):
     """Report whether the controller can currently regulate."""
 
     _attr_translation_key = "status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [
+        "waiting",
+        "running",
+        "waiting_feedback",
+        "waiting_meter",
+        "disabled",
+        "shutdown_pending",
+        "write_error",
+        "hardware_limit",
+        "dc_unavailable",
+        "reserve_safety",
+        "grid_unavailable",
+        "switching_main",
+    ]
     _attr_has_entity_name = True
     _attr_should_poll = False
 
@@ -139,11 +171,11 @@ class EMSStatus(SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, object]:
         runtime = self._runtime
-        state = runtime.controller.state
         return {
             "last_error": runtime.last_error,
             "control_mode": "adaptive_pid" if runtime.controller.adaptive_pid else "proportional",
-            "requested_total_w": state.target_w,
+            "requested_total_w": _last_dispatched_total(runtime),
+            "requested_total_semantics": "last_successful_ha_dispatch_per_inverter",
             "pending_actuator_reads": sorted(runtime._pending),
             "pending_shutdown_reads": sorted(runtime._shutdown_pending),
             "deferred_shutdown": sorted(runtime._deferred_shutdown),
@@ -162,6 +194,48 @@ class EMSStatus(SensorEntity):
     @callback
     def _refresh(self) -> None:
         self.async_write_ha_state()
+
+
+class EMSPlanningStatus(EMSStatus):
+    """Explain a forecast hint separately from actual hardware/control state."""
+
+    _attr_translation_key = "planning_status"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_options = [
+        "evaluating",
+        "disabled",
+        "ems_disabled",
+        "storage_unavailable",
+        "measurements_unavailable",
+        "operating_priority",
+        "demand_history_unavailable",
+        "pv_forecast_unavailable",
+        "pv_allocation_unavailable",
+        "capacity_unavailable",
+        "no_expected_advantage",
+        "expected_pv_loss_reduction",
+        "invalid_data",
+    ]
+
+    def __init__(self, entry: ConfigEntry, runtime: EMSRuntime) -> None:
+        super().__init__(entry, runtime)
+        self._attr_unique_id = f"{entry.entry_id}_planning_status"
+
+    @property
+    def native_value(self) -> str:
+        return self._runtime.horizon.reason if self._runtime.horizon is not None else "disabled"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        horizon = self._runtime.horizon
+        return {
+            "decision_kind": "forecast_priority_hint_not_measured_savings",
+            "horizon_until": horizon.horizon_until.isoformat()
+            if horizon and horizon.horizon_until
+            else None,
+            "detail": horizon.detail if horizon else None,
+            "suggested_priority": list(self._runtime.controller.planning_order),
+        }
 
 
 class EMSControlValue(SensorEntity):
@@ -186,11 +260,18 @@ class EMSControlValue(SensorEntity):
 
     @property
     def native_value(self) -> float | None:
+        if self._field in ("pid_error_w", "pid_p_w", "pid_i_w", "pid_d_w") and (
+            not self._runtime.controller.enabled
+            or self._runtime._grid_filtered_w is None
+            or self._runtime.controller.state.grid_outage
+            or self._runtime.status not in ("running", "waiting_feedback", "waiting_meter")
+        ):
+            # Contributions from the last cycle are not current after meter loss.
+            return None
         if not self._runtime.controller.enabled and self._field in (
             "raw_grid_w",
             "effective_grid_w",
             "pid_error_w",
-            "target_w",
         ):
             # A previous signed meter sample is not a live observation.
             return None
@@ -198,7 +279,22 @@ class EMSControlValue(SensorEntity):
             return self._runtime._grid_raw_w
         if self._field == "effective_grid_w":
             return self._runtime._grid_filtered_w
+        if self._field == "target_w":
+            return _last_dispatched_total(self._runtime)
         return getattr(self._runtime.controller.state, self._field, None)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        if self._field in ("pid_error_w", "pid_p_w", "pid_i_w", "pid_d_w"):
+            return {
+                "value_semantics": "last_completed_controller_calculation",
+                "controller_phase": self._runtime.status,
+            }
+        return {}
+
+    @property
+    def available(self) -> bool:
+        return self.native_value is not None
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(
@@ -214,6 +310,17 @@ class BatteryStatus(SensorEntity):
     """Expose one device with a status and diagnostics per configured BK215."""
 
     _attr_translation_key = "battery_status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [
+        "disabled",
+        "blocked",
+        "ev3600_charging",
+        "ev3600_unavailable",
+        "unavailable",
+        "main",
+        "support",
+        "standby",
+    ]
     _attr_has_entity_name = True
     _attr_should_poll = False
 
@@ -280,18 +387,84 @@ class BatteryStatus(SensorEntity):
             "full_charge_bypass": self._device_id in self._runtime.controller.state.full,
             "ev3600_charging": battery.ev3600_charging,
             "reported_limit_w": self._runtime._reported_outputs((battery,)),
-            "measured_inverter_ac_w": {
-                inverter.key: fresh_power(
+            "reported_inverter_ac_w": {
+                inverter.key: observed_ac_power(
                     self._runtime.hass,
                     self._runtime.entry.options.get("ac_power", {}).get(inverter.key),
+                    inverter_online=inverter.online,
                 )
                 for inverter in battery.inverters
                 if self._runtime.entry.options.get("ac_power", {}).get(inverter.key)
             },
-            "requested_power_w": sum(
-                self._runtime.controller.state.outputs.get(inv.key, 0) for inv in battery.inverters
+            "requested_power_w": (
+                sum(self._runtime._last_dispatched_w[inv.key] for inv in battery.inverters)
+                if battery.inverters
+                and all(inv.key in self._runtime._last_dispatched_w for inv in battery.inverters)
+                else None
             ),
         }
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._runtime.signal, self._refresh)
+        )
+
+    @callback
+    def _refresh(self) -> None:
+        self.async_write_ha_state()
+
+
+class BatteryDiagnosticValue(SensorEntity):
+    """Expose a battery input used by the controller as an individual sensor."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        runtime: EMSRuntime,
+        device_id: str,
+        label: str,
+        parent_device_id: str | None,
+        kind: str,
+    ) -> None:
+        self._runtime = runtime
+        self._device_id = device_id
+        self._kind = kind
+        self._attr_translation_key = f"battery_{kind}"
+        self._attr_unique_id = f"{entry.entry_id}_battery_{device_id}_{kind}"
+        self._attr_native_unit_of_measurement = "W" if kind == "dc_output" else "%"
+        self._attr_device_class = {
+            "dc_output": SensorDeviceClass.POWER,
+            "soc": SensorDeviceClass.BATTERY,
+            "lower_soc": None,
+        }[kind]
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"battery_{device_id}")},
+            via_device_id=parent_device_id,
+            name=f"{label} (EMS)",
+            manufacturer="Community",
+            model="BK215 EMS controller",
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        battery = next(
+            (item for item in self._runtime._batteries() if item.key == self._device_id),
+            None,
+        )
+        if battery is None:
+            return None
+        value = getattr(battery, "dc_output_w" if self._kind == "dc_output" else self._kind, None)
+        if value is None or (self._kind != "dc_output" and not 0 <= value <= 100):
+            return None
+        return value
+
+    @property
+    def available(self) -> bool:
+        return self.native_value is not None
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(
@@ -476,11 +649,18 @@ class InverterLimitValue(SensorEntity):
     @property
     def native_value(self) -> float | None:
         if self._kind == "requested":
-            return self._runtime.controller.state.outputs.get(self._inverter_entity_id)
+            return self._runtime._last_dispatched_w.get(self._inverter_entity_id)
         if self._kind == "measured_ac":
-            return fresh_power(
+            inverter_online = any(
+                inverter.key == self._inverter_entity_id and inverter.online
+                for battery in self._runtime._batteries()
+                if battery.key == self._device_id
+                for inverter in battery.inverters
+            )
+            return observed_ac_power(
                 self._runtime.hass,
                 self._runtime.entry.options.get("ac_power", {}).get(self._inverter_entity_id),
+                inverter_online=inverter_online,
             )
         batteries = tuple(
             battery for battery in self._runtime._batteries() if battery.key == self._device_id
@@ -488,10 +668,36 @@ class InverterLimitValue(SensorEntity):
         return self._runtime._reported_outputs(batteries).get(self._inverter_entity_id)
 
     @property
+    def available(self) -> bool:
+        """Preserve dispatch history and expose missing observations as unavailable."""
+        return self._kind == "requested" or self.native_value is not None
+
+    @property
     def extra_state_attributes(self) -> dict[str, object]:
+        reported = (
+            self._runtime.hass.states.get(self._inverter_entity_id)
+            if self._kind == "reported"
+            else None
+        )
+        reported_at = getattr(reported, "last_reported", None) or getattr(
+            reported, "last_updated", None
+        )
         return {
             "inverter_limit_entity": self._inverter_entity_id,
             "value_type": self._kind,
+            "evidence": (
+                "successful HA service call; device acceptance not established"
+                if self._kind == "requested"
+                else "HA entity state; device sample freshness not established"
+                if self._kind == "reported"
+                else None
+            ),
+            "ha_reported_at": reported_at.isoformat() if reported_at else None,
+            "freshness_basis": (
+                "HA state change; device sample timestamp unknown"
+                if self._kind == "measured_ac"
+                else None
+            ),
             "measured_ac_source": self._runtime.entry.options.get("ac_power", {}).get(
                 self._inverter_entity_id
             )

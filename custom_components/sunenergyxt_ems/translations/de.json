@@ -183,7 +183,31 @@
           "capacity_wh_7": "Speicher 7: Gesamtkapazität einschließlich Erweiterungen (Wh)",
           "capacity_wh_8": "Speicher 8: Gesamtkapazität einschließlich Erweiterungen (Wh)",
           "capacity_wh_9": "Speicher 9: Gesamtkapazität einschließlich Erweiterungen (Wh)",
-          "capacity_wh_10": "Speicher 10: Gesamtkapazität einschließlich Erweiterungen (Wh)"
+          "capacity_wh_10": "Speicher 10: Gesamtkapazität einschließlich Erweiterungen (Wh)",
+          "planning_enabled": "Prognosebasierte Speicherpriorität aktivieren",
+          "pv_forecast_today": "Gesamte Solarprognose: heute",
+          "pv_forecast_tomorrow": "Gesamte Solarprognose: morgen",
+          "pv_forecast_updated": "Gesamte Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_1": "Speicher 1: Solarprognose: heute",
+          "pv_forecast_tomorrow_1": "Speicher 1: Solarprognose: morgen",
+          "pv_forecast_updated_1": "Speicher 1: Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_2": "Speicher 2: Solarprognose: heute",
+          "pv_forecast_tomorrow_2": "Speicher 2: Solarprognose: morgen",
+          "pv_forecast_updated_2": "Speicher 2: Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_3": "Speicher 3: Solarprognose: heute",
+          "pv_forecast_tomorrow_3": "Speicher 3: Solarprognose: morgen",
+          "pv_forecast_updated_3": "Speicher 3: Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_4": "Speicher 4: Solarprognose: heute",
+          "pv_forecast_tomorrow_4": "Speicher 4: Solarprognose: morgen",
+          "pv_forecast_updated_4": "Speicher 4: Solarprognose: letzter erfolgreicher API-Abruf",
+          "pv_forecast_today_5": "Speicher 5: Solarprognose: heute",
+          "pv_forecast_tomorrow_5": "Speicher 5: Solarprognose: morgen",
+          "pv_forecast_updated_5": "Speicher 5: Solarprognose: letzter erfolgreicher API-Abruf",
+          "clear_pv_input_1": "Speicher 1: optionale PV-Leistungsquelle entfernen",
+          "clear_pv_input_2": "Speicher 2: optionale PV-Leistungsquelle entfernen",
+          "clear_pv_input_3": "Speicher 3: optionale PV-Leistungsquelle entfernen",
+          "clear_pv_input_4": "Speicher 4: optionale PV-Leistungsquelle entfernen",
+          "clear_pv_input_5": "Speicher 5: optionale PV-Leistungsquelle entfernen"
         },
         "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
       }
@@ -193,16 +217,42 @@
       "disable_before_trip_reset": "Vor dem Zurücksetzen der DC-Schutzsperre zuerst EMS deaktivieren.",
       "trip_reset_unconfirmed": "Zurücksetzen verweigert: BK215-DC-Ausgangsleistung fehlt, ist veraltet oder liegt über 100 W.",
       "incomplete_ev3600": "EV3600-Schalter und Ladeleistungssensor gemeinsam auswählen.",
-      "invalid_pid_gains": "PID Kp-Maximum muss mindestens dem Minimum entsprechen."
+      "invalid_pid_gains": "PID Kp-Maximum muss mindestens dem Minimum entsprechen.",
+      "incomplete_forecast_mapping": "Alle drei Solarprognose-Quellen auswählen oder die Gruppe leeren.",
+      "invalid_pv_power_source": "Eine vorhandene Leistungsquelle mit Einheit W oder kW auswählen oder die optionale PV-Quelle entfernen."
     }
   },
   "entity": {
     "sensor": {
       "status": {
-        "name": "EMS-Status"
+        "name": "EMS-Status",
+        "state": {
+          "waiting": "Wartet auf gültige Eingangswerte",
+          "running": "Regelung aktiv",
+          "waiting_feedback": "Wartet auf Wechselrichter-Rückmeldung",
+          "waiting_meter": "Wartet auf neuen Netzmesswert",
+          "disabled": "Deaktiviert",
+          "shutdown_pending": "Wartet auf Abschaltbestätigung",
+          "write_error": "Kommunikations- oder Steuerungsfehler",
+          "hardware_limit": "DC-Leistungsgrenze überschritten",
+          "dc_unavailable": "DC-Messwert nicht verfügbar",
+          "reserve_safety": "Speicherreserve-Schutz aktiv",
+          "grid_unavailable": "Netzmesswert nicht verfügbar",
+          "switching_main": "Hauptspeicherwechsel läuft"
+        }
       },
       "battery_status": {
-        "name": "Speicherstatus"
+        "name": "Speicherstatus",
+        "state": {
+          "disabled": "Deaktiviert",
+          "blocked": "Gesperrt",
+          "ev3600_charging": "EV3600 lädt",
+          "ev3600_unavailable": "EV3600 nicht verfügbar",
+          "unavailable": "Wechselrichter nicht verfügbar",
+          "main": "Hauptspeicher",
+          "support": "Unterstützender Speicher",
+          "standby": "Bereit"
+        }
       },
       "grid_raw": {
         "name": "Netzleistung roh"
@@ -211,19 +261,19 @@
         "name": "Netzleistung gefiltert"
       },
       "grid_error": {
-        "name": "Regelabweichung"
+        "name": "Regelabweichung (letzte Berechnung)"
       },
       "pid_proportional": {
-        "name": "PID P-Anteil"
+        "name": "PID P-Anteil (letzte Berechnung)"
       },
       "pid_integral": {
-        "name": "PID I-Anteil"
+        "name": "PID I-Anteil (letzte Berechnung)"
       },
       "pid_derivative": {
-        "name": "PID D-Anteil"
+        "name": "PID D-Anteil (letzte Berechnung)"
       },
       "controller_target": {
-        "name": "Angefordertes Gesamtlimit"
+        "name": "Zuletzt an Home Assistant übergebene Limits (Summe)"
       },
       "startup_hold_remaining": {
         "name": "Verbleibende Anlaufzeit"
@@ -251,17 +301,44 @@
           "waiting_for_upper_soc": "Wartet auf SoC-Obergrenze"
         }
       },
+      "battery_soc": {
+        "name": "Ladezustand"
+      },
+      "battery_lower_soc": {
+        "name": "Entladegrenze"
+      },
+      "battery_dc_output": {
+        "name": "DC-Ausgangsleistung"
+      },
       "inverter_requested": {
-        "name": "Angefordertes Wechselrichterlimit"
+        "name": "Zuletzt an HA übergebenes Wechselrichterlimit"
       },
       "inverter_reported": {
-        "name": "Gemeldetes Wechselrichterlimit"
+        "name": "Von HA gemeldetes Wechselrichterlimit"
       },
       "inverter_measured_ac": {
-        "name": "Gemessene Wechselrichter-AC-Leistung"
+        "name": "Von HA gemeldete Wechselrichter-AC-Leistung"
       },
       "weighted_battery_level": {
         "name": "Gewichteter Speicherstand"
+      },
+      "planning_status": {
+        "name": "Prognoseplanung",
+        "state": {
+          "disabled": "Prognoseplanung ausgeschaltet",
+          "ems_disabled": "EMS ausgeschaltet",
+          "storage_unavailable": "Hauslastregelung: Historienspeicherung nicht bestätigt",
+          "measurements_unavailable": "Hauslastregelung: vollständige Messungen fehlen",
+          "operating_priority": "Bestehende Betriebsart hat Vorrang",
+          "demand_history_unavailable": "Hauslastregelung: Lernhistorie reicht nicht aus",
+          "pv_forecast_unavailable": "Hauslastregelung: Solarprognose nicht verfügbar",
+          "pv_allocation_unavailable": "Hauslastregelung: Solarzuordnung zu Speichern unbekannt",
+          "capacity_unavailable": "Hauslastregelung: nutzbare Kapazität unbekannt",
+          "no_expected_advantage": "Hauslastregelung: kein belastbarer Planungsvorteil",
+          "expected_pv_loss_reduction": "Speichervorrang zur Verringerung erwarteter Solarverluste",
+          "invalid_data": "Hauslastregelung: Planungsdaten ungültig",
+          "evaluating": "Prognose wird geprüft; Hauslastregelung bleibt aktiv"
+        }
       }
     },
     "switch": {

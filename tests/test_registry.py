@@ -27,6 +27,23 @@ def item(entity_id, unique_id, device, platform, domain="sensor", *, config=None
     )
 
 
+def test_forecast_suggestion_uses_complete_single_provider_entry(registry):
+    hass, entries = registry
+    for role in ("total_kwh_forecast_today", "total_kwh_forecast_tomorrow", "lastupdated"):
+        entries[f"sensor.renamed_{role}"] = item(
+            f"sensor.renamed_{role}", role, "solar", "solcast_solar", config="forecast_a"
+        )
+    assert module.suggested_forecasts(hass)["updated"] == "sensor.renamed_lastupdated"
+    entries["sensor.renamed_lastupdated"].disabled_by = "user"
+    assert module.suggested_forecasts(hass) == {}
+    entries["sensor.renamed_lastupdated"].disabled_by = None
+    for role in ("total_kwh_forecast_today", "total_kwh_forecast_tomorrow", "lastupdated"):
+        entries[f"sensor.other_{role}"] = item(
+            f"sensor.other_{role}", role, "other", "solcast_solar", config="forecast_b"
+        )
+    assert module.suggested_forecasts(hass) == {}
+
+
 @pytest.fixture
 def registry(monkeypatch):
     entries = [
@@ -118,6 +135,16 @@ def test_live_derived_battery_roles_still_work_after_renames(registry):
         },
         "bk2": {"soc": "sensor.other_bk_soc"},
     }
+
+
+def test_new_bk_domain_unique_id_must_belong_to_entry(registry):
+    hass, values = registry
+    for entity in values.values():
+        if entity.platform == "sunEnergyXT":
+            entity.platform = "sunenergyxt_bk"
+    assert module.battery_suggestions(hass)["bk1"]["lower"] == "number.changed_low"
+    values["sensor.changed_soc"].unique_id = "other_entry_wifi_soc"
+    assert "bk1" not in module.battery_suggestions(hass)
 
 
 def test_live_derived_energy_meter_is_suggested_after_rename(registry):

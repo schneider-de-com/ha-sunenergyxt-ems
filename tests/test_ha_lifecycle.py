@@ -16,13 +16,171 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.storage import Store as HAStore
+from homeassistant.helpers.translation import async_get_translations
 from homeassistant.setup import async_setup_component
 from homeassistant.util.file import WriteError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.sunenergyxt_ems import runtime as runtime_module
 from custom_components.sunenergyxt_ems.const import DOMAIN
+from custom_components.sunenergyxt_ems.observer import DemandObserver, HouseholdObservation
 from custom_components.sunenergyxt_ems.runtime import EMSRuntime
+
+# Preserve Core's decoder before test fixtures replace disk reads with dicts.
+_CORE_STORE_ASYNC_LOAD = HAStore._async_load
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_options_reject_energy_as_pv_power_and_allow_explicit_removal(hass):
+    """A bad optional mapping can be rejected, corrected and removed through HA."""
+    original = {
+        "enabled": False,
+        "feed_in": False,
+        "grid_target_w": 20,
+        "pid_ki": 0.07,
+        "capacity_wh": {"bk1": 4300},
+        "pv_input": {"bk1": "sensor.monthly_energy"},
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"batteries": [{"device_id": "bk1", "lower": 10, "upper": 95}]},
+        options=original,
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.monthly_energy", "0.3328", {"unit_of_measurement": "kWh"})
+    hass.states.async_set("sensor.pv_power", "unavailable", {"unit_of_measurement": "kW"})
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"pv_input_1": "sensor.monthly_energy"}
+    )
+    assert result["type"] == "form"
+    assert result["errors"] == {"pv_input_1": "invalid_pv_power_source"}
+    assert entry.options == original
+    for source, attributes in (
+        ("sensor.soc", {"unit_of_measurement": "%"}),
+        ("sensor.no_unit", {}),
+        ("sensor.missing", None),
+    ):
+        if attributes is not None:
+            hass.states.async_set(source, "10", attributes)
+        result = await hass.config_entries.options.async_configure(
+            form["flow_id"], {"pv_input_1": source}
+        )
+        assert result["errors"] == {"pv_input_1": "invalid_pv_power_source"}
+        assert entry.options == original
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"pv_input_1": "sensor.pv_power"}
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options["pv_input"] == {"bk1": "sensor.pv_power"}
+    # An offline but correctly typed source remains configurable; runtime decides freshness.
+    for unit in ("W", "kW"):
+        hass.states.async_set("sensor.pv_power", "100", {"unit_of_measurement": unit})
+        form = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            form["flow_id"], {"pv_input_1": "sensor.pv_power"}
+        )
+        assert result["type"] == "create_entry"
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"clear_pv_input_1": True}
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options["pv_input"] == {}
+    for key in ("enabled", "feed_in", "grid_target_w", "pid_ki", "capacity_wh"):
+        assert entry.options[key] == original[key]
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    assert "clear_pv_input_1" not in form["data_schema"].schema
+    # Removal must also work directly on the pre-existing invalid mapping.
+    hass.config_entries.options.async_abort(form["flow_id"])
+    hass.config_entries.async_update_entry(entry, options=original)
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"clear_pv_input_1": True}
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options["pv_input"] == {}
+    for language in ("en", "de"):
+        translated = await async_get_translations(hass, language, "options", {DOMAIN})
+        assert any("invalid_pv_power_source" in key for key in translated)
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_translated_enum_statuses_in_real_ha(hass: HomeAssistant) -> None:
+    """HA receives all supported status states and both languages can display them."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [{"entity_id": "number.inv", "rated_w": 800}],
+                }
+            ],
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    status_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_status")
+    battery_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_battery_bk1")
+    assert status_id is not None and battery_id is not None
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    status_options = hass.states.get(status_id).attributes["options"]
+    battery_options = hass.states.get(battery_id).attributes["options"]
+    assert set(status_options) == {
+        "waiting",
+        "running",
+        "waiting_feedback",
+        "waiting_meter",
+        "disabled",
+        "shutdown_pending",
+        "write_error",
+        "hardware_limit",
+        "dc_unavailable",
+        "reserve_safety",
+        "grid_unavailable",
+        "switching_main",
+    }
+    assert set(battery_options) == {
+        "disabled",
+        "blocked",
+        "ev3600_charging",
+        "ev3600_unavailable",
+        "unavailable",
+        "main",
+        "support",
+        "standby",
+    }
+    for value in status_options:
+        runtime.status = value
+        runtime._publish()
+        await hass.async_block_till_done()
+        state = hass.states.get(status_id)
+        assert state.state == value
+        assert state.attributes["device_class"] == "enum"
+        assert state.attributes["options"] == status_options
+    state = hass.states.get(battery_id)
+    assert state.state == "disabled"
+    assert state.attributes["device_class"] == "enum"
+    assert state.attributes["options"] == battery_options
+    for language in ("en", "de"):
+        translations = await async_get_translations(hass, language, "entity", {DOMAIN})
+        for key, options in (
+            ("status", status_options),
+            ("battery_status", battery_options),
+        ):
+            for option in options:
+                assert translations[f"component.{DOMAIN}.entity.sensor.{key}.state.{option}"]
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
@@ -100,6 +258,7 @@ async def test_setup_registers_real_integration_devices_and_controls(
                     "device_id": "bk215-1",
                     "label": "BK215 1",
                     "soc": "sensor.soc",
+                    "dc_output": "sensor.battery_dc",
                     "lower": 10,
                     "upper": 90,
                     "inverters": [
@@ -112,6 +271,8 @@ async def test_setup_registers_real_integration_devices_and_controls(
         options={"enabled": False, "feed_in": False, "grid_target_w": 20},
     )
     entry.add_to_hass(hass)
+    hass.states.async_set("sensor.soc", "78", {"unit_of_measurement": "%"})
+    hass.states.async_set("sensor.battery_dc", "120", {"unit_of_measurement": "W"})
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -129,8 +290,12 @@ async def test_setup_registers_real_integration_devices_and_controls(
     unique_ids = {entity.unique_id for entity in entities}
     assert unique_ids == {
         f"{entry.entry_id}_status",
+        f"{entry.entry_id}_planning_status",
         f"{entry.entry_id}_weighted_battery_level",
         f"{entry.entry_id}_battery_bk215-1",
+        f"{entry.entry_id}_battery_bk215-1_soc",
+        f"{entry.entry_id}_battery_bk215-1_lower_soc",
+        f"{entry.entry_id}_battery_bk215-1_dc_output",
         f"{entry.entry_id}_enabled",
         f"{entry.entry_id}_feed_in",
         f"{entry.entry_id}_adaptive_pid",
@@ -164,9 +329,114 @@ async def test_setup_registers_real_integration_devices_and_controls(
     }
     assert all(hass.states.get(entity.entity_id) is not None for entity in entities)
 
+    registry = er.async_get(hass)
+
+    def state_for(kind: str) -> str:
+        entity_id = registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_battery_bk215-1_{kind}"
+        )
+        assert entity_id is not None
+        return hass.states.get(entity_id).state
+
+    assert float(state_for("soc")) == 78
+    assert float(state_for("lower_soc")) == 10
+    assert float(state_for("dc_output")) == 120
+    hass.states.async_set("sensor.soc", "unavailable", {"unit_of_measurement": "%"})
+    hass.data[DOMAIN][entry.entry_id]._publish()
+    await hass.async_block_till_done()
+    assert state_for("soc") == "unavailable"
+
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.NOT_LOADED
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert state_for("soc") == "unavailable"
+    assert float(state_for("lower_soc")) == 10
+    assert len(er.async_entries_for_config_entry(registry, entry.entry_id)) == len(unique_ids)
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_inverter_diagnostics_dispatch_and_reload_in_real_ha(hass: HomeAssistant) -> None:
+    """The dispatched command, HA readback and independent AC source remain distinct."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [
+                        {"entity_id": "number.inv1", "rated_w": 2000},
+                        {"entity_id": "number.inv2", "rated_w": 800},
+                    ],
+                }
+            ],
+        },
+        options={"enabled": False, "ac_power": {"number.inv1": "sensor.ac1"}},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    entity_ids = {
+        (inverter, kind): registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_inverter_{inverter}_{kind}"
+        )
+        for inverter in ("number.inv1", "number.inv2")
+        for kind in ("requested", "reported", "measured_ac")
+    }
+    assert all(entity_ids.values())
+    hass.states.async_set(
+        "number.inv1", "10", {"unit_of_measurement": "%", "min": 0, "max": 100, "step": 0.1}
+    )
+    hass.states.async_set(
+        "number.inv2", "100", {"unit_of_measurement": "W", "min": 0, "max": 800, "step": 1}
+    )
+    hass.states.async_set("sensor.ac1", "120", {"unit_of_measurement": "W"})
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    commands = []
+
+    async def set_value(call):
+        commands.append(dict(call.data))
+
+    hass.services.async_register("number", "set_value", set_value)
+    await runtime._apply({"number.inv1": 400}, now=100, emergency=True, force=True)
+    assert len(commands) == 1
+    assert commands[0]["entity_id"] == "number.inv1"
+    assert commands[0]["value"] == 20
+    runtime._publish()
+    await hass.async_block_till_done()
+    assert float(hass.states.get(entity_ids[("number.inv1", "requested")]).state) == 400
+    assert float(hass.states.get(entity_ids[("number.inv1", "reported")]).state) == 200
+    assert float(hass.states.get(entity_ids[("number.inv1", "measured_ac")]).state) == 120
+    assert hass.states.get(entity_ids[("number.inv2", "requested")]).state == "unknown"
+    assert float(hass.states.get(entity_ids[("number.inv2", "reported")]).state) == 100
+
+    hass.states.async_set("number.inv1", "unavailable", {"unit_of_measurement": "%"})
+    hass.states.async_set("number.inv2", "unavailable", {"unit_of_measurement": "W"})
+    runtime._publish()
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_ids[("number.inv1", "measured_ac")]).state == "unavailable"
+    assert hass.states.get(entity_ids[("number.inv1", "reported")]).state == "unavailable"
+    assert hass.states.get(entity_ids[("number.inv2", "reported")]).state == "unavailable"
+    assert float(hass.states.get(entity_ids[("number.inv1", "requested")]).state) == 400
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert len(commands) == 1
+    assert hass.states.get(entity_ids[("number.inv1", "requested")]).state == "unknown"
+    assert {
+        (inverter, kind): registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_inverter_{inverter}_{kind}"
+        )
+        for inverter, kind in entity_ids
+    } == entity_ids
 
 
 @pytest.mark.asyncio
@@ -496,3 +766,276 @@ async def test_correction_form_preserves_limit_value_types(hass: HomeAssistant, 
     await hass.async_block_till_done()
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_grid_loss_and_recovery_do_not_expose_old_error(hass: HomeAssistant, freezer) -> None:
+    """Recovering one meter report must not present an old PID sample as current."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [],
+                }
+            ],
+        },
+        options={"enabled": True, "grid_target_w": 20},
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.grid", "100", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.soc", "80", {"unit_of_measurement": "%"})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    # Simulate a previously running controller without creating actuator writes.
+    runtime._seen_valid = True
+    await runtime.async_update()
+    await hass.async_block_till_done()
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_grid_error"
+    )
+    assert entity_id is not None
+    assert float(hass.states.get(entity_id).state) == 80.0
+
+    runtime.controller.state.last_grid_ok = None
+    hass.states.async_set("sensor.grid", "unavailable", {"unit_of_measurement": "W"})
+    await runtime.async_update()
+    await hass.async_block_till_done()
+    assert runtime.controller.state.grid_outage
+    assert hass.states.get(entity_id).state == "unavailable"
+    for reading in (120, 121):
+        freezer.tick(1)
+        hass.states.async_set("sensor.grid", str(reading), {"unit_of_measurement": "W"})
+        await runtime.async_update()
+        await hass.async_block_till_done()
+        assert runtime.controller.state.grid_outage
+        assert hass.states.get(entity_id).state == "unavailable"
+    freezer.tick(1)
+    hass.states.async_set("sensor.grid", "122", {"unit_of_measurement": "W"})
+    await runtime.async_update()
+    await hass.async_block_till_done()
+    assert not runtime.controller.state.grid_outage
+    assert float(hass.states.get(entity_id).state) == 101.0
+
+
+@pytest.mark.asyncio
+async def test_demand_observer_uses_real_ha_store_and_preserves_restart_gap(
+    hass: HomeAssistant, freezer, hass_storage
+) -> None:
+    """A new observer instance reads Core Store data, not the old object's RAM."""
+    from homeassistant.util import dt as dt_util
+
+    freezer.move_to("2026-11-08T12:00:00+00:00")
+    entry = MockConfigEntry(domain=DOMAIN, data={"grid": "sensor.grid", "batteries": []})
+
+    def reading():
+        return HouseholdObservation(dt_util.utcnow(), 600, "measured")
+
+    observer = DemandObserver(hass, entry, reading)
+    with patch.object(type(hass.services), "async_call", new_callable=AsyncMock) as services:
+        await observer.async_start()
+        for _ in range(60):
+            freezer.tick(30)
+            await observer.async_refresh(dt_util.utcnow())
+        await observer.async_stop()
+        key = f"{DOMAIN}.demand.{entry.entry_id}"
+        assert hass_storage[key]["data"]["history"]["intervals"], (
+            observer.reason,
+            observer.events,
+            observer.last_poll_at,
+        )
+        assert hass_storage[key]["data"]["history"]["intervals"][0]["energy_wh"] == 300
+        freezer.tick(300)
+        restarted = DemandObserver(hass, entry, reading)
+        await restarted.async_start()
+        assert restarted.persistence_ok
+        assert restarted.history.intervals[0].energy_wh == 300
+        assert any(event["reason"] == "observer_gap" for event in restarted.events)
+        await restarted.async_stop()
+        services.assert_not_called()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_actual_entry_captures_partial_power_channels_and_restores_evidence(
+    hass: HomeAssistant, freezer, hass_storage
+) -> None:
+    from homeassistant.util import dt as dt_util
+
+    freezer.move_to("2026-11-12T12:00:00+00:00")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk",
+                    "soc": "sensor.soc",
+                    "lower": 10,
+                    "upper": 100,
+                    "dc_output": "sensor.dc",
+                    "charging": "sensor.pv",
+                    "inverters": [],
+                }
+            ],
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.grid", "3600", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.dc", "720", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.pv", "unavailable", {"unit_of_measurement": "W"})
+    with patch.object(type(hass.services), "async_call", new_callable=AsyncMock) as services:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        observer = hass.data[DOMAIN][entry.entry_id].observer
+        freezer.tick(5)
+        await observer.async_refresh(dt_util.utcnow())
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        key = f"{DOMAIN}.demand.{entry.entry_id}"
+        channels = hass_storage[key]["data"]["operating_history"]["rows"][0]["channels"]
+        assert channels["grid:sensor.grid"]["positive_wh"] == 5
+        assert channels["dc_output:bk:sensor.dc"]["positive_wh"] == 1
+        assert "pv:bk:sensor.pv" not in channels
+        freezer.tick(120)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        restored = hass.data[DOMAIN][entry.entry_id].observer.operating
+        assert sum(row["states"].get("observer_gap", 0) for row in restored.rows) == 120
+        assert restored.rows[0]["channels"]["grid:sensor.grid"]["positive_wh"] == 5
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        services.assert_not_called()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_passive_observer_stops_on_entry_unload_and_reloads_once(
+    hass: HomeAssistant, freezer
+) -> None:
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {"device_id": "bk", "soc": "sensor.soc", "lower": 10, "upper": 100, "inverters": []}
+            ],
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    with patch.object(type(hass.services), "async_call", new_callable=AsyncMock) as services:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        original = hass.data[DOMAIN][entry.entry_id].observer
+        assert original is not None and original.persistence_ok
+        from custom_components.sunenergyxt_ems.diagnostics import async_get_config_entry_diagnostics
+
+        diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+        assert diagnostics["demand_observation"]["persistence_ok"]
+        assert diagnostics["demand_observation"]["reason"] == "grid_unavailable"
+        original_poll = original.last_poll_at
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        freezer.tick(120)
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=1))
+        await hass.async_block_till_done()
+        assert original.last_poll_at == original_poll
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        replacement = hass.data[DOMAIN][entry.entry_id].observer
+        assert replacement is not original
+        assert replacement.persistence_ok
+        assert any(e["reason"] == "observer_gap" for e in replacement.events)
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        services.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_core_json_corruption_cannot_be_mistaken_for_first_use(hass: HomeAssistant, freezer):
+    from json import JSONDecodeError
+
+    from homeassistant.exceptions import HomeAssistantError
+    from homeassistant.helpers import issue_registry as ir
+    from homeassistant.util import dt as dt_util
+
+    freezer.move_to("2026-11-08T12:00:00+00:00")
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"grid": "sensor.grid", "batteries": []})
+    observer = DemandObserver(
+        hass, entry, lambda: HouseholdObservation(dt_util.utcnow(), 600, "measured")
+    )
+    target = observer._store.path
+
+    def broken_json(path):
+        if str(path) == str(target):
+            try:
+                raise JSONDecodeError("corrupt checkpoint", "{", 1)
+            except JSONDecodeError as exc:
+                raise HomeAssistantError("Cannot decode stored JSON") from exc
+        return {}
+
+    with (
+        patch.object(HAStore, "_async_load", _CORE_STORE_ASYNC_LOAD),
+        patch("homeassistant.helpers.storage.json_util.load_json", side_effect=broken_json),
+        patch("homeassistant.helpers.storage.os.rename") as rename,
+    ):
+        try:
+            await observer.async_start()
+            assert observer.reason == "storage_unavailable"
+            assert not observer.persistence_ok
+            assert observer.history.intervals == ()
+            assert any(
+                key[1].startswith(f"storage_corruption_{DOMAIN}.demand.")
+                for key in ir.async_get(hass).issues
+            )
+            rename.assert_called_once()
+        finally:
+            await observer.async_stop()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_planning_status_registers_translates_and_preserves_disabled_ems(hass: HomeAssistant):
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"grid": "sensor.grid", "batteries": []},
+        options={"enabled": False, "planning_enabled": True},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_planning_status"
+    )
+    assert entity_id is not None
+    state = hass.states.get(entity_id)
+    assert state.state == "ems_disabled"
+    assert state.attributes["decision_kind"] == "forecast_priority_hint_not_measured_savings"
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    assert runtime.controller.enabled is False
+    for language in ("en", "de"):
+        translations = await async_get_translations(hass, language, "entity", integrations={DOMAIN})
+        assert translations[f"component.{DOMAIN}.entity.sensor.planning_status.state.ems_disabled"]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert hass.states.get(entity_id).state == "unavailable"
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert (
+        er.async_get(hass).async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_planning_status"
+        )
+        == entity_id
+    )
+    assert hass.states.get(entity_id).state == "ems_disabled"
+    assert await hass.config_entries.async_unload(entry.entry_id)

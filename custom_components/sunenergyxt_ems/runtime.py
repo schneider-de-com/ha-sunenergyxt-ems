@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -37,8 +38,11 @@ from .const import (
     DOMAIN,
     FEED_IN_MODE_PV,
 )
-from .inputs import ev3600_charging, fresh_power
+from .horizon import HorizonPlanner
+from .inputs import ev3600_charging, fresh_power, observed_ac_power
 from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
+from .observer import DemandObserver, HouseholdObservation
+from .operating_history import OperatingSample
 from .pid import PIDGains
 from .registry import registered_connection, registered_dc_output
 
@@ -95,6 +99,9 @@ class EMSRuntime:
         self._connection_inverters: dict[str, set[str]] = {}
         self._lock = asyncio.Lock()
         self._last_sent: dict[str, float] = {}
+        # Diagnostic history of successful service dispatches, in watts. This
+        # is a command, not a device acknowledgement or measured power.
+        self._last_dispatched_w: dict[str, float] = {}
         self._sent_at: dict[str, float] = {}
         self._pending: dict[str, PendingCommand] = {}
         self._shutdown_pending: dict[str, PendingCommand] = {}
@@ -120,6 +127,9 @@ class EMSRuntime:
         self._start_hold = StartHold(seconds=30.0)
         self._running = False
         self._seen_valid = False
+        self.observer: DemandObserver | None = None
+        self.version = "unknown"
+        self.horizon: HorizonPlanner | None = None
 
     @property
     def signal(self) -> str:
@@ -232,6 +242,10 @@ class EMSRuntime:
         if self._unsubscribe_connections is not None:
             self._unsubscribe_connections()
             self._unsubscribe_connections = None
+        if self.horizon is not None:
+            await self.horizon.async_stop()
+        if self.observer is not None:
+            await self.observer.async_stop()
 
     def _float(self, source: str | float | int | None) -> float | None:
         if isinstance(source, (int, float)):
@@ -355,6 +369,78 @@ class EMSRuntime:
         if self.entry.data.get(CONF_GRID_INVERT):
             number = -number
         return number, sample_time
+
+    def household_observation(self) -> HouseholdObservation:
+        """Reconstruct demand only with every independent AC contribution.
+
+        Cached HA time alignment is a conservative eligibility check, not a
+        device sampling guarantee. Do not replace offline AC with a DC estimate.
+        """
+        grid, sequence = self._grid()
+        if grid is None or not isinstance(sequence, datetime) or abs(grid) > 100_000:
+            return HouseholdObservation(None, None, "grid_unavailable")
+        inverters = [inv for battery in self._batteries() for inv in battery.inverters]
+        keys = [inv.key for inv in inverters]
+        if not keys or set(keys) != self._configured_inverters() or len(keys) != len(set(keys)):
+            return HouseholdObservation(sequence, None, "mapping_incomplete")
+        mapping = self.entry.options.get("ac_power", {})
+        sources = [mapping.get(key) for key in keys]
+        forbidden = {self.entry.data[CONF_GRID], *self._dc_monitored.values()}
+        forbidden.update(
+            record.get(role)
+            for record in self.entry.data[CONF_BATTERIES]
+            for role in ("dc_output", "charging")
+            if isinstance(record.get(role), str)
+        )
+        forbidden.update(self.entry.options.get("pv_input", {}).values())
+        if any(not source or source in forbidden for source in sources) or len(set(sources)) != len(
+            sources
+        ):
+            return HouseholdObservation(sequence, None, "mapping_incomplete")
+        total = grid
+        for inv, source in zip(inverters, sources, strict=True):
+            if not inv.online:
+                return HouseholdObservation(sequence, None, "inverter_offline")
+            power = observed_ac_power(self.hass, source, inverter_online=True)
+            if power is None or power > inv.rated_w:
+                return HouseholdObservation(sequence, None, "ac_unavailable")
+            state = self.hass.states.get(source)
+            if abs((sequence - state.last_changed).total_seconds()) > 30:
+                return HouseholdObservation(sequence, None, "unsynchronized")
+            total += power
+        if not 0 <= total <= 100_000:
+            return HouseholdObservation(sequence, None, "implausible_demand")
+        return HouseholdObservation(sequence, total, "measured")
+
+    def operating_observation(self, at: datetime) -> OperatingSample:
+        """Read independent power channels without commands or device polling."""
+        grid, _ = self._grid()
+        watts: dict[str, float | None] = {f"grid:{self.entry.data[CONF_GRID]}": grid}
+        for battery in self.entry.data[CONF_BATTERIES]:
+            key = battery[CONF_DEVICE]
+            for role, source in (
+                ("pv", self.entry.options.get("pv_input", {}).get(key) or battery.get("charging")),
+                ("dc_output", battery.get("dc_output") or self._dc_monitored.get(key)),
+            ):
+                if source:
+                    watts[f"{role}:{key}:{source}"] = fresh_power(self.hass, source)
+        for battery_state in self._batteries():
+            for inverter in battery_state.inverters:
+                source = self.entry.options.get("ac_power", {}).get(inverter.key)
+                if source:
+                    watts[f"ac:{inverter.key}:{source}"] = observed_ac_power(
+                        self.hass, source, inverter_online=inverter.online
+                    )
+        state = json.dumps(
+            {
+                "enabled": self.controller.enabled,
+                "version": self.version,
+                "control": self.status,
+                "planning": self.horizon.reason if self.horizon else "unavailable",
+            },
+            sort_keys=True,
+        )
+        return OperatingSample(at, watts, state)
 
     def _reported_outputs(self, batteries: tuple[Battery, ...]) -> dict[str, float]:
         """Read reported inverter limit entities, not unexecuted planned outputs."""
@@ -710,6 +796,7 @@ class EMSRuntime:
                     blocking=True,
                 )
             except asyncio.CancelledError:
+                self._last_dispatched_w.pop(entity_id, None)
                 task = asyncio.current_task()
                 if emergency and entity_id in self._shutdown_obligations:
                     self._shutdown_failed_at[entity_id] = now
@@ -723,6 +810,7 @@ class EMSRuntime:
                 _LOGGER.warning("Inverter command cancelled: %s", entity_id)
                 continue
             except (HomeAssistantError, TimeoutError, OSError, ValueError) as exc:
+                self._last_dispatched_w.pop(entity_id, None)
                 if emergency and entity_id in self._shutdown_obligations:
                     self._shutdown_failed_at[entity_id] = now
                 if entity_id in self._inflight_commands:
@@ -741,6 +829,7 @@ class EMSRuntime:
                 now=now,
             )
             self._last_sent[entity_id] = value
+            self._last_dispatched_w[entity_id] = value * rating / 100 if unit == "%" else value
             self._sent_at[entity_id] = now
             self._pending[entity_id] = PendingCommand(
                 target=value,
@@ -997,6 +1086,9 @@ class EMSRuntime:
                 self._publish()
                 return
 
+            if self.horizon is not None:
+                self.horizon.refresh()
+
             if not self._seen_valid:
                 if grid is None or not any(
                     battery.soc is not None
@@ -1097,6 +1189,8 @@ class EMSRuntime:
         """One-shot safe command when the user deliberately disables EMS."""
         async with self._lock:
             self.controller.enabled = False
+            if self.horizon is not None:
+                self.horizon.refresh()
             self._grid_filter.reset()
             self._start_hold.reset()
             self._startup_export_trip = False
@@ -1149,6 +1243,8 @@ class EMSRuntime:
     async def async_change_options(self) -> None:
         """Apply an options-flow update without restarting the control loop."""
         enabled = bool(self.entry.options.get(CONF_ENABLED, True))
+        if self.horizon is not None:
+            self.horizon.invalidate()
         if not enabled:
             # A deliberate reset in Configure is permitted only while EMS is off.
             self._overload_latched = set(self.entry.options.get(CONF_DC_TRIPPED, ()))
@@ -1169,4 +1265,6 @@ class EMSRuntime:
             self._seen_valid = False
             self.status = "waiting"
             await self.async_update()
+        if self.horizon is not None:
+            self.horizon.refresh()
         self._publish()

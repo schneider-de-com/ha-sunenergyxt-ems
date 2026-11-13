@@ -61,6 +61,52 @@ def configured(*, grid=420, soc=70, lower=10, inverter_unit="W", old=0):
     return hass, entry
 
 
+def test_household_observation_uses_signed_grid_and_every_measured_ac_source():
+    hass, entry = configured(grid=-100)
+    states = hass.states.get.__self__
+    states["sensor.ac"] = sample(0.4, "kW")
+    states["sensor.ac"].last_changed = states["sensor.ac"].last_updated
+    entry.options["ac_power"] = {"number.inverter": "sensor.ac"}
+    observation = EMSRuntime(hass, entry).household_observation()
+    assert observation.watts == 300
+    assert observation.reason == "measured"
+    hass.services.async_call.assert_not_called()
+
+
+def test_household_observation_never_replaces_offline_or_unmapped_ac_with_zero():
+    hass, entry = configured()
+    runtime = EMSRuntime(hass, entry)
+    assert runtime.household_observation().watts is None
+    entry.options["ac_power"] = {"number.inverter": "sensor.ac"}
+    states = hass.states.get.__self__
+    states["sensor.ac"] = sample(400, "W")
+    states["sensor.ac"].last_changed = states["sensor.ac"].last_updated
+    states["number.inverter"].state = "unavailable"
+    assert runtime.household_observation().reason == "inverter_offline"
+    assert runtime.household_observation().watts is None
+
+
+def test_household_observation_rejects_unsynchronized_power_sources():
+    hass, entry = configured()
+    states = hass.states.get.__self__
+    states["sensor.ac"] = sample(400, "W", seconds_old=31)
+    states["sensor.ac"].last_changed = states["sensor.ac"].last_updated
+    entry.options["ac_power"] = {"number.inverter": "sensor.ac"}
+    observation = EMSRuntime(hass, entry).household_observation()
+    assert observation.watts is None
+    assert observation.reason == "unsynchronized"
+
+
+def test_household_observation_rejects_known_dc_output_as_ac():
+    hass, entry = configured()
+    entry.data["batteries"][0]["dc_output"] = "sensor.dc"
+    entry.options["ac_power"] = {"number.inverter": "sensor.dc"}
+    states = hass.states.get.__self__
+    states["sensor.dc"] = sample(400, "W")
+    states["sensor.dc"].last_changed = states["sensor.dc"].last_updated
+    assert EMSRuntime(hass, entry).household_observation().watts is None
+
+
 @pytest.fixture(autouse=True)
 def fake_dispatcher(monkeypatch):
     monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)

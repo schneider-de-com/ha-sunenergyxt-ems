@@ -183,7 +183,31 @@
           "capacity_wh_7": "Battery 7: total capacity including expansions (Wh)",
           "capacity_wh_8": "Battery 8: total capacity including expansions (Wh)",
           "capacity_wh_9": "Battery 9: total capacity including expansions (Wh)",
-          "capacity_wh_10": "Battery 10: total capacity including expansions (Wh)"
+          "capacity_wh_10": "Battery 10: total capacity including expansions (Wh)",
+          "planning_enabled": "Enable forecast storage priority",
+          "pv_forecast_today": "Aggregate solar forecast: today",
+          "pv_forecast_tomorrow": "Aggregate solar forecast: tomorrow",
+          "pv_forecast_updated": "Aggregate solar forecast: last successful API update",
+          "pv_forecast_today_1": "Battery 1: solar forecast: today",
+          "pv_forecast_tomorrow_1": "Battery 1: solar forecast: tomorrow",
+          "pv_forecast_updated_1": "Battery 1: solar forecast: last successful API update",
+          "pv_forecast_today_2": "Battery 2: solar forecast: today",
+          "pv_forecast_tomorrow_2": "Battery 2: solar forecast: tomorrow",
+          "pv_forecast_updated_2": "Battery 2: solar forecast: last successful API update",
+          "pv_forecast_today_3": "Battery 3: solar forecast: today",
+          "pv_forecast_tomorrow_3": "Battery 3: solar forecast: tomorrow",
+          "pv_forecast_updated_3": "Battery 3: solar forecast: last successful API update",
+          "pv_forecast_today_4": "Battery 4: solar forecast: today",
+          "pv_forecast_tomorrow_4": "Battery 4: solar forecast: tomorrow",
+          "pv_forecast_updated_4": "Battery 4: solar forecast: last successful API update",
+          "pv_forecast_today_5": "Battery 5: solar forecast: today",
+          "pv_forecast_tomorrow_5": "Battery 5: solar forecast: tomorrow",
+          "pv_forecast_updated_5": "Battery 5: solar forecast: last successful API update",
+          "clear_pv_input_1": "Battery 1: remove optional PV power source",
+          "clear_pv_input_2": "Battery 2: remove optional PV power source",
+          "clear_pv_input_3": "Battery 3: remove optional PV power source",
+          "clear_pv_input_4": "Battery 4: remove optional PV power source",
+          "clear_pv_input_5": "Battery 5: remove optional PV power source"
         },
         "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. The displayed SoC hysteresis is an EMS software choice, not a universal manufacturer value. Leave feed-in off until hardware-tested."
       }
@@ -193,16 +217,42 @@
       "disable_before_trip_reset": "Disable EMS before resetting the DC-output safety trip.",
       "trip_reset_unconfirmed": "DC-output trip cannot be reset: missing, stale, or excessive BK215 output.",
       "incomplete_ev3600": "Select both the EV3600 mode switch and charging-power sensor.",
-      "invalid_pid_gains": "PID maximum Kp must be at least its minimum."
+      "invalid_pid_gains": "PID maximum Kp must be at least its minimum.",
+      "incomplete_forecast_mapping": "Select all three solar forecast sources, or clear the group.",
+      "invalid_pv_power_source": "Select an existing power source in W or kW, or remove the optional PV source."
     }
   },
   "entity": {
     "sensor": {
       "status": {
-        "name": "EMS status"
+        "name": "EMS status",
+        "state": {
+          "waiting": "Waiting for valid inputs",
+          "running": "Running",
+          "waiting_feedback": "Waiting for inverter feedback",
+          "waiting_meter": "Waiting for new grid reading",
+          "disabled": "Disabled",
+          "shutdown_pending": "Waiting for shutdown confirmation",
+          "write_error": "Communication or control error",
+          "hardware_limit": "DC power safety limit",
+          "dc_unavailable": "DC measurement unavailable",
+          "reserve_safety": "Battery reserve protection",
+          "grid_unavailable": "Grid measurement unavailable",
+          "switching_main": "Switching main battery"
+        }
       },
       "battery_status": {
-        "name": "Battery status"
+        "name": "Battery status",
+        "state": {
+          "disabled": "Disabled",
+          "blocked": "Blocked",
+          "ev3600_charging": "EV3600 charging",
+          "ev3600_unavailable": "EV3600 unavailable",
+          "unavailable": "Inverter unavailable",
+          "main": "Main battery",
+          "support": "Support battery",
+          "standby": "Standby"
+        }
       },
       "grid_raw": {
         "name": "Raw grid power"
@@ -211,19 +261,19 @@
         "name": "Filtered grid power"
       },
       "grid_error": {
-        "name": "Grid control error"
+        "name": "Grid control error (last calculation)"
       },
       "pid_proportional": {
-        "name": "PID proportional term"
+        "name": "PID proportional term (last calculation)"
       },
       "pid_integral": {
-        "name": "PID integral term"
+        "name": "PID integral term (last calculation)"
       },
       "pid_derivative": {
-        "name": "PID derivative term"
+        "name": "PID derivative term (last calculation)"
       },
       "controller_target": {
-        "name": "Requested total inverter limit"
+        "name": "Last limits dispatched to Home Assistant (total)"
       },
       "startup_hold_remaining": {
         "name": "Startup hold remaining"
@@ -251,17 +301,44 @@
           "waiting_for_upper_soc": "Waiting for upper SoC threshold"
         }
       },
+      "battery_soc": {
+        "name": "State of charge"
+      },
+      "battery_lower_soc": {
+        "name": "Discharge limit"
+      },
+      "battery_dc_output": {
+        "name": "DC output power"
+      },
       "inverter_requested": {
-        "name": "Requested inverter limit"
+        "name": "Last inverter limit sent to HA"
       },
       "inverter_reported": {
-        "name": "Reported inverter limit"
+        "name": "Inverter limit reported by HA"
       },
       "inverter_measured_ac": {
-        "name": "Measured inverter AC power"
+        "name": "Inverter AC power reported by HA"
       },
       "weighted_battery_level": {
         "name": "Capacity-weighted battery level"
+      },
+      "planning_status": {
+        "name": "Forecast planning",
+        "state": {
+          "disabled": "Forecast planning disabled",
+          "ems_disabled": "EMS disabled",
+          "storage_unavailable": "Household regulation: history storage untrusted",
+          "measurements_unavailable": "Household regulation: complete measurements missing",
+          "operating_priority": "Existing operating mode takes priority",
+          "demand_history_unavailable": "Household regulation: learning history insufficient",
+          "pv_forecast_unavailable": "Household regulation: solar forecast unavailable",
+          "pv_allocation_unavailable": "Household regulation: solar allocation to batteries unknown",
+          "capacity_unavailable": "Household regulation: usable capacity unknown",
+          "no_expected_advantage": "Household regulation: no supported planning advantage",
+          "expected_pv_loss_reduction": "Prioritize storage to reduce expected solar losses",
+          "invalid_data": "Household regulation: planning data invalid",
+          "evaluating": "Evaluating forecast; household regulation continues"
+        }
       }
     },
     "switch": {
