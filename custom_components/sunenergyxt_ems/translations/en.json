@@ -202,7 +202,12 @@
           "pv_forecast_updated_4": "Battery 4: solar forecast: last successful API update",
           "pv_forecast_today_5": "Battery 5: solar forecast: today",
           "pv_forecast_tomorrow_5": "Battery 5: solar forecast: tomorrow",
-          "pv_forecast_updated_5": "Battery 5: solar forecast: last successful API update"
+          "pv_forecast_updated_5": "Battery 5: solar forecast: last successful API update",
+          "clear_pv_input_1": "Battery 1: remove optional PV power source",
+          "clear_pv_input_2": "Battery 2: remove optional PV power source",
+          "clear_pv_input_3": "Battery 3: remove optional PV power source",
+          "clear_pv_input_4": "Battery 4: remove optional PV power source",
+          "clear_pv_input_5": "Battery 5: remove optional PV power source"
         },
         "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. Keep feed-in off until hardware-tested."
       }
@@ -213,7 +218,8 @@
       "trip_reset_unconfirmed": "Reset denied: BK215 DC-output reading is unavailable, stale or above 100 W.",
       "incomplete_ev3600": "Select both EV3600 switch and charging-power sensor.",
       "invalid_pid_gains": "PID maximum Kp must be at least its minimum.",
-      "incomplete_forecast_mapping": "Select all three solar forecast sources, or clear the group."
+      "incomplete_forecast_mapping": "Select all three solar forecast sources, or clear the group.",
+      "invalid_pv_power_source": "Select an existing power source in W or kW, or remove the optional PV source."
     }
   },
   "entity": {

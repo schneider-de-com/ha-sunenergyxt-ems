@@ -482,10 +482,19 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 if capacity is not None:
                     capacities[device] = capacity
                 pv = requested.pop(f"pv_input_{index}", pv_map.get(device))
+                if requested.pop(f"clear_pv_input_{index}", False):
+                    pv = None
                 mode = requested.pop(f"ev_mode_{index}", ev_map.get(device, {}).get("mode"))
                 power = requested.pop(f"ev_power_{index}", ev_map.get(device, {}).get("power"))
                 if pv:
-                    pv_map[device] = pv
+                    state = self.hass.states.get(pv)
+                    if state is None or state.attributes.get("unit_of_measurement") not in (
+                        "W",
+                        "kW",
+                    ):
+                        errors[f"pv_input_{index}"] = "invalid_pv_power_source"
+                    else:
+                        pv_map[device] = pv
                 else:
                     pv_map.pop(device, None)
                 if bool(mode) != bool(power):
@@ -689,8 +698,14 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 )
                 fields[key] = selector.EntitySelector(selector.EntitySelectorConfig(domain=domain))
             fields[vol.Optional(f"pv_input_{index}", **({"default": pv} if pv else {}))] = (
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+                selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", device_class="power")
+                )
             )
+            if pv:
+                fields[vol.Optional(f"clear_pv_input_{index}", default=False)] = (
+                    selector.BooleanSelector()
+                )
         for i, battery in enumerate(existing, 1):
             for j, inverter in enumerate(battery.get(CONF_INVERTERS, ()), 1):
                 source = self.config_entry.options.get("ac_power", {}).get(inverter["entity_id"])

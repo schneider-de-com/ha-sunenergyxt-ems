@@ -33,6 +33,82 @@ _CORE_STORE_ASYNC_LOAD = HAStore._async_load
 
 @pytest.mark.usefixtures("enable_custom_integrations")
 @pytest.mark.asyncio
+async def test_options_reject_energy_as_pv_power_and_allow_explicit_removal(hass):
+    """A bad optional mapping can be rejected, corrected and removed through HA."""
+    original = {
+        "enabled": False,
+        "feed_in": False,
+        "grid_target_w": 20,
+        "pid_ki": 0.07,
+        "capacity_wh": {"bk1": 4300},
+        "pv_input": {"bk1": "sensor.monthly_energy"},
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"batteries": [{"device_id": "bk1", "lower": 10, "upper": 95}]},
+        options=original,
+    )
+    entry.add_to_hass(hass)
+    hass.states.async_set("sensor.monthly_energy", "0.3328", {"unit_of_measurement": "kWh"})
+    hass.states.async_set("sensor.pv_power", "unavailable", {"unit_of_measurement": "kW"})
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"pv_input_1": "sensor.monthly_energy"}
+    )
+    assert result["type"] == "form"
+    assert result["errors"] == {"pv_input_1": "invalid_pv_power_source"}
+    assert entry.options == original
+    for source, attributes in (
+        ("sensor.soc", {"unit_of_measurement": "%"}),
+        ("sensor.no_unit", {}),
+        ("sensor.missing", None),
+    ):
+        if attributes is not None:
+            hass.states.async_set(source, "10", attributes)
+        result = await hass.config_entries.options.async_configure(
+            form["flow_id"], {"pv_input_1": source}
+        )
+        assert result["errors"] == {"pv_input_1": "invalid_pv_power_source"}
+        assert entry.options == original
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"pv_input_1": "sensor.pv_power"}
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options["pv_input"] == {"bk1": "sensor.pv_power"}
+    # An offline but correctly typed source remains configurable; runtime decides freshness.
+    for unit in ("W", "kW"):
+        hass.states.async_set("sensor.pv_power", "100", {"unit_of_measurement": unit})
+        form = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            form["flow_id"], {"pv_input_1": "sensor.pv_power"}
+        )
+        assert result["type"] == "create_entry"
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"clear_pv_input_1": True}
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options["pv_input"] == {}
+    for key in ("enabled", "feed_in", "grid_target_w", "pid_ki", "capacity_wh"):
+        assert entry.options[key] == original[key]
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    assert "clear_pv_input_1" not in form["data_schema"].schema
+    # Removal must also work directly on the pre-existing invalid mapping.
+    hass.config_entries.options.async_abort(form["flow_id"])
+    hass.config_entries.async_update_entry(entry, options=original)
+    form = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"clear_pv_input_1": True}
+    )
+    assert result["type"] == "create_entry"
+    assert entry.options["pv_input"] == {}
+    for language in ("en", "de"):
+        translated = await async_get_translations(hass, language, "options", {DOMAIN})
+        assert any("invalid_pv_power_source" in key for key in translated)
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
 async def test_translated_enum_statuses_in_real_ha(hass: HomeAssistant) -> None:
     """HA receives all supported status states and both languages can display them."""
     entry = MockConfigEntry(
