@@ -251,8 +251,32 @@ async def test_sustained_import_accelerates_bounded_acknowledged_increases() -> 
 
     await runtime._apply({"number.m200": 540}, now=1010.0)
 
+    hass.services.async_call.assert_awaited_once()
     command = hass.services.async_call.await_args.args[2]
     assert command["entity_id"] == "number.m200"
+    assert 1.0 < command["value"] <= 2.0
+
+
+@pytest.mark.parametrize("gate", ["feed_in", "startup_hold"])
+@pytest.mark.asyncio
+async def test_sustained_import_cannot_bypass_feed_in_or_startup_hold(gate: str) -> None:
+    """The current user's enabled feed-in setting keeps acceleration inactive."""
+    runtime, hass = runtime_pair()
+    runtime._last_sent["number.m200"] = 1.0
+    runtime._sent_at["number.m200"] = 1000.0
+    hass.states.get("number.m200").state = "1"
+    for i, watts in enumerate((1200.0, 1150.0, 1100.0)):
+        runtime._grid_filter.observe(watts, i)
+    runtime._grid_raw_w = 1100.0
+    if gate == "feed_in":
+        runtime.controller.feed_in = True
+    else:
+        runtime._start_hold.record("number.m200", before_w=0, after_w=20, now=1000.0)
+    await runtime._apply({"number.m200": 540}, now=1010.0)
+    hass.services.async_call.assert_not_awaited()
+    await runtime._apply({"number.m200": 540}, now=1031.0)
+    hass.services.async_call.assert_awaited_once()
+    command = hass.services.async_call.await_args.args[2]
     assert 1.0 < command["value"] <= 2.0
 
 
