@@ -87,6 +87,17 @@ async def test_forecast_solar_real_coordinator_receipts_service_and_unload(hass,
     await hass.async_block_till_done()
     runtime = hass.data[DOMAIN][entry.entry_id]
     source = runtime.horizon.forecast_solar_sources[owner.entry_id]
+    planning_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_planning_status"
+    )
+    status = hass.states.get(planning_id)
+    assert status.state == "ems_disabled"
+    assert (
+        status.attributes["forecast_solar_sources"][0]["reason"] == "forecast_solar_receipt_unknown"
+    )
+    assert status.attributes["complete_household_intervals"] == 0
+    assert status.attributes["household_measurement_quality"] == "grid_unavailable"
+    assert status.attributes["capture_persistence_ok"] is True
     assert calls == []
     with pytest.raises(ForecastError, match="receipt_unknown"):
         source.forecast(
@@ -103,6 +114,13 @@ async def test_forecast_solar_real_coordinator_receipts_service_and_unload(hass,
     )
     assert sum(slot.energy_wh for slot in point.expected) == 200
     assert point.provider_issued_at is None and point.lower is None and point.upper is None
+    status = hass.states.get(planning_id)
+    assert status.state == "ems_disabled"
+    exposed = status.attributes["forecast_solar_sources"][0]
+    assert exposed["received_at"] == at.isoformat()
+    assert exposed["reason"] == "cached_point_forecast"
+    assert exposed["uncertainty"] == "not_supplied"
+    assert "watts" not in exposed and "api_key" not in exposed
     assert calls == [{"config_entry": owner.entry_id, "resolution": "raw"}]
     # Even a current nominal forecast cannot masquerade as planner confidence.
     with pytest.raises(ForecastError, match="uncertainty_not_supplied"):
@@ -113,6 +131,13 @@ async def test_forecast_solar_real_coordinator_receipts_service_and_unload(hass,
     assert description["received_at"] == at.isoformat()
     assert description["uncertainty"] == "not_supplied"
     assert "watts" not in description and "api_key" not in description
+    freezer.move_to(at + timedelta(hours=2, seconds=1))
+    runtime._publish()
+    await hass.async_block_till_done()
+    assert hass.states.get(planning_id).attributes["forecast_solar_sources"][0]["reason"] == (
+        "forecast_solar_receipt_stale"
+    )
+    assert len(calls) == 1  # Rendering status never refreshes a provider or its cache service.
     assert await hass.config_entries.async_unload(entry.entry_id)
     coordinator.async_set_updated_data(SimpleNamespace(timezone="UTC"))
     await hass.async_block_till_done()

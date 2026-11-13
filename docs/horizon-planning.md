@@ -50,3 +50,25 @@ not a comparison dashboard. Dynamic-tariff simulation and the actual measured
 strategy comparison are separate Sprint-2 work; there is no active dynamic
 tariff control here. Green CI does not establish hardware acceptance or start
 the required seven-day installed-feature observation.
+
+## Independent input evidence in the existing planning status
+
+The diagnostic planning-status entity exposes input evidence even when its
+primary state is already blocked or EMS control is disabled:
+
+- `household_measurement_quality`: the collector's current quality reason.
+- `complete_household_intervals`: retained complete learner intervals; `null`
+  before collector setup is not a measured zero. A count is not sufficient
+  demand confidence or a seven-day acceptance result.
+- `capture_persistence_ok`: the collector's latest verified persistence state,
+  or `null` before setup; a success can still have an uncheckpointed tail.
+- `forecast_solar_sources`: each selected native Forecast.Solar source's local
+  receipt, cache state, period count, unit and unknown issuance/uncertainty/energy
+  stage. A cached point curve is not full horizon/day validation, calibrated
+  confidence, a per-storage allocation or permission to change priority.
+
+These attributes update through the normal dispatcher. They read existing
+collector/source state; rendering never polls a device, calls a cache service
+or refreshes a provider. The source list is specific to Forecast.Solar; an empty
+list does not mean an unrelated provider such as Solcast is unconfigured.
+The primary reason and existing safety/fallback behavior remain unchanged.
