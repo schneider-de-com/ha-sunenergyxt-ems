@@ -467,6 +467,30 @@ async def test_options_display_household_and_pv_modes(flow, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_planning_options_preserve_controller_tuning_and_source_maps(monkeypatch):
+    entry = SimpleNamespace(
+        data={"batteries": []},
+        options={
+            "enabled": False,
+            "feed_in": False,
+            "pid_ki": 0.07,
+            "pv_forecast": {
+                "today": "sensor.today",
+                "tomorrow": "sensor.tomorrow",
+                "updated": "sensor.updated",
+            },
+        },
+    )
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
+    saved = await options.async_step_init({"planning_enabled": True})
+    assert saved["data"]["planning_enabled"] is True
+    assert saved["data"]["pid_ki"] == 0.07
+    assert saved["data"]["enabled"] is False
+    assert saved["data"]["pv_forecast"] == entry.options["pv_forecast"]
+
+
+@pytest.mark.asyncio
 async def test_tripped_dc_output_cannot_be_reset_while_enabled(monkeypatch):
     options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
     entry = SimpleNamespace(

@@ -1,6 +1,6 @@
 # SunEnergyXT EMS for Home Assistant
 
-> **Experimental MVP beta 0.1.1b3. PID software regressions are fixed; unattended hardware control is not approved.**
+> **Experimental beta 0.1.1b7. Optional forecast planning, passive learning and operating evidence; unattended hardware control is not approved.**
 >
 > Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
@@ -20,6 +20,10 @@ It does **not** speak directly to batteries or inverters.
 - Optional per-BK215 fresh PV input limit after full charge and optional EV3600 auto-charge protection (no EV charge writes).
 - PID, grid, command and actual-power **diagnostics**, with independent AC sensors selected explicitly in Configure.
 
+Optional forecast planning is off by default. See [planning configuration and limitations](docs/horizon-planning.md). Passive demand learning requires complete fresh grid and independently measured inverter AC data; missing samples remain gaps. This beta does not start Sprint-2 acceptance or provide measured savings.
+
+Internal [operating evidence](docs/operating-evidence.md) retains individual source coverage and restart gaps. The [strategy cost comparison](docs/internal-comparison.md) is a model, with no active dynamic tariff control or comparison dashboard.
+
 ## Requirements
 
 - A current Home Assistant version using Python 3.14.
@@ -34,7 +38,7 @@ It does **not** speak directly to batteries or inverters.
 > This is a custom repository, not a default Marketplace catalog entry.
 
 1. On **Home Assistant 2026.11 or later**, go to **Settings → Marketplace**. Earlier versions (including 2026.10.4) use **HACS**.
-2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.1b3` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
+2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.1b7` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
 3. Install **SunEnergyXT EMS** from the Marketplace or HACS. Restart Home Assistant if requested. Adding files does not start inverter control.
 4. Ensure your inverter controls and grid meter are ready before setup.
 5. For a live setup: **turn off all existing automations writing to the selected inverter power-limit entities before completing the EMS config flow.** Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
@@ -53,7 +57,7 @@ In **Settings → Devices & services → Integrations → SunEnergyXT EMS**, ope
 
 Each detected **BK215 (EMS)** child device has its own **EV3600 auto-charge** and **full-charge bypass** state sensors. The per-inverter requested limit, reported HA power limit and actual measured AC power are *separate* sensors. AC is unknown until a fresh AC-power entity is selected: a reported Deye limit is **never** measured power.
 
-Use **Configure** to select the EV3600 mode switch + charging-power sensor **as a pair** for the relevant battery, an optional fresh PV input and an independently measured AC source. An unconfigured EV3600 state shows **Not configured**, not a false 'not charging' confirmation. Existing charge SoC mappings can now be corrected using **Battery N: upper SoC source** or an explicit **Battery N: upper SoC (%)**. An explicit numeric override takes precedence over an unchanged existing source; choosing a different source takes precedence over the previous numeric default. **Changing the EMS upper mapping does not change the BK215 hardware charging ceiling.** Do not configure a threshold the battery cannot reach. Feed-in remains OFF by default and may export stored energy.
+Use **Configure** to select the EV3600 mode switch + charging-power sensor **as a pair** for the relevant battery, an optional fresh PV input and an independently measured AC source. Optional PV input must be a power sensor in W or kW, not an energy counter in kWh. To remove an existing mapping, select **Battery N: remove optional PV power source**; this also removes an invalid old mapping without selecting a replacement. Missing or stale live power remains unavailable to the controller. An unconfigured EV3600 state shows **Not configured**, not a false 'not charging' confirmation. Existing charge SoC mappings can now be corrected using **Battery N: upper SoC source** or an explicit **Battery N: upper SoC (%)**. An explicit numeric override takes precedence over an unchanged existing source; choosing a different source takes precedence over the previous numeric default. **Changing the EMS upper mapping does not change the BK215 hardware charging ceiling.** Do not configure a threshold the battery cannot reach. Feed-in remains OFF by default and may export stored energy.
 
 Use **Reconfigure** to change assigned batteries, inverters and the shared grid meter.
 
@@ -80,4 +84,4 @@ Every commit should reference its relevant issue.
 
 [Apache License 2.0](LICENSE).
 
-Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.1b3.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.
+Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.1b7.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.
