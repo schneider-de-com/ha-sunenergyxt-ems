@@ -68,7 +68,7 @@ jobs:
           python-version: "3.14"
       - run: python -m pip install 'homeassistant==2026.10.4' pytest pytest-asyncio pytest-cov mypy
       - run: python -m pytest -q tests --ignore=tests/test_ha_lifecycle.py --cov=custom_components.sunenergyxt_ems --cov-report=term-missing
-      - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/observer.py custom_components/sunenergyxt_ems/forecast_sources.py custom_components/sunenergyxt_ems/horizon.py custom_components/sunenergyxt_ems/diagnostics.py
+      - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/observer.py custom_components/sunenergyxt_ems/forecast_sources.py custom_components/sunenergyxt_ems/forecast_solar_source.py custom_components/sunenergyxt_ems/horizon.py custom_components/sunenergyxt_ems/diagnostics.py
 
   ha-integration-lifecycle:
     name: Real HA entry, device and entity lifecycle
@@ -85,6 +85,20 @@ jobs:
         run: python -m pip install 'homeassistant==2026.10.4' 'pytest-homeassistant-custom-component==0.13.375' pytest pytest-asyncio
       - name: Exercise real Home Assistant config entry and registries
         run: python -m pytest -q tests/test_ha_lifecycle.py
+
+  forecast-solar-current-ha:
+    name: Forecast.Solar source contracts on HA 2026.11.1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - run: python -m pip install 'homeassistant==2026.11.1' pytest pytest-asyncio
+      - run: python -m pytest -q tests/test_period_energy_forecast.py tests/test_forecast_solar_source.py tests/test_horizon.py
 
   contract-negative-controls:
     name: Tests reject deliberately broken control contracts

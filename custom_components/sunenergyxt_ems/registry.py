@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -13,6 +15,7 @@ from .discovery import (
     suggest_grid,
     suggest_inverter_limit,
 )
+from .forecast import ForecastError
 
 # These suffixes are from the *registered unique IDs* of the SunEnergyXT
 # integration. They are not entity_id or localized UI-name assumptions.
@@ -23,6 +26,37 @@ BK_REGISTRY_SUFFIXES = {
     "wifi_inputpower_total",
     "wifi_outputpower_total",
 }
+
+
+def forecast_solar_entry(hass: HomeAssistant, mapping: Mapping[str, str]) -> str | None:
+    """Identify the two provider-owned daily roles, independent of renamed IDs."""
+    if not isinstance(mapping, Mapping):
+        raise ForecastError("invalid_forecast_mapping")
+    if not any(mapping.get(role) for role in ("today", "tomorrow")):
+        return None
+    registry = er.async_get(hass)
+    records = [registry.async_get(mapping.get(role, "")) for role in ("today", "tomorrow")]
+    if not any(item and item.platform == "forecast_solar" for item in records):
+        return None
+    owner = records[0].config_entry_id if records[0] else None
+    for item, role in zip(records, ("today", "tomorrow"), strict=True):
+        if (
+            not owner
+            or item is None
+            or item.platform != "forecast_solar"
+            or item.domain != "sensor"
+            or item.config_entry_id != owner
+            or item.disabled_by is not None
+            or item.unique_id != f"{owner}_energy_production_{role}"
+        ):
+            raise ForecastError("invalid_forecast_solar_mapping")
+        state = hass.states.get(item.entity_id)
+        if state is None or state.attributes.get("unit_of_measurement") not in ("Wh", "kWh"):
+            raise ForecastError("invalid_forecast_solar_unit")
+    entry = hass.config_entries.async_get_entry(owner)
+    if entry is None or entry.domain != "forecast_solar":
+        raise ForecastError("invalid_forecast_solar_mapping")
+    return owner
 
 
 def suggested_forecasts(hass: HomeAssistant) -> dict[str, str]:

@@ -32,10 +32,12 @@ from .const import (
     FEED_IN_MODE_HOUSEHOLD,
     FEED_IN_MODE_PV,
 )
+from .forecast import ForecastError
 from .registry import (
     battery_suggestions,
     device_label,
     device_rated_w,
+    forecast_solar_entry,
     inverter_device_suggestions,
     suggested_forecasts,
     suggested_grid,
@@ -447,7 +449,17 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     role: requested.pop(f"pv_forecast_{role}{suffix}", old.get(role))
                     for role in ("today", "tomorrow", "updated")
                 }
-                if any(selected.values()) and not all(selected.values()):
+                complete = all(selected.values())
+                if isinstance(getattr(self, "hass", None), HomeAssistant):
+                    try:
+                        if forecast_solar_entry(self.hass, selected):
+                            # Forecast.Solar has no provider success timestamp entity.
+                            # Never retain Solcast's timestamp across a provider switch.
+                            selected.pop("updated", None)
+                            complete = all(selected.get(role) for role in ("today", "tomorrow"))
+                    except ForecastError:
+                        complete = False
+                if any(selected.values()) and not complete:
                     errors["base"] = "incomplete_forecast_mapping"
                 forecast_maps[device] = {
                     role: source for role, source in selected.items() if source

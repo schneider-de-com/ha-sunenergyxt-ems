@@ -1,5 +1,10 @@
 # Forecast source contract (Sprint 2)
 
+The selected native Forecast.Solar provider is now supported as a cached nominal
+source; its distinct interval, freshness and missing-confidence contract is in
+[Forecast.Solar source support](forecast-solar-contract.md). It is not parsed as
+Solcast data and cannot authorize a priority from an unknown confidence band.
+
 The Solcast adapter reads supplied Home Assistant states; it does not refresh a
 provider, register a task, change configuration or write to a device. Runtime
 source selection and planner integration are separate work under #11/#92. The
