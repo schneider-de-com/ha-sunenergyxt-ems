@@ -553,6 +553,89 @@ async def test_real_ha_captures_sub_five_second_solarman_link_flap(
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
+async def test_diagnostics_distinguishes_cached_reports_from_device_samples(
+    hass: HomeAssistant, hass_client, freezer
+) -> None:
+    """The download explains constant, unavailable and missing AC sources without polling."""
+    attributes = {"unit_of_measurement": "W", "token": "source-secret"}
+    hass.states.async_set("sensor.constant_ac", "0", attributes)
+    original_change = hass.states.get("sensor.constant_ac").last_changed
+    freezer.tick(300)
+    hass.states.async_set("sensor.constant_ac", "0", attributes)
+    hass.states.async_set("sensor.offline_ac", "unavailable", {"unit_of_measurement": "W"})
+    hass.states.async_set("sensor.invalid_ac", "raw-state-secret", {"unit_of_measurement": "kWh"})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk1",
+                    "lower": 10,
+                    "inverters": [
+                        {"entity_id": f"number.inv{index}", "rated_w": 800} for index in (1, 2)
+                    ],
+                },
+                {
+                    "device_id": "bk2",
+                    "lower": 10,
+                    "inverters": [
+                        {"entity_id": f"number.inv{index}", "rated_w": 800} for index in (3, 4)
+                    ],
+                },
+            ],
+        },
+        options={
+            "enabled": False,
+            "ac_power": {
+                "number.inv1": "sensor.constant_ac",
+                "number.inv2": "sensor.offline_ac",
+                "number.inv3": "sensor.invalid_ac",
+                "number.inv4": "sensor.missing_ac",
+            },
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, "diagnostics", {})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    client = await hass_client()
+    before = dict(entry.options)
+    with patch.object(type(hass.services), "async_call", new_callable=AsyncMock) as calls:
+        response = await client.get(f"/api/diagnostics/config_entry/{entry.entry_id}")
+        assert response.status == 200
+        body = await response.json()
+        calls.assert_not_awaited()
+    sources = body["data"]["measurement_sources"]
+    assert sources["semantics"] == "ha_cached_state_timestamps_not_device_samples"
+    constant, offline, invalid, missing = sources["ac_sources"]
+    assert constant["entity_id"] == "sensor.constant_ac"
+    assert constant["state_status"] == "present"
+    assert constant["last_changed"] == original_change.isoformat()
+    assert constant["value_change_age_seconds"] == 300
+    assert constant["report_age_seconds"] == 0
+    assert constant["device_sample_at"] is None
+    assert offline["state_status"] == "unavailable"
+    assert offline["device_sample_at"] is None
+    assert invalid["state_status"] == "present"
+    assert invalid["power_unit_supported"] is False
+    assert missing["state_status"] == "missing"
+    assert missing["report_age_seconds"] is None
+    assert "source-secret" not in json.dumps(sources)
+    assert "raw-state-secret" not in json.dumps(sources)
+    assert entry.options == before
+    assert hass.states.get("sensor.constant_ac").last_changed == original_change
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    with patch.object(type(hass.services), "async_call", new_callable=AsyncMock) as calls:
+        response = await client.get(f"/api/diagnostics/config_entry/{entry.entry_id}")
+        assert response.status == 200
+        unloaded = await response.json()
+        calls.assert_not_awaited()
+    assert unloaded["data"]["measurement_sources"] == sources
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
 async def test_ha_diagnostics_exposes_selected_mapping_without_secrets(
     hass: HomeAssistant, hass_client
 ) -> None:

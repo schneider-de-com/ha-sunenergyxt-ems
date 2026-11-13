@@ -89,6 +89,17 @@ checkpoint errors and recent transitions; they omit raw household traces.
 Forecast binding, plan decisions and installed feature acceptance remain later
 work. No acceptance window starts merely because passive collection exists.
 
+The diagnostic download includes `measurement_sources.ac_sources` for the
+configured inverter mappings, even after the entry is unloaded. For each source
+it reports whether the HA state is present, unknown, unavailable or missing,
+whether its unit is W/kW, and separate HA value-change and report timestamps and
+ages. A constant value can have an old value-change timestamp and a recent
+report. Neither timestamp is a device sampling guarantee: `device_sample_at`
+remains null. These are cache diagnostics, not a new source eligibility rule or
+proof that the physical reading is stale. They neither poll devices nor change
+the existing conservative gates. Arbitrary source attributes and raw state
+payloads are omitted.
+
 Core's JSON-corruption recovery (rename, Repair, `None`) is detected through its
 persistent storage-corruption Repair. It is not treated as first use: observation
 stays ineligible while the checkpoint cannot be recovered. Future-tolerated HA
