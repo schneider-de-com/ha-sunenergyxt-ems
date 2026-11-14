@@ -24,7 +24,14 @@ from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.setup import async_setup_component
 from homeassistant.util.file import WriteError
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+try:
+    from pytest_homeassistant.common import MockConfigEntry, async_fire_time_changed
+except ImportError:
+    # Home Assistant 2026.10 still uses the legacy extracted fixture package.
+    from pytest_homeassistant_custom_component.common import (
+        MockConfigEntry,
+        async_fire_time_changed,
+    )
 
 from custom_components.sunenergyxt_ems import runtime as runtime_module
 from custom_components.sunenergyxt_ems.const import DOMAIN
