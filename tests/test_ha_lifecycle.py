@@ -24,6 +24,7 @@ from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.setup import async_setup_component
 from homeassistant.util.file import WriteError
+
 try:
     from pytest_homeassistant.common import MockConfigEntry, async_fire_time_changed
 except ImportError:
