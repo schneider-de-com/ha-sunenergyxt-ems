@@ -110,7 +110,7 @@ async def test_recorded_ac_loss_never_permits_positive_dispatch_after_both_zero(
     active = True
     for seconds, channel, value in events:
         now = anchor + timedelta(seconds=seconds)
-        monkeypatch.setattr(module, "utcnow", lambda: now)
+        monkeypatch.setattr(module, "utcnow", lambda now=now: now)
         if channel == "ems_enabled":
             active = bool(value)
             continue
