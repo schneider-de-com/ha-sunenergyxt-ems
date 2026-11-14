@@ -16,8 +16,8 @@ import pytest
 
 pytest.importorskip("homeassistant")
 
-from custom_components.sunenergyxt_ems import runtime as module
-from custom_components.sunenergyxt_ems.runtime import EMSRuntime
+from custom_components.sunenergyxt_ems import runtime as module  # noqa: E402
+from custom_components.sunenergyxt_ems.runtime import EMSRuntime  # noqa: E402
 
 
 def sample(value: object, unit: str, **attributes: object) -> SimpleNamespace:
@@ -71,7 +71,9 @@ def configured_two_inverters(monkeypatch: pytest.MonkeyPatch):
         options={"enabled": True, "feed_in": False, "grid_target_w": 20},
     )
     monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
-    monkeypatch.setattr(module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None))
+    monkeypatch.setattr(
+        module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None)
+    )
     monkeypatch.setattr(module, "registered_connection", lambda *args: None)
     monkeypatch.setattr(module, "registered_dc_output", lambda *args: None)
     # The registry lookup is patched, not an entity-ID string heuristic.
@@ -166,4 +168,6 @@ def test_unmapped_inverter_is_not_assumed_to_have_solarman_voltage(
     runtime, states = configured_two_inverters(monkeypatch)
     monkeypatch.setattr(module, "registered_ac_voltage", lambda *args: None, raising=False)
     states["sensor.m200_grid_voltage"].state = "0"
-    assert all(inverter.online for battery in runtime._batteries() for inverter in battery.inverters)
+    assert all(
+        inverter.online for battery in runtime._batteries() for inverter in battery.inverters
+    )
