@@ -1420,6 +1420,7 @@ async def test_core_json_corruption_cannot_be_mistaken_for_first_use(
             # Force disk load rather than the new HA Store manager's
             # "file does not exist" cache hit for this deliberate fault.
             patches.enter_context(patch.object(io._manager, "async_fetch", return_value=None))
+
             async def corrupt_store_load():
                 """Inject corruption at the Core Store disk-I/O boundary."""
                 return broken_json(target)
