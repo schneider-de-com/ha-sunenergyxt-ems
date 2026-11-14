@@ -316,6 +316,11 @@ def test_deye_ac_voltage_source_is_bound_to_the_upstream_device_and_profile(regi
         )
     )
     assert module.registered_ac_voltage(hass, inverter.entity_id) == "sensor.renamed_ac"
+    entries["sensor.renamed_ac"].config_entry_id = "another_solarman_entry"
+    assert module.registered_ac_voltage(hass, inverter.entity_id) == "", (
+        "A retained unique ID cannot authorize voltage from a different config entry"
+    )
+    entries["sensor.renamed_ac"].config_entry_id = "solarman_a"
     entries["sensor.renamed_ac"].disabled_by = "user"
     assert module.registered_ac_voltage(hass, inverter.entity_id) == "", (
         "An explicitly supported inverter must fail closed on a disabled AC source"
