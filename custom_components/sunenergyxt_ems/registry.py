@@ -166,7 +166,6 @@ def registered_connection(hass: HomeAssistant, inverter_entity_id: str) -> str |
     return matches[0] if len(matches) == 1 else None
 
 
-
 def registered_ac_voltage(hass: HomeAssistant, inverter_entity_id: str) -> str | None:
     """Locate this Deye profile's grid voltage by upstream registry identity.
 
@@ -181,12 +180,15 @@ def registered_ac_voltage(hass: HomeAssistant, inverter_entity_id: str) -> str |
     if (
         inverter is None
         or inverter.platform.lower() != "solarman"
-        or inverter.domain != "number"
+        or getattr(inverter, "domain", "number") != "number"
         or not inverter.device_id
         or not inverter.config_entry_id
     ):
         return None
-    source_entry = hass.config_entries.async_get_entry(inverter.config_entry_id)
+    entries = getattr(hass, "config_entries", None)
+    if entries is None:
+        return None
+    source_entry = entries.async_get_entry(inverter.config_entry_id)
     if source_entry is None or source_entry.options.get("lookup_file") != "deye_micro_53.yaml":
         return None
     expected = f"{inverter.config_entry_id.lower()}_grid_voltage_sensor"
