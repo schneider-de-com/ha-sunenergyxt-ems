@@ -270,6 +270,24 @@ class ForecastSolarSource:
             "energy_stage": "provider_estimate_not_verified_bk_dc_input",
         }
 
+    def evidence_snapshot(self) -> dict[str, Any] | None:
+        """Detach a received raw curve for private history, never for eligibility restore."""
+        if self._received_at is None or not self._periods or not self._current():
+            return None
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        revision = getattr(entry, "modified_at", None)
+        return {
+            "config_entry_id": self.entry_id,
+            "received_at": self._received_at.isoformat(),
+            "configuration_updated_at": revision.isoformat()
+            if isinstance(revision, datetime)
+            else None,
+            "periods": [
+                [period.start.isoformat(), period.end.isoformat(), period.energy_wh]
+                for period in self._periods
+            ],
+        }
+
     async def async_stop(self) -> None:
         self._closed = True
         self._clear("forecast_solar_unavailable")

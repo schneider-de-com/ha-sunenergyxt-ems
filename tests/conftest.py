@@ -12,7 +12,7 @@ def isolated_mock_storage(monkeypatch):
         return
     from homeassistant.core import HomeAssistant
 
-    from custom_components.sunenergyxt_ems import runtime
+    from custom_components.sunenergyxt_ems import forecast_evidence, runtime
 
     real_store = runtime.Store
 
@@ -32,3 +32,4 @@ def isolated_mock_storage(monkeypatch):
         return MemoryStore()
 
     monkeypatch.setattr(runtime, "Store", make_store)
+    monkeypatch.setattr(forecast_evidence, "Store", make_store)

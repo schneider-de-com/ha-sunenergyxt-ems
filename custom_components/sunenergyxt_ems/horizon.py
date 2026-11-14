@@ -21,6 +21,7 @@ from homeassistant.util import dt as dt_util
 
 from .demand_forecast import DemandForecast, demand_forecast
 from .forecast import ForecastError
+from .forecast_evidence import ForecastEvidence
 from .forecast_solar_source import ForecastSolarSource
 from .forecast_sources import SolarForecast, solcast_forecast
 from .logic import Battery, ControllerState
@@ -95,9 +96,13 @@ class HorizonPlanner:
         self._input_token: object = None
         self._closed = False
         self.forecast_solar_sources: dict[str, ForecastSolarSource] = {}
+        self.forecast_evidence = ForecastEvidence(hass, entry.entry_id, runtime._publish)
 
     def _source_changed(self) -> None:
         if not self._closed:
+            for source in self.forecast_solar_sources.values():
+                if (snapshot := source.evidence_snapshot()) is not None:
+                    self.forecast_evidence.submit(snapshot)
             self.invalidate()
             self.refresh()
             self.runtime._publish()
@@ -145,6 +150,7 @@ class HorizonPlanner:
         self._fallback("disabled")
         for source in self.forecast_solar_sources.values():
             await source.async_stop()
+        await self.forecast_evidence.async_stop()
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)

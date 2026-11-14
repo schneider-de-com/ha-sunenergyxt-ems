@@ -26,6 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime.observer = DemandObserver(hass, entry, runtime.household_observation)
     runtime.observer.read_operating = runtime.operating_observation
     runtime.horizon = HorizonPlanner(hass, entry, runtime, runtime.observer)
+    await runtime.horizon.forecast_evidence.async_start()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
     await hass.config_entries.async_forward_entry_setups(
         entry, (Platform.SENSOR, Platform.SWITCH, Platform.NUMBER)

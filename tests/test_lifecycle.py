@@ -34,7 +34,11 @@ def lifecycle(monkeypatch):
     )
     monkeypatch.setattr(runtime_module, "EMSRuntime", lambda hass, entry: controller)
     monkeypatch.setattr(
-        horizon_module, "HorizonPlanner", lambda *args: SimpleNamespace(refresh=Mock())
+        horizon_module,
+        "HorizonPlanner",
+        lambda *args: SimpleNamespace(
+            refresh=Mock(), forecast_evidence=SimpleNamespace(async_start=AsyncMock())
+        ),
     )
     monkeypatch.setattr(
         observer_module,
