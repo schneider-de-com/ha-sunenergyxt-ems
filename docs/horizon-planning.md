@@ -24,6 +24,18 @@ them. Reserve/DC/readback/shutdown/reconnect gates and the existing writer remai
 authoritative. An option to release maximum output on full charge takes priority;
 future full-charge export with positive forecast solar is outside this model.
 
+That full-charge gate uses the controller's **effective PV bypass**, not the
+raw `feed_in` option alone. Runtime enables it only when `feed_in=true` and
+`feed_in_mode=pv`; `household` keeps it false while following household demand.
+The same distinction applies to bounded sustained-import acceleration: the
+current raw-enabled household mode does not itself disable acceleration, but
+every feedback, meter, startup and command-step gate still applies. Earlier
+claims that raw `feed_in=true` alone made the fast path inactive were incorrect.
+This mapping does not prove an acceleration actually occurred on hardware.
+Behavior tests apply the real options-update path and inspect bounded service
+requests in household versus PV mode; no operating setting is changed to obtain
+a favorable hardware demonstration.
+
 The energy replay is an idealized half-hour model. It uses measured initial SoC,
 configured capacity/limits and forecast energy, not an inverter transient model.
 It tests conversion efficiencies of 80%, 90% and 100% and combinations of the
