@@ -1,8 +1,8 @@
 # Forecast.Solar energy stage: primary-source check
 
 Research date: 2026-11-14. Scope: Sprint 2 #11/#92; HA Core
-2026.11.1 and forecast-solar v5.0.1. Public documentation/source reads only;
-No provider API requests, configuration changes or hardware writes. The research
+2026.11.1 and forecast-solar v5.0.1. Public documentation/source reads;
+no forecast-data requests, configuration changes or hardware writes. The research
 used public sources; a later parent-agent check read only the owner's already
 available native diagnostics for the three non-secret adjustment fields.
 Endpoint, interval and receipt semantics remain in
@@ -26,6 +26,7 @@ stage; an inverter cap does not establish a complete AC conversion model.
 | [Tagged HA coordinator](https://github.com/home-assistant/core/blob/2026.11.1/homeassistant/components/forecast_solar/coordinator.py#L98-L123), [constants](https://github.com/home-assistant/core/blob/2026.11.1/homeassistant/components/forecast_solar/const.py) | Passes module kWp, morning/evening damping and the inverter option to the client; positive inverter watts are converted to kW. Default damping is 0.0. | Public code alone cannot establish this installation's optional values; the native readback below supplies that narrower fact. |
 | [Tagged client](https://github.com/home-assistant-libs/forecast_solar/blob/v5.0.1/src/forecast_solar/forecast_solar.py#L185-L214) | Sends these adjustments as API parameters; parses the response using `Estimate.from_dict`. | The client does not contain the server production/loss/clipping calculation. |
 | [Tagged result model](https://github.com/home-assistant-libs/forecast_solar/blob/v5.0.1/src/forecast_solar/models.py#L71-L212) | Copies returned power and energy maps into the model. No electrical-stage, efficiency, loss-breakdown or uncertainty-bound fields are retained. | Absence of local loss calculation does not mean the server applies no losses. |
+| [Provider's linked public Swagger definition](https://api.forecast.solar/swagger.yaml), reported version v7.41.0.2515 (2026-09-04), read2026-11-14 | Defines installed plane kWp and estimated power/energy result fields. | No electrical delivery point or loss/efficiency model is defined. Its period-energy definition says Wh while the referenced dataset description says kWh; do not use this ambiguity to override the independently tested HA/library Wh contract. |
 
 The provider's [estimate documentation](https://doc.forecast.solar/doku.php?id=api:estimate)
 and its linked damping documentation could not be inspected: the web tool
@@ -34,6 +35,10 @@ This is an evidence-access limit, not evidence that those pages contain no
 answer. No access workaround was attempted. Current HA guidance was checked
 with the web tool; version-specific behavior above comes from tagged code
 retrieved through the GitHub connector.
+The separately linked public Swagger YAML was read as static documentation via
+a text download because the web reader rejects its YAML content type. No blocked
+documentation page was retried through another route and no estimate endpoint
+was called. That specification does not close the physical-stage evidence gap.
 
 ## Consequences and inference
 
