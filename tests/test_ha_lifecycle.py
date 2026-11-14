@@ -36,6 +36,49 @@ _CORE_STORE_ASYNC_LOAD = HAStore._async_load
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("pending_phase", ["save", "readback"])
+async def test_forecast_new_snapshot_stays_unconfirmed_during_native_store_io(
+    hass, freezer, pending_phase
+):
+    import asyncio
+
+    from custom_components.sunenergyxt_ems.forecast_evidence import ForecastEvidence
+
+    at = datetime(2026, 11, 14, tzinfo=UTC)
+    freezer.move_to(at)
+    history = ForecastEvidence(hass, f"pending-{pending_phase}", lambda: None)
+    await history.async_start()
+    entered, release = asyncio.Event(), asyncio.Event()
+    method = "async_save" if pending_phase == "save" else "async_load"
+    native = getattr(history._store, method)
+
+    async def delayed(*args):
+        entered.set()
+        await release.wait()
+        return await native(*args)
+
+    with patch.object(history._store, method, side_effect=delayed):
+        history.submit(
+            {
+                "config_entry_id": "owner",
+                "received_at": at.isoformat(),
+                "configuration_updated_at": None,
+                "periods": [[at.isoformat(), (at + timedelta(hours=1)).isoformat(), 100.0]],
+            }
+        )
+        await entered.wait()
+        try:
+            assert history.summary()["snapshot_count"] == 1
+            assert history.summary()["persistence_ok"] is False
+            assert history.summary()["may_include_unconfirmed"] is True
+        finally:
+            release.set()
+            await history.async_stop()
+    assert history.summary()["persistence_ok"] is True
+    assert history.summary()["may_include_unconfirmed"] is False
+
+
+@pytest.mark.asyncio
 async def test_forecast_shutdown_ram_readback_is_not_a_durable_checkpoint(hass, freezer):
     from homeassistant.core import CoreState
 

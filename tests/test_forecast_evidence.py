@@ -186,3 +186,30 @@ async def test_queued_conflicting_receipt_is_reported_and_unload_drains_submissi
     assert storage.data["snapshots"] == [first]
     history.submit(snapshot(owner="after_unload"))
     assert not history._tasks
+
+
+@pytest.mark.parametrize("pending_phase", ["save", "readback"])
+async def test_pending_new_snapshot_is_not_reported_as_durable(storage, monkeypatch, pending_phase):
+    history = await start()
+    entered, release = asyncio.Event(), asyncio.Event()
+    method = "async_save" if pending_phase == "save" else "async_load"
+    original = getattr(storage, method)
+
+    async def delayed(*args):
+        entered.set()
+        await release.wait()
+        return await original(*args)
+
+    monkeypatch.setattr(storage, method, delayed)
+    write = asyncio.create_task(history.async_record(snapshot()))
+    await entered.wait()
+    try:
+        summary = history.summary()
+        assert summary["snapshot_count"] == 1
+        assert summary["persistence_ok"] is False
+        assert summary["may_include_unconfirmed"] is True
+    finally:
+        release.set()
+        await write
+    assert history.summary()["persistence_ok"] is True
+    assert history.summary()["may_include_unconfirmed"] is False
