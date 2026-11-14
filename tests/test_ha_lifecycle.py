@@ -1340,7 +1340,6 @@ async def test_passive_observer_stops_on_entry_unload_and_reloads_once(
     from datetime import timedelta
 
     from homeassistant.util import dt as dt_util
-    from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -1410,11 +1409,33 @@ async def test_core_json_corruption_cannot_be_mistaken_for_first_use(
                 raise HomeAssistantError("Cannot decode stored JSON") from exc
         return {}
 
-    with (
-        patch.object(HAStore, "_async_load", _CORE_STORE_ASYNC_LOAD),
-        patch("homeassistant.helpers.storage.json_util.load_json", side_effect=broken_json),
-        patch("homeassistant.helpers.storage.os.rename") as rename,
-    ):
+    # The Core 2026.11 Store delegates disk operations to _FileStoreIO,
+    # while 2026.10 calls json_util directly. Both paths must exercise
+    # real Core corruption handling, not merely assume first-use storage.
+    from contextlib import ExitStack
+
+    with ExitStack() as patches:
+        patches.enter_context(patch.object(HAStore, "_async_load", _CORE_STORE_ASYNC_LOAD))
+        if io := getattr(observer._store, "_io", None):
+            # Force disk load rather than the new HA Store manager's
+            # "file does not exist" cache hit for this deliberate fault.
+            patches.enter_context(patch.object(io._manager, "async_fetch", return_value=None))
+            patches.enter_context(
+                patch.object(io, "_load", side_effect=lambda: broken_json(target))
+            )
+            rename = patches.enter_context(
+                patch.object(io, "_move_corrupt", return_value=f"{target}.corrupt.test")
+            )
+        else:
+            patches.enter_context(
+                patch(
+                    "homeassistant.helpers.storage.json_util.load_json",
+                    side_effect=broken_json,
+                )
+            )
+            rename = patches.enter_context(
+                patch("homeassistant.helpers.storage.os.rename")
+            )
         try:
             await observer.async_start()
             if ledger == "demand":
