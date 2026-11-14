@@ -40,9 +40,7 @@ async def test_recorded_ac_loss_never_permits_positive_dispatch_after_both_zero(
     tracks = incident["tracks"]
     anchor = datetime.fromisoformat(incident["time_origin_local"])
     events = sorted(
-        (seconds, channel, value)
-        for channel, rows in tracks.items()
-        for seconds, value in rows
+        (seconds, channel, value) for channel, rows in tracks.items() for seconds, value in rows
     )
     assert len(tracks["m200_limit_pct"]) >= 150
     assert len(tracks["m80_limit_pct"]) >= 40
@@ -85,9 +83,7 @@ async def test_recorded_ac_loss_never_permits_positive_dispatch_after_both_zero(
     monkeypatch.setattr(module, "registered_connection", lambda *_: None)
     monkeypatch.setattr(module, "registered_dc_output", lambda *_: None)
     monkeypatch.setattr(module, "async_dispatcher_send", lambda *_: None)
-    monkeypatch.setattr(
-        module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None)
-    )
+    monkeypatch.setattr(module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None))
     mapping = {
         "number.m200": "sensor.m200_voltage",
         "number.m80": "sensor.m80_voltage",
@@ -134,9 +130,9 @@ async def test_recorded_ac_loss_never_permits_positive_dispatch_after_both_zero(
             )
     assert contradictory["m200"] >= 100
     assert contradictory["m80"] >= 10
-    assert abs(
-        (loss_at["sensor.m200_voltage"] - loss_at["sensor.m80_voltage"]).total_seconds()
-    ) < 1, "The actual two voltage transitions occurred within one second"
+    assert (
+        abs((loss_at["sensor.m200_voltage"] - loss_at["sensor.m80_voltage"]).total_seconds()) < 1
+    ), "The actual two voltage transitions occurred within one second"
 
     # Re-enter a lost-AC point with a fresh grid state and positive cached
     # number limits: runtime must dispatch only a minimum on both devices.
@@ -145,8 +141,7 @@ async def test_recorded_ac_loss_never_permits_positive_dispatch_after_both_zero(
     states["sensor.grid"] = sample(300, "W", final_at)
     await runtime.async_update()
     assert any(
-        call.kwargs.get("emergency") is True
-        and call.args[0] == {"number.m200": 0, "number.m80": 0}
+        call.kwargs.get("emergency") is True and call.args[0] == {"number.m200": 0, "number.m80": 0}
         for call in runtime._apply.await_args_list
     )
     assert all(
