@@ -1461,3 +1461,83 @@ async def test_planning_status_registers_translates_and_preserves_disabled_ems(h
     )
     assert hass.states.get(entity_id).state == "ems_disabled"
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+@pytest.mark.asyncio
+async def test_real_ha_registry_and_service_stop_dye_without_ac_voltage(
+    hass: HomeAssistant,
+) -> None:
+    """HA registry, real config entries and number service: only the logger is online.
+
+    Replay the 2026-11-14 M200 supply loss. The number service is an HA
+    transport stub: this validates dispatch and restart interlocks, not
+    physical AC convergence or breaker restoration.
+    """
+    provider = MockConfigEntry(
+        domain="solarman",
+        options={"lookup_file": "deye_micro_53.yaml"},
+    )
+    provider.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=provider.entry_id,
+        identifiers={("solarman", "m200-ac-loss-replay")},
+    )
+    registry = er.async_get(hass)
+    number = registry.async_get_or_create(
+        "number",
+        "solarman",
+        f"{provider.entry_id.lower()}_active_power_regulation_number",
+        config_entry=provider,
+        device_id=device.id,
+        suggested_object_id="replay_m200_limit",
+    )
+    voltage = registry.async_get_or_create(
+        "sensor",
+        "solarman",
+        f"{provider.entry_id.lower()}_grid_voltage_sensor",
+        config_entry=provider,
+        device_id=device.id,
+        suggested_object_id="replay_m200_ac_voltage",
+    )
+    hass.states.async_set(
+        number.entity_id, "10", {"unit_of_measurement": "%", "min": 0, "max": 100, "step": 0.1}
+    )
+    hass.states.async_set(voltage.entity_id, "0", {"unit_of_measurement": "V"})
+    hass.states.async_set("sensor.grid", "320", {"unit_of_measurement": "W"})
+    ems = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk215",
+                    "soc": 85,
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [{"entity_id": number.entity_id, "rated_w": 2000}],
+                }
+            ],
+        },
+        options={"enabled": True, "feed_in": False},
+    )
+    ems.add_to_hass(hass)
+    writes: list[dict] = []
+
+    async def write(call):
+        writes.append(dict(call.data))
+
+    hass.services.async_register("number", "set_value", write)
+    runtime = EMSRuntime(hass, ems)
+    runtime._running = True
+    assert runtime._batteries()[0].inverters[0].online is False
+    await runtime.async_update()
+    assert writes == [{"entity_id": number.entity_id, "value": 0}]
+    assert all(item["value"] == 0 for item in writes)
+
+    # The AC line returns while the previous setpoint/readback was never
+    # physically acknowledged: an explicit minimum is required first.
+    hass.states.async_set(voltage.entity_id, "246", {"unit_of_measurement": "V"})
+    await runtime.async_update()
+    assert number.entity_id in runtime._shutdown_obligations
+    assert len(writes) >= 2
+    assert all(item["value"] == 0 for item in writes)

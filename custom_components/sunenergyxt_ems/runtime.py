@@ -45,13 +45,15 @@ from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
 from .observer import DemandObserver, HouseholdObservation
 from .operating_history import OperatingSample
 from .pid import PIDGains
-from .registry import registered_connection, registered_dc_output
+from .registry import registered_ac_voltage, registered_connection, registered_dc_output
 
 _LOGGER = logging.getLogger(__name__)
 UPDATE_PERIOD = timedelta(seconds=5)
 MAX_GRID_AGE = timedelta(seconds=30)
 MAX_SOC_AGE = timedelta(seconds=45)
 MAX_DC_AGE = timedelta(seconds=90)
+# Fresh diagnostic voltage is required only for validated Deye Solarman profiles.
+MAX_AC_VOLTAGE_AGE = timedelta(seconds=30)
 MAX_BK215_DC_W = 1920.0
 MIN_OUTPUT_CHANGE_W = 10.0
 # Live 2026-11-04: an initial 520 W / 26% M200 command produced
@@ -297,6 +299,30 @@ class EMSRuntime:
         value = self._float(state.state)
         return value if value is not None and 0 <= value <= 10000 else None
 
+    def _ac_voltage_available(self, inverter_entity_id: str) -> bool:
+        """Check an identified Deye AC supply, not merely logger connectivity.
+
+        Unsupported inverter profiles retain their established behavior. A
+        supported profile with missing, stale, zero or implausible voltage
+        cannot authorize a positive output. This is a *software* diagnostic;
+        it is not independent proof that the inverter is physically safe.
+        """
+        source = registered_ac_voltage(self.hass, inverter_entity_id)
+        if source is None:
+            return True
+        voltage = self.hass.states.get(source) if source else None
+        if voltage is None or voltage.attributes.get("unit_of_measurement") != "V":
+            return False
+        stamp = getattr(voltage, "last_reported", None) or voltage.last_updated
+        age = utcnow() - stamp
+        if age < timedelta(seconds=-5) or age > MAX_AC_VOLTAGE_AGE:
+            return False
+        value = self._float(voltage.state)
+        # The supported European M80/M200 profile reports ~230 V when
+        # grid-connected; zero appeared with the AC breaker off. The
+        # 300 V ceiling rejects corrupt diagnostics, not other AC markets.
+        return value is not None and 0 < value <= 300
+
     def _batteries(self) -> tuple[Battery, ...]:
         batteries = []
         for record in self.entry.data[CONF_BATTERIES]:
@@ -317,6 +343,7 @@ class EMSRuntime:
                     # The M80's limit remained readable even through a
                     # 2026-11-03 Solarman disconnect. Trust the actual link.
                     and (not connection_id or (connection and connection.state == "on"))
+                    and self._ac_voltage_available(entity_id)
                 )
                 minimum = self._float(state.attributes.get("min", 0)) if state else 0
                 minimum = max(0.0, minimum or 0.0)
@@ -943,6 +970,19 @@ class EMSRuntime:
                 self._shutdown_obligations.update(reconnected)
                 self._deferred_shutdown.update(reconnected)
                 await self._save_shutdown_obligations()
+            if self.controller.enabled:
+                # A Solarman logger can remain online with its *AC breaker*
+                # off (real M200/M80 incident 2026-11-14). Urgently write the
+                # minimum to the still-writable limit, then exclude only this
+                # inverter from the normal controller until voltage recovers.
+                ac_lost = {
+                    inv.key: inv.minimum_w
+                    for battery in batteries
+                    for inv in battery.inverters
+                    if not inv.online and not self._ac_voltage_available(inv.key)
+                }
+                if ac_lost:
+                    await self._apply(ac_lost, monotonic(), emergency=True)
             if not self.controller.enabled or self._shutdown_obligations:
                 if self._deferred_shutdown:
                     recovered = {
@@ -1209,7 +1249,14 @@ class EMSRuntime:
             self._pending.clear()
             self._shutdown_pending.clear()
             self._shutdown_retried.clear()
-            commands = self.controller.disable(self._batteries())
+            batteries = self._batteries()
+            commands = self.controller.disable(batteries)
+            # A lost AC supply does not mean the Solarman logger's writable
+            # limit is unreachable. Still attempt its explicit safe minimum.
+            for battery in batteries:
+                for inverter in battery.inverters:
+                    if not inverter.online and not self._ac_voltage_available(inverter.key):
+                        commands[inverter.key] = inverter.minimum_w
             configured = self._configured_inverters()
             unreachable = sorted(configured - commands.keys())
             self._shutdown_obligations.update(configured)

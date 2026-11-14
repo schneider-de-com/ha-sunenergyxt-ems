@@ -294,3 +294,45 @@ def test_solarman_connection_uses_same_device_and_connectivity_class(registry):
     values[other.entity_id] = other
     assert module.registered_connection(hass, "number.changed_inverter") == link.entity_id
     assert module.registered_connection(hass, "number.unknown_inverter") is None
+
+
+def test_deye_ac_voltage_source_is_bound_to_the_upstream_device_and_profile(registry):
+    hass, entries = registry
+    inverter = entries["number.changed_inverter"]
+    inverter.config_entry_id = "solarman_a"
+    inverter.unique_id = "solarman_a_active_power_regulation_number"
+    entries["sensor.renamed_ac"] = item(
+        "sensor.renamed_ac",
+        "solarman_a_grid_voltage_sensor",
+        "inverter",
+        "solarman",
+        config="solarman_a",
+    )
+    # A validated lookup file and a unique-ID/device match are both required.
+    profile = {"lookup_file": "deye_micro_53.yaml"}
+    hass.config_entries = SimpleNamespace(
+        async_get_entry=lambda entry_id: (
+            SimpleNamespace(options=profile) if entry_id == "solarman_a" else None
+        )
+    )
+    assert module.registered_ac_voltage(hass, inverter.entity_id) == "sensor.renamed_ac"
+    entries["sensor.renamed_ac"].disabled_by = "user"
+    assert module.registered_ac_voltage(hass, inverter.entity_id) == "", (
+        "An explicitly supported inverter must fail closed on a disabled AC source"
+    )
+    entries["sensor.renamed_ac"].disabled_by = None
+    entries["sensor.renamed_ac"].device_id = "other_device"
+    assert module.registered_ac_voltage(hass, inverter.entity_id) == ""
+    entries["sensor.renamed_ac"].device_id = "inverter"
+    entries["sensor.renamed_ac"].unique_id = "another_logger_grid_voltage_sensor"
+    assert module.registered_ac_voltage(hass, inverter.entity_id) == ""
+
+
+def test_other_solarman_profile_never_inherits_deye_ac_voltage_semantics(registry):
+    hass, entries = registry
+    inverter = entries["number.changed_inverter"]
+    inverter.config_entry_id = "other_profile"
+    hass.config_entries = SimpleNamespace(
+        async_get_entry=lambda _: SimpleNamespace(options={"lookup_file": "other.yaml"})
+    )
+    assert module.registered_ac_voltage(hass, inverter.entity_id) is None
