@@ -154,6 +154,7 @@ class ForecastEvidence:
                     # write drop this observed receipt. It stays explicitly
                     # unconfirmed until save and independent readback succeed.
                     self._snapshots = rows
+                    self.persistence_ok = False
                     await self._store.async_save(payload)
                     if (
                         getattr(self.hass, "state", None) is CoreState.stopping

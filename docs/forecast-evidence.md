@@ -28,8 +28,11 @@ receipt and the explicit limits; no new entities or comparison dashboard.
 ## Lifecycle and failure
 
 The existing owner-update callback submits a detached snapshot; serialized
-background writes use atomic save plus independent readback. Exact duplicate
-receipts are idempotent; conflicting content is not silently replaced. Failed
+background writes use atomic save plus independent readback.
+Newly submitted rows are marked unconfirmed before the first I/O await and
+remain so until both save and readback complete. Reading diagnostics during
+either operation must not report those rows as durably confirmed.
+Exact duplicate receipts are idempotent; conflicting content is not silently replaced. Failed
 or unconfirmed writes remain marked and are retained in memory for the next
 successful write. A crash before confirmation can lose a submitted receipt:
 there is no claim of complete forecast coverage or zero-loss persistence.
