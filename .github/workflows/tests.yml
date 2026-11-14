@@ -102,7 +102,15 @@ jobs:
             python -m pip install 'homeassistant==2026.11.1'
           fi
       - name: Exercise real Home Assistant config entry and registries
-        run: python -m pytest -q tests/test_ha_lifecycle.py
+        shell: bash
+        run: |
+          if [[ "${{ matrix.ha-version }}" == "2026.11.1" ]]; then
+            # Core 2026.11 aliases httpx2 at import time; pytest plugins may
+            # otherwise pre-import httpx and make bootstrap fail before tests.
+            python -c 'import homeassistant; import pytest; raise SystemExit(pytest.main(["-q", "tests/test_ha_lifecycle.py"]))'
+          else
+            python -m pytest -q tests/test_ha_lifecycle.py
+          fi
 
   forecast-solar-current-ha:
     name: Forecast.Solar source contracts on HA 2026.11.1
