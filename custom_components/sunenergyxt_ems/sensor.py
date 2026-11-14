@@ -395,6 +395,11 @@ class BatteryStatus(SensorEntity):
             "dc_sensor": getattr(self._runtime, "_dc_monitored", {}).get(self._device_id),
             "inverters_online": sum(inv.online for inv in battery.inverters),
             "inverters_total": len(battery.inverters),
+            "inverter_availability": {
+                inv.key: self._runtime._inverter_availability_reason(inv.key)
+                for inv in battery.inverters
+            },
+            "availability_semantics": "current_ha_checks_not_physical_or_historical_cause",
             "pv_input_w": battery.pv_input_w,
             "full_charge_bypass": self._device_id in self._runtime.controller.state.full,
             "ev3600_charging": battery.ev3600_charging,

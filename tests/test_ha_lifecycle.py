@@ -1611,3 +1611,58 @@ async def test_real_ha_registry_and_service_stop_dye_without_ac_voltage(
     assert number.entity_id in runtime._shutdown_obligations
     assert len(writes) >= 2
     assert all(item["value"] == 0 for item in writes)
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+@pytest.mark.asyncio
+async def test_battery_availability_reason_updates_and_survives_reload(hass):
+    """HA publishes current eligibility without dispatching any command."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "grid": "sensor.grid",
+            "batteries": [
+                {
+                    "device_id": "bk",
+                    "soc": 70,
+                    "lower": 10,
+                    "upper": 100,
+                    "inverters": [{"entity_id": "number.inv", "rated_w": 800}],
+                }
+            ],
+        },
+        options={"enabled": False},
+    )
+    entry.add_to_hass(hass)
+    writes = []
+
+    async def write(call):
+        writes.append(dict(call.data))
+
+    hass.services.async_register("number", "set_value", write)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+    sensor_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_battery_bk")
+    assert hass.states.get(sensor_id).attributes["inverter_availability"] == {
+        "number.inv": "actuator_unavailable"
+    }
+    hass.states.async_set("number.inv", "0", {"unit_of_measurement": "%"})
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    runtime._publish()
+    await hass.async_block_till_done()
+    assert hass.states.get(sensor_id).attributes["inverter_availability"] == {
+        "number.inv": "available"
+    }
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    hass.states.async_set("number.inv", "unavailable", {"unit_of_measurement": "%"})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert (
+        registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_battery_bk") == sensor_id
+    )
+    assert hass.states.get(sensor_id).attributes["inverter_availability"] == {
+        "number.inv": "actuator_unavailable"
+    }
+    assert writes == []

@@ -162,3 +162,43 @@ def test_unmapped_inverter_is_not_assumed_to_have_solarman_voltage(
     assert all(
         inverter.online for battery in runtime._batteries() for inverter in battery.inverters
     )
+
+
+@pytest.mark.parametrize(
+    ("fault", "reason"),
+    [
+        ("none", "available"),
+        ("missing", "actuator_unavailable"),
+        ("unavailable", "actuator_unavailable"),
+        ("unit", "actuator_unit_invalid"),
+        ("connection", "connection_unavailable"),
+        ("voltage", "ac_voltage_unavailable"),
+    ],
+)
+def test_battery_explains_ha_inverter_availability_without_writes(monkeypatch, fault, reason):
+    from custom_components.sunenergyxt_ems.sensor import BatteryStatus
+
+    runtime, states = configured_two_inverters(monkeypatch)
+    if fault == "missing":
+        del states["number.m200"]
+    elif fault == "unavailable":
+        states["number.m200"].state = "unavailable"
+    elif fault == "unit":
+        states["number.m200"].attributes["unit_of_measurement"] = "kWh"
+    elif fault == "connection":
+        states["binary_sensor.link"] = sample("off", "")
+        monkeypatch.setattr(
+            module,
+            "registered_connection",
+            lambda _hass, key: "binary_sensor.link" if key == "number.m200" else None,
+        )
+    elif fault == "voltage":
+        states["sensor.m200_grid_voltage"].state = "0"
+
+    attrs = BatteryStatus(runtime.entry, runtime, "bk1").extra_state_attributes
+    assert attrs["inverter_availability"] == {"number.m200": reason}
+    assert attrs["availability_semantics"] == "current_ha_checks_not_physical_or_historical_cause"
+    assert runtime._batteries()[0].inverters[0].online is (reason == "available")
+    assert runtime._batteries()[1].inverters[0].online is True
+    runtime._apply.assert_not_awaited()
+    runtime.hass.services.async_call.assert_not_awaited()

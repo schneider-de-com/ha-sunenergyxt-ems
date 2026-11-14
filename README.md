@@ -70,6 +70,8 @@ The new Marketplace uses the same `hacs.json` and GitHub release layout as HACS.
 - If the grid sensor fails, the controller briefly holds and then reduces reachable inverters. It resumes after several fresh samples.
 - A bad SoC reading disables only the affected battery; healthy batteries can continue. A BK215 DC-output reading above 1,920 W latches a protective shutdown; the trip is saved across HA restarts. To reset it, turn off EMS and use **Configure → Reset DC safety trip** only with recent BK215 DC output at or below 100 W. This is a software safety fallback, not a measurement certification.
 - Some Deye inverters report a known nonfatal diagnostic fault at 0% limit.
+- Development main adds [per-inverter HA availability reasons](docs/inverter-availability.md)
+  to each existing battery status entity. These diagnostics are not in published b16 yet.
 - Feed-in after full charge may export stored battery energy. Use it knowingly.
 - A physically failed controller or Home Assistant shutdown cannot issue a final safety command.
 - Current automated tests are not a replacement for real inverter and BK215 hardware validation. The BK215 combined **DC** 1,920 W limit is **not** equivalent to the sum of AC inverter setpoints. Avoid unattended live operation until actual DC/AC behavior is confirmed (#31).

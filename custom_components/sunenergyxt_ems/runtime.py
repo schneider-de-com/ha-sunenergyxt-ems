@@ -323,6 +323,22 @@ class EMSRuntime:
         # 300 V ceiling rejects corrupt diagnostics, not other AC markets.
         return value is not None and 0 < value <= 300
 
+    def _inverter_availability_reason(self, entity_id: str) -> str:
+        """Explain the current HA checks, not physical safety or a past outage."""
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return "actuator_unavailable"
+        if state.attributes.get("unit_of_measurement") not in ("W", "%"):
+            return "actuator_unit_invalid"
+        connection_id = registered_connection(self.hass, entity_id)
+        connection = self.hass.states.get(connection_id) if connection_id else None
+        # A readable limit does not establish that the upstream link is on.
+        if connection_id and (connection is None or connection.state != "on"):
+            return "connection_unavailable"
+        if not self._ac_voltage_available(entity_id):
+            return "ac_voltage_unavailable"
+        return "available"
+
     def _batteries(self) -> tuple[Battery, ...]:
         batteries = []
         for record in self.entry.data[CONF_BATTERIES]:
@@ -334,17 +350,7 @@ class EMSRuntime:
                 rated = self._float(definition[CONF_RATED_W])
                 if rated is None or rated <= 0:
                     continue
-                connection_id = registered_connection(self.hass, entity_id)
-                connection = self.hass.states.get(connection_id) if connection_id else None
-                online = bool(
-                    state
-                    and state.state not in ("unknown", "unavailable")
-                    and unit in ("W", "%")
-                    # The M80's limit remained readable even through a
-                    # 2026-11-03 Solarman disconnect. Trust the actual link.
-                    and (not connection_id or (connection and connection.state == "on"))
-                    and self._ac_voltage_available(entity_id)
-                )
+                online = self._inverter_availability_reason(entity_id) == "available"
                 minimum = self._float(state.attributes.get("min", 0)) if state else 0
                 minimum = max(0.0, minimum or 0.0)
                 if unit == "%":
