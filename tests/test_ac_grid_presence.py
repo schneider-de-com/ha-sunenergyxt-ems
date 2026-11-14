@@ -71,9 +71,7 @@ def configured_two_inverters(monkeypatch: pytest.MonkeyPatch):
         options={"enabled": True, "feed_in": False, "grid_target_w": 20},
     )
     monkeypatch.setattr(module, "async_dispatcher_send", lambda *args: None)
-    monkeypatch.setattr(
-        module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None)
-    )
+    monkeypatch.setattr(module.er, "async_get", lambda _: SimpleNamespace(async_get=lambda _: None))
     monkeypatch.setattr(module, "registered_connection", lambda *args: None)
     monkeypatch.setattr(module, "registered_dc_output", lambda *args: None)
     # The registry lookup is patched, not an entity-ID string heuristic.
@@ -108,18 +106,15 @@ async def test_live_ac_breaker_loss_forces_zero_without_disabling_healthy_batter
     await runtime.async_update()
     commands = runtime._apply.await_args_list
     assert any(
-        call.args[0].get("number.m200") == 0
-        and call.kwargs.get("emergency") is True
+        call.args[0].get("number.m200") == 0 and call.kwargs.get("emergency") is True
         for call in commands
     ), "Lose AC at a still-writable M200: dispatch its minimum immediately"
-    assert all(
-        call.args[0].get("number.m200", 0) <= 0
-        for call in commands
-    ), "No positive M200 command while its local AC voltage is zero"
-    assert any(
-        call.args[0].get("number.m80", 0) > 0
-        for call in commands
-    ), "The independent healthy BK215 must remain eligible"
+    assert all(call.args[0].get("number.m200", 0) <= 0 for call in commands), (
+        "No positive M200 command while its local AC voltage is zero"
+    )
+    assert any(call.args[0].get("number.m80", 0) > 0 for call in commands), (
+        "The independent healthy BK215 must remain eligible"
+    )
 
 
 @pytest.mark.asyncio
@@ -133,10 +128,7 @@ async def test_stale_zero_voltage_does_not_rearm_positive_output(
     voltage.last_reported = datetime.now(UTC) - timedelta(minutes=10)
     assert runtime._batteries()[0].inverters[0].online is False
     await runtime.async_update()
-    assert all(
-        call.args[0].get("number.m200", 0) <= 0
-        for call in runtime._apply.await_args_list
-    )
+    assert all(call.args[0].get("number.m200", 0) <= 0 for call in runtime._apply.await_args_list)
 
 
 @pytest.mark.asyncio
