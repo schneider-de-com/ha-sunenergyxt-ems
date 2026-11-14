@@ -156,6 +156,11 @@ async def test_forecast_solar_real_coordinator_receipts_service_and_unload(
     assert description["received_at"] == at.isoformat()
     assert description["uncertainty"] == "not_supplied"
     assert "watts" not in description and "api_key" not in description
+    historical = diagnostics["forecast_evidence"]
+    assert historical["snapshot_count"] == 1
+    assert historical["latest_received_at"] == at.isoformat()
+    assert historical["persistence_ok"] is True
+    assert "periods" not in historical
     freezer.move_to(at + timedelta(hours=2, seconds=1))
     runtime._publish()
     await hass.async_block_till_done()
@@ -167,6 +172,20 @@ async def test_forecast_solar_real_coordinator_receipts_service_and_unload(
     coordinator.async_set_updated_data(SimpleNamespace(timezone="UTC"))
     await hass.async_block_till_done()
     assert len(calls) == 1
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    restored = hass.data[DOMAIN][entry.entry_id]
+    assert restored.horizon.forecast_evidence.summary()["snapshot_count"] == 1
+    assert restored.horizon.forecast_evidence.summary()["latest_received_at"] == at.isoformat()
+    assert (
+        restored.horizon.forecast_solar_sources[owner.entry_id].describe(
+            at + timedelta(hours=2, seconds=1)
+        )["received_at"]
+        is None
+    )
+    assert restored.controller.enabled is False
+    assert len(calls) == 1
+    assert await hass.config_entries.async_unload(entry.entry_id)
     # The owner fixture supplies a cache contract, not a fully set-up cloud integration.
     owner._async_set_state(hass, ConfigEntryState.NOT_LOADED, None)
 
@@ -1278,18 +1297,25 @@ async def test_passive_observer_stops_on_entry_unload_and_reloads_once(
 
 
 @pytest.mark.asyncio
-async def test_core_json_corruption_cannot_be_mistaken_for_first_use(hass: HomeAssistant, freezer):
+@pytest.mark.parametrize("ledger", ["demand", "forecast"])
+async def test_core_json_corruption_cannot_be_mistaken_for_first_use(
+    hass: HomeAssistant, freezer, ledger
+):
     from json import JSONDecodeError
 
     from homeassistant.exceptions import HomeAssistantError
     from homeassistant.helpers import issue_registry as ir
     from homeassistant.util import dt as dt_util
 
+    from custom_components.sunenergyxt_ems.forecast_evidence import ForecastEvidence
+
     freezer.move_to("2026-11-08T12:00:00+00:00")
 
     entry = MockConfigEntry(domain=DOMAIN, data={"grid": "sensor.grid", "batteries": []})
-    observer = DemandObserver(
-        hass, entry, lambda: HouseholdObservation(dt_util.utcnow(), 600, "measured")
+    observer = (
+        DemandObserver(hass, entry, lambda: HouseholdObservation(dt_util.utcnow(), 600, "measured"))
+        if ledger == "demand"
+        else ForecastEvidence(hass, entry.entry_id, lambda: None)
     )
     target = observer._store.path
 
@@ -1308,11 +1334,16 @@ async def test_core_json_corruption_cannot_be_mistaken_for_first_use(hass: HomeA
     ):
         try:
             await observer.async_start()
-            assert observer.reason == "storage_unavailable"
+            if ledger == "demand":
+                assert observer.reason == "storage_unavailable"
+                assert observer.history.intervals == ()
+            else:
+                assert observer.storage_error == "forecast_evidence_restore_failed"
+                await observer.async_record({})
+                assert observer.summary()["snapshot_count"] == 0
             assert not observer.persistence_ok
-            assert observer.history.intervals == ()
             assert any(
-                key[1].startswith(f"storage_corruption_{DOMAIN}.demand.")
+                key[1].startswith(f"storage_corruption_{observer._store.key}_")
                 for key in ir.async_get(hass).issues
             )
             rename.assert_called_once()

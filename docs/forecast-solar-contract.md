@@ -119,6 +119,10 @@ while uncertainty is unknown. AC/demand coverage and per-storage modeling also
 remain independent prerequisites. The new source does not start acceptance or
 claim a completed Sprint-2 planning feature.
 
+Original successfully received raw Wh curves are also retained in the private
+[historical evidence ledger](forecast-evidence.md), independently of the live
+cache. Historical restore never rejuvenates this consumer or supplies confidence.
+
 [energy]: https://github.com/home-assistant/core/blob/2026.11.1/homeassistant/components/forecast_solar/energy.py#L8-L24
 [service]: https://github.com/home-assistant/core/blob/2026.11.1/homeassistant/components/forecast_solar/services.py#L27-L144
 [coordinator]: https://github.com/home-assistant/core/blob/2026.11.1/homeassistant/components/forecast_solar/coordinator.py#L35-L187

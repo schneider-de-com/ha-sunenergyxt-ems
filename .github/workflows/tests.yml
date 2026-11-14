@@ -68,7 +68,7 @@ jobs:
           python-version: "3.14"
       - run: python -m pip install 'homeassistant==2026.10.4' pytest pytest-asyncio pytest-cov mypy
       - run: python -m pytest -q tests --ignore=tests/test_ha_lifecycle.py --cov=custom_components.sunenergyxt_ems --cov-report=term-missing
-      - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/observer.py custom_components/sunenergyxt_ems/forecast_sources.py custom_components/sunenergyxt_ems/forecast_solar_source.py custom_components/sunenergyxt_ems/horizon.py custom_components/sunenergyxt_ems/diagnostics.py
+      - run: python -m mypy --strict --follow-imports=skip custom_components/sunenergyxt_ems/observer.py custom_components/sunenergyxt_ems/forecast_sources.py custom_components/sunenergyxt_ems/forecast_solar_source.py custom_components/sunenergyxt_ems/forecast_evidence.py custom_components/sunenergyxt_ems/horizon.py custom_components/sunenergyxt_ems/diagnostics.py
 
   ha-integration-lifecycle:
     name: Real HA entry, device and entity lifecycle
