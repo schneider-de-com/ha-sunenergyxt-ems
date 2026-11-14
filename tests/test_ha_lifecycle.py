@@ -1494,6 +1494,46 @@ async def test_planning_status_registers_translates_and_preserves_disabled_ems(h
 
 
 @pytest.mark.asyncio
+async def test_ac_voltage_reassigned_to_other_entry_cannot_authorize_output(
+    hass: HomeAssistant,
+) -> None:
+    """HA preserves unique IDs on entry reassignment; require actual ownership."""
+    provider = MockConfigEntry(domain="solarman", options={"lookup_file": "deye_micro_53.yaml"})
+    other = MockConfigEntry(domain="solarman")
+    provider.add_to_hass(hass)
+    other.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=provider.entry_id,
+        identifiers={("solarman", "entry-reassignment-replay")},
+    )
+    registry = er.async_get(hass)
+    number = registry.async_get_or_create(
+        "number",
+        "solarman",
+        "reassigned-source-inverter",
+        config_entry=provider,
+        device_id=device.id,
+    )
+    voltage = registry.async_get_or_create(
+        "sensor",
+        "solarman",
+        f"{provider.entry_id.lower()}_grid_voltage_sensor",
+        config_entry=provider,
+        device_id=device.id,
+    )
+    from custom_components.sunenergyxt_ems.registry import registered_ac_voltage
+
+    assert registered_ac_voltage(hass, number.entity_id) == voltage.entity_id
+    moved = registry.async_update_entity(voltage.entity_id, config_entry_id=other.entry_id)
+    assert moved.unique_id == voltage.unique_id
+    assert moved.device_id == number.device_id
+    assert moved.config_entry_id == other.entry_id
+    assert registered_ac_voltage(hass, number.entity_id) == ""
+    registry.async_update_entity(voltage.entity_id, config_entry_id=provider.entry_id)
+    assert registered_ac_voltage(hass, number.entity_id) == voltage.entity_id
+
+
+@pytest.mark.asyncio
 async def test_real_ha_registry_and_service_stop_dye_without_ac_voltage(
     hass: HomeAssistant,
 ) -> None:

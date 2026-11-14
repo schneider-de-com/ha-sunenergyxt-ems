@@ -196,6 +196,7 @@ def registered_ac_voltage(hass: HomeAssistant, inverter_entity_id: str) -> str |
         entry.entity_id
         for entry in getattr(registry, "entities", {}).values()
         if entry.device_id == inverter.device_id
+        and entry.config_entry_id == inverter.config_entry_id
         and entry.platform.lower() == "solarman"
         and entry.domain == "sensor"
         and entry.unique_id == expected
