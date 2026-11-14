@@ -262,7 +262,7 @@ async def test_sustained_import_accelerates_bounded_acknowledged_increases() -> 
 @pytest.mark.parametrize("gate", ["feed_in", "startup_hold"])
 @pytest.mark.asyncio
 async def test_sustained_import_cannot_bypass_feed_in_or_startup_hold(gate: str) -> None:
-    """The current user's enabled feed-in setting keeps acceleration inactive."""
+    """Effective PV bypass and startup hold retain the ordinary increase interval."""
     runtime, hass = runtime_pair()
     runtime._last_sent["number.m200"] = 1.0
     runtime._sent_at["number.m200"] = 1000.0
@@ -279,6 +279,33 @@ async def test_sustained_import_cannot_bypass_feed_in_or_startup_hold(gate: str)
     await runtime._apply({"number.m200": 540}, now=1031.0)
     hass.services.async_call.assert_awaited_once()
     command = hass.services.async_call.await_args.args[2]
+    assert 1.0 < command["value"] <= 2.0
+
+
+@pytest.mark.parametrize("mode, immediate_calls", [("household", 1), ("pv", 0)])
+@pytest.mark.asyncio
+async def test_selected_mode_controls_bounded_import_acceleration(
+    monkeypatch: pytest.MonkeyPatch, mode: str, immediate_calls: int
+) -> None:
+    """The raw enabled option is not the effective PV full-charge bypass gate."""
+    runtime, hass = runtime_pair()
+    monkeypatch.setattr(runtime, "_publish", lambda: None)
+    runtime.entry.options.update({"feed_in": True, "feed_in_mode": mode})
+    await runtime.async_change_options()
+    runtime._last_sent["number.m200"] = 1.0
+    runtime._sent_at["number.m200"] = 1000.0
+    hass.states.get("number.m200").state = "1"
+    for sequence, watts in enumerate((1200.0, 1150.0, 1100.0)):
+        runtime._grid_filter.observe(watts, sequence)
+    runtime._grid_raw_w = 1100.0
+
+    await runtime._apply({"number.m200": 540}, now=1010.0)
+    assert hass.services.async_call.await_count == immediate_calls
+    if not immediate_calls:
+        await runtime._apply({"number.m200": 540}, now=1031.0)
+    assert hass.services.async_call.await_count == 1
+    command = hass.services.async_call.await_args.args[2]
+    assert command["entity_id"] == "number.m200"
     assert 1.0 < command["value"] <= 2.0
 
 
