@@ -41,6 +41,7 @@ def objects():
         _last_sent={},
         _last_dispatched_w={},
         _configured_inverters=lambda: set(),
+        _inverter_availability_reason=lambda _key: "available",
         _pending={},
         _shutdown_pending={},
         _deferred_shutdown=set(),
