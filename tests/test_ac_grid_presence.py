@@ -147,8 +147,7 @@ async def test_restored_voltage_requires_fresh_safe_minimum_first(
     await runtime.async_update()
     assert "number.m200" in runtime._shutdown_obligations
     assert any(
-        call.args[0].get("number.m200") == 0
-        and call.kwargs.get("emergency") is True
+        call.args[0].get("number.m200") == 0 and call.kwargs.get("emergency") is True
         for call in runtime._apply.await_args_list
     ), "Recovery must re-establish the minimum before ordinary control"
 
