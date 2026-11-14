@@ -35,6 +35,38 @@ from custom_components.sunenergyxt_ems.runtime import EMSRuntime
 _CORE_STORE_ASYNC_LOAD = HAStore._async_load
 
 
+@pytest.mark.asyncio
+async def test_forecast_shutdown_ram_readback_is_not_a_durable_checkpoint(hass, freezer):
+    from homeassistant.core import CoreState
+
+    from custom_components.sunenergyxt_ems.forecast_evidence import ForecastEvidence
+
+    at = datetime(2026, 11, 14, tzinfo=UTC)
+    freezer.move_to(at)
+    history = ForecastEvidence(hass, "shutdown-evidence", lambda: None)
+    await history.async_start()
+    snapshot = {
+        "config_entry_id": "owner",
+        "received_at": at.isoformat(),
+        "configuration_updated_at": None,
+        "periods": [[at.isoformat(), (at + timedelta(hours=1)).isoformat(), 100.0]],
+    }
+    previous = hass.state
+    hass.set_state(CoreState.stopping)
+    try:
+        with patch.object(
+            history._store, "_async_handle_write_data", new_callable=AsyncMock
+        ) as disk:
+            await history.async_record(snapshot)
+            assert not history.persistence_ok
+            assert history.summary()["may_include_unconfirmed"] is True
+            assert (await history._store.async_load())["snapshots"] == [snapshot]
+            disk.assert_not_awaited()
+    finally:
+        hass.set_state(previous)
+        await history.async_stop()
+
+
 @pytest.mark.usefixtures("enable_custom_integrations")
 @pytest.mark.parametrize("owner_ready", [True, False])
 @pytest.mark.asyncio

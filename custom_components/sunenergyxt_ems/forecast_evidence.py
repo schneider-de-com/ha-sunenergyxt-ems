@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from math import isfinite
 from typing import Any, cast
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -81,7 +81,6 @@ class ForecastEvidence:
         self._snapshots: list[dict[str, Any]] = []
         self._lock = asyncio.Lock()
         self._tasks: set[asyncio.Task[None]] = set()
-        self._submitted: set[tuple[str, str]] = set()
         self._loaded = False
         self._closed = False
         self.persistence_ok = False
@@ -123,18 +122,12 @@ class ForecastEvidence:
 
     def submit(self, snapshot: dict[str, Any]) -> None:
         """A source calls only after an observed successful owner/cache update."""
-        key = (snapshot["config_entry_id"], snapshot["received_at"])
-        if self._closed or key in self._submitted:
+        if self._closed:
             return
-        self._submitted.add(key)
         task = self.hass.async_create_task(self.async_record(deepcopy(snapshot)))
         self._tasks.add(task)
 
-        def completed(done: asyncio.Task[None]) -> None:
-            self._tasks.discard(done)
-            self._submitted.discard(key)
-
-        task.add_done_callback(completed)
+        task.add_done_callback(self._tasks.discard)
 
     async def async_record(self, snapshot: object) -> None:
         async with self._lock:
@@ -162,7 +155,10 @@ class ForecastEvidence:
                     # unconfirmed until save and independent readback succeed.
                     self._snapshots = rows
                     await self._store.async_save(payload)
-                    if await self._store.async_load() != payload:
+                    if (
+                        getattr(self.hass, "state", None) is CoreState.stopping
+                        or await self._store.async_load() != payload
+                    ):
                         raise ForecastError("forecast_evidence_readback_mismatch")
                 self._snapshots = rows
                 self.persistence_ok, self.storage_error = True, None

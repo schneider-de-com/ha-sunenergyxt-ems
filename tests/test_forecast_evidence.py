@@ -1,5 +1,6 @@
 """Historical forecasts survive restart without becoming fresh planning inputs."""
 
+import asyncio
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -42,7 +43,9 @@ def storage(monkeypatch):
 
 
 async def start():
-    history = module.ForecastEvidence(SimpleNamespace(), "ems", lambda: None)
+    history = module.ForecastEvidence(
+        SimpleNamespace(async_create_task=asyncio.create_task), "ems", lambda: None
+    )
     await history.async_start()
     return history
 
@@ -158,3 +161,28 @@ async def test_capacity_bound_keeps_latest_2048_received_snapshots(storage):
         storage.data["snapshots"][0]["received_at"] == (NOW - timedelta(seconds=2047)).isoformat()
     )
     assert history.summary()["latest_received_at"] == NOW.isoformat()
+
+
+async def test_shutdown_ram_readback_is_not_claimed_as_durable(storage):
+    from homeassistant.core import CoreState
+
+    history = await start()
+    history.hass.state = CoreState.stopping
+    await history.async_record(snapshot())
+    assert history.persistence_ok is False
+    assert history.summary()["may_include_unconfirmed"] is True
+
+
+async def test_queued_conflicting_receipt_is_reported_and_unload_drains_submissions(storage):
+    history = await start()
+    first = snapshot()
+    conflict = snapshot()
+    conflict["periods"][0][2] = 200.0
+    history.submit(first)
+    history.submit(conflict)
+    await history.async_stop()
+    assert not history.persistence_ok
+    assert history.storage_error == "forecast_evidence_write_failed"
+    assert storage.data["snapshots"] == [first]
+    history.submit(snapshot(owner="after_unload"))
+    assert not history._tasks

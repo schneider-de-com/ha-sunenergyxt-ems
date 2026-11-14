@@ -33,6 +33,8 @@ receipts are idempotent; conflicting content is not silently replaced. Failed
 or unconfirmed writes remain marked and are retained in memory for the next
 successful write. A crash before confirmation can lose a submitted receipt:
 there is no claim of complete forecast coverage or zero-loss persistence.
+During HA's stopping phase, Store may acknowledge saves and reads from RAM
+before its final disk write; these are explicitly left unconfirmed as well.
 
 Setup validates the historical Store; corrupt/unreadable data, including Core's
 JSON-corruption Repair path, are not treated as first use and are not overwritten.
