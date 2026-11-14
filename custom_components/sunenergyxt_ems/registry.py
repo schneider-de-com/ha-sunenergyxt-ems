@@ -166,6 +166,42 @@ def registered_connection(hass: HomeAssistant, inverter_entity_id: str) -> str |
     return matches[0] if len(matches) == 1 else None
 
 
+
+def registered_ac_voltage(hass: HomeAssistant, inverter_entity_id: str) -> str | None:
+    """Locate this Deye profile's grid voltage by upstream registry identity.
+
+    None means the model/profile has no validated voltage contract. An empty
+    string means this *supported* profile has a missing/ambiguous source:
+    fail closed rather than silently treating the logger as grid-connected.
+    Only the installed deye_micro_53.yaml contract is covered; never infer
+    a sensor from a renameable entity_id or a display name.
+    """
+    registry = er.async_get(hass)
+    inverter = registry.async_get(inverter_entity_id)
+    if (
+        inverter is None
+        or inverter.platform.lower() != "solarman"
+        or inverter.domain != "number"
+        or not inverter.device_id
+        or not inverter.config_entry_id
+    ):
+        return None
+    source_entry = hass.config_entries.async_get_entry(inverter.config_entry_id)
+    if source_entry is None or source_entry.options.get("lookup_file") != "deye_micro_53.yaml":
+        return None
+    expected = f"{inverter.config_entry_id.lower()}_grid_voltage_sensor"
+    matches = [
+        entry.entity_id
+        for entry in getattr(registry, "entities", {}).values()
+        if entry.device_id == inverter.device_id
+        and entry.platform.lower() == "solarman"
+        and entry.domain == "sensor"
+        and entry.unique_id == expected
+        and entry.disabled_by is None
+    ]
+    return matches[0] if len(matches) == 1 else ""
+
+
 def registered_dc_output(hass: HomeAssistant, device_id: str) -> str | None:
     """Recover a DC sensor for a pre-beta entry using the exact BK215 device ID."""
     registry = er.async_get(hass)
