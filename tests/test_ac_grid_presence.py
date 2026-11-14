@@ -14,6 +14,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+pytest.importorskip("homeassistant")
+
 from custom_components.sunenergyxt_ems import runtime as module
 from custom_components.sunenergyxt_ems.runtime import EMSRuntime
 
