@@ -115,7 +115,10 @@ async def test_recorded_ac_loss_never_permits_positive_dispatch_after_both_zero(
             active = bool(value)
             continue
         entity, unit = channels[channel]
-        states[entity] = sample(value, unit, now, min=0, max=100, step=0.1) if unit == "%" else sample(value, unit, now)
+        if unit == "%":
+            states[entity] = sample(value, unit, now, min=0, max=100, step=0.1)
+        else:
+            states[entity] = sample(value, unit, now)
         if channel.endswith("voltage_v") and value == 0:
             loss_at[entity] = now
         if channel.endswith("limit_pct") and value > 0 and active:
