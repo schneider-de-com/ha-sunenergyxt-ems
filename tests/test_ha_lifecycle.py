@@ -1433,9 +1433,7 @@ async def test_core_json_corruption_cannot_be_mistaken_for_first_use(
                     side_effect=broken_json,
                 )
             )
-            rename = patches.enter_context(
-                patch("homeassistant.helpers.storage.os.rename")
-            )
+            rename = patches.enter_context(patch("homeassistant.helpers.storage.os.rename"))
         try:
             await observer.async_start()
             if ledger == "demand":
