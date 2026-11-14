@@ -6,10 +6,13 @@ After three distinct, ordered grid samples above 500 W, its existing bounded
 startup hold, device acknowledgements, settled/new meter feedback, reserve/DC
 limits, shutdown and reconnect remain authoritative.
 
-The faster path remains **disabled when feed-in is enabled**. The current
-installation has feed-in enabled; retain that preference and do not promise
-faster real convergence from this candidate there. No setting is changed to
-force a favorable demonstration. Missing/backward meter samples still allow
+Clarification (2026-11-14): the faster path is disabled by the controller's
+**effective PV bypass** (`feed_in=true` plus `feed_in_mode=pv`). The earlier
+claim that the raw enabled option alone disabled acceleration in the current
+installation was incorrect: its confirmed `household` mode keeps PV bypass off.
+This does not prove actual acceleration or better convergence on hardware.
+Retain the user's preferences; no setting is changed to force a favorable
+demonstration. Missing/backward meter samples still allow
 unacknowledged commands to time out, including multiple outstanding actuators.
 
 The meter gate also requires a sample timestamp strictly after the completed
