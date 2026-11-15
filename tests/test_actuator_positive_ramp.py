@@ -545,3 +545,91 @@ async def test_missing_grid_does_not_hide_second_actuator_timeout() -> None:
     assert runtime.status == "write_error"
     assert "number.m80" in runtime.last_error
     assert "number.m80" in runtime._shutdown_obligations
+
+
+# Issue #68: RED first against the fixed 20 W physical-command ramp.
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("import_w", "expected_step_w"),
+    [(100.0, 20.0), (250.0, 50.0), (500.0, 100.0), (1000.0, 200.0), (2000.0, 200.0)],
+)
+async def test_proportional_confirmed_import_sets_bounded_actuator_step(
+    import_w: float, expected_step_w: float
+) -> None:
+    """Actuator (not just controller) responds to three distinct import samples."""
+    runtime, hass = runtime_pair()
+    entity_id = "number.m200"
+    runtime._last_sent[entity_id] = 10.0
+    runtime._sent_at[entity_id] = 900.0
+    hass.states.get(entity_id).state = "10"
+    for seq in range(3):
+        runtime._grid_filter.observe(import_w, seq)
+    runtime._grid_raw_w = import_w
+
+    await runtime._apply({entity_id: 1500.0}, now=1000.0)
+
+    call = hass.services.async_call.await_args.args[2]
+    assert call["entity_id"] == entity_id
+    assert call["value"] == pytest.approx(10.0 + expected_step_w / 20.0)
+
+
+@pytest.mark.asyncio
+async def test_two_inverters_share_one_adaptive_increase_budget() -> None:
+    """Two 100 W increases may share a 200 W budget, never 200 W each."""
+    runtime, hass = runtime_pair()
+    runtime._last_sent.update({"number.m200": 10.0, "number.m80": 100.0})
+    runtime._sent_at.update({"number.m200": 900.0, "number.m80": 900.0})
+    hass.states.get("number.m200").state = "10"
+    hass.states.get("number.m80").state = "100"
+    for seq in range(3):
+        runtime._grid_filter.observe(1000.0, seq)
+    runtime._grid_raw_w = 1000.0
+
+    await runtime._apply({"number.m200": 300.0, "number.m80": 700.0}, now=1000.0)
+
+    calls = [c.args[2] for c in hass.services.async_call.await_args_list]
+    assert calls == [
+        {"entity_id": "number.m200", "value": 15.0},
+        {"entity_id": "number.m80", "value": 200},
+    ]
+    assert (calls[0]["value"] - 10) * 20 + calls[1]["value"] - 100 == 200
+
+
+@pytest.mark.asyncio
+async def test_single_import_spike_cannot_unlock_large_ramp() -> None:
+    runtime, hass = runtime_pair()
+    runtime._last_sent["number.m200"] = 10.0
+    runtime._sent_at["number.m200"] = 900.0
+    hass.states.get("number.m200").state = "10"
+    for seq, value in enumerate((25.0, 20.0, 2000.0)):
+        runtime._grid_filter.observe(value, seq)
+    runtime._grid_raw_w = 2000.0
+    await runtime._apply({"number.m200": 1500.0}, now=1000.0)
+    assert hass.services.async_call.await_args.args[2]["value"] == pytest.approx(11.0)
+
+
+def test_proportional_import_requires_three_distinct_fresh_samples() -> None:
+    meter = module.GridMedianFilter()
+    meter.observe(1000.0, 1)
+    meter.observe(1000.0, 1)
+    meter.observe(1000.0, 2)
+    assert meter.confirmed_import_w() is None
+    meter.observe(1000.0, 3)
+    assert meter.confirmed_import_w() == 1000.0
+    meter.observe(-100.0, 4)
+    assert meter.confirmed_import_w() is None
+    meter.reset()
+    assert meter.confirmed_import_w() is None
+
+
+@pytest.mark.asyncio
+async def test_proportional_ramp_reductions_do_not_wait_for_positive_budget() -> None:
+    runtime, hass = runtime_pair()
+    runtime._last_sent["number.m200"] = 40.0
+    runtime._sent_at["number.m200"] = 900.0
+    hass.states.get("number.m200").state = "40"
+    for seq in range(3):
+        runtime._grid_filter.observe(-500.0, seq)
+    runtime._grid_raw_w = -500.0
+    await runtime._apply({"number.m200": 0.0}, now=1000.0)
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
