@@ -380,10 +380,9 @@ async def test_startup_export_trip_self_recovers_after_confirmed_import(
         if sequence == 1:
             assert runtime._startup_export_trip is True
 
-    assert any(
-        call.args[0] == {"number.m200": 0.0}
-        for call in dispatched.await_args_list
-    ), "The first severe export must still request the safe minimum"
+    assert any(call.args[0] == {"number.m200": 0.0} for call in dispatched.await_args_list), (
+        "The first severe export must still request the safe minimum"
+    )
     assert runtime._startup_export_trip is False, (
         "Stable fresh import after the confirmed reduction must clear the temporary trip"
     )
