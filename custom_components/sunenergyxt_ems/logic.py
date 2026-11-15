@@ -149,6 +149,20 @@ class GridMedianFilter:
         # Three samples above 500 W separate sustained load from short spikes.
         return len(self._samples) >= 3 and all(value > 500 for value in list(self._samples)[-3:])
 
+    def confirmed_import_w(self) -> float | None:
+        """Conservative import budget from three distinct positive samples.
+
+        Using the *smallest* recent import prevents a single appliance spike
+        or a falling household load from immediately authorizing a large
+        actuator increase. observe() already deduplicates meter sequences.
+        """
+        if len(self._samples) < 3:
+            return None
+        recent = list(self._samples)[-3:]
+        if any(value <= 30.0 or not isfinite(value) for value in recent):
+            return None
+        return min(recent)
+
     def confirmed_export(self) -> float | None:
         """Return the less severe of two consecutive significant export samples."""
         if len(self._samples) < 2:
