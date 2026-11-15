@@ -763,11 +763,19 @@ class EMSRuntime:
                         previous_command is not None
                         and 0 < previous_command - reported < precision / 2
                         and target > previous_command * rating / 100
-                        and entity_id not in self._pending
-                        and now - self._sent_at.get(entity_id, 0)
-                        >= (interval if high_import else max(interval, 20.0))
-                        and await self._hardware_feedback_matches(entity_id, previous_command)
                     ):
+                        # Do not silently floor a rounded feedback mismatch
+                        # into a new command before the real register confirms
+                        # the preceding limit. The old 20 W ceiling happened
+                        # to prevent this via rounding; the adaptive ceiling
+                        # must enforce it explicitly.
+                        if (
+                            entity_id in self._pending
+                            or now - self._sent_at.get(entity_id, 0)
+                            < (interval if high_import else max(interval, 20.0))
+                            or not await self._hardware_feedback_matches(entity_id, previous_command)
+                        ):
+                            continue
                         baseline_w = previous_command * rating / 100
                 target = min(target, baseline_w + positive_step_w)
             value = target * 100 / rating if unit == "%" else target
