@@ -77,6 +77,16 @@ The new Marketplace uses the same `hacs.json` and GitHub release layout as HACS.
 - A physically failed controller or Home Assistant shutdown cannot issue a final safety command.
 - Current automated tests are not a replacement for real inverter and BK215 hardware validation. The BK215 combined **DC** 1,920 W limit is **not** equivalent to the sum of AC inverter setpoints. Avoid unattended live operation until actual DC/AC behavior is confirmed (#31).
 
+## Versions and changelog
+
+New releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html),
+with [human-readable changes](CHANGELOG.md) based on Keep a Changelog and
+[Conventional Commits](CONTRIBUTING.md#versioning-and-release-history).
+Previously published `0.1.1bN` beta tags remain historical identifiers.
+**Stable 1.0.0 has not been released:** it requires the tested core controller,
+24 hours of real M200/M80 operation, and an exercised rollback path.
+Economic PV/demand forecast optimization will follow in a later 1.x version.
+
 ## Development
 
 The [six MVP issues](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues)
