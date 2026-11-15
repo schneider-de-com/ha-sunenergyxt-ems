@@ -773,7 +773,9 @@ class EMSRuntime:
                             entity_id in self._pending
                             or now - self._sent_at.get(entity_id, 0)
                             < (interval if high_import else max(interval, 20.0))
-                            or not await self._hardware_feedback_matches(entity_id, previous_command)
+                            or not await self._hardware_feedback_matches(
+                                entity_id, previous_command
+                            )
                         ):
                             continue
                         baseline_w = previous_command * rating / 100
