@@ -231,7 +231,7 @@ async def test_acknowledged_m200_reaches_household_load_within_five_minutes(
         await runtime.async_update()
 
     assert commands[0][1] <= 0.1
-    assert all(b[1] - a[1] <= 1.00001 for a, b in pairwise(commands))
+    assert all(b[1] - a[1] <= 10.00001 for a, b in pairwise(commands))
     assert all(b[0] - a[0] >= 20 for a, b in pairwise(commands))
     remaining_grid_w = load_w - float(inverter.state) * 20
     assert 0 <= remaining_grid_w <= 50, (
@@ -242,7 +242,7 @@ async def test_acknowledged_m200_reaches_household_load_within_five_minutes(
 
 @pytest.mark.asyncio
 async def test_sustained_import_accelerates_bounded_acknowledged_increases() -> None:
-    """Three real high-import samples permit a 20 W step without a 20 s delay."""
+    """Three real high-import samples permit up to 200 W without a 20 s delay."""
     runtime, hass = runtime_pair()
     runtime._last_sent["number.m200"] = 1.0
     runtime._sent_at["number.m200"] = 1000.0
@@ -256,7 +256,7 @@ async def test_sustained_import_accelerates_bounded_acknowledged_increases() -> 
     hass.services.async_call.assert_awaited_once()
     command = hass.services.async_call.await_args.args[2]
     assert command["entity_id"] == "number.m200"
-    assert 1.0 < command["value"] <= 2.0
+    assert command["value"] == pytest.approx(11.0)
 
 
 @pytest.mark.parametrize("gate", ["feed_in", "startup_hold"])
@@ -279,7 +279,7 @@ async def test_sustained_import_cannot_bypass_feed_in_or_startup_hold(gate: str)
     await runtime._apply({"number.m200": 540}, now=1031.0)
     hass.services.async_call.assert_awaited_once()
     command = hass.services.async_call.await_args.args[2]
-    assert 1.0 < command["value"] <= 2.0
+    assert 1.0 < command["value"] <= (2.0 if gate == "feed_in" else 11.0)
 
 
 @pytest.mark.parametrize("mode, immediate_calls", [("household", 1), ("pv", 0)])
@@ -306,7 +306,7 @@ async def test_selected_mode_controls_bounded_import_acceleration(
     assert hass.services.async_call.await_count == 1
     command = hass.services.async_call.await_args.args[2]
     assert command["entity_id"] == "number.m200"
-    assert 1.0 < command["value"] <= 2.0
+    assert 1.0 < command["value"] <= (11.0 if mode == "household" else 2.0)
 
 
 @pytest.mark.asyncio
@@ -379,7 +379,7 @@ async def test_high_import_does_not_bypass_delayed_hardware_readback(
 
     assert hass.services.async_call.await_count == 2
     next_limit = hass.services.async_call.await_args.args[2]["value"]
-    assert first < next_limit <= first + 1.0  # At most 20 W on a 2 kW inverter.
+    assert first < next_limit <= first + 10.0  # 200 W maximum; only after confirmed readback.
 
 
 @pytest.mark.asyncio
@@ -416,7 +416,7 @@ async def test_sustained_high_import_converges_faster_in_closed_loop(
         await runtime.async_update()
 
     assert commands[0][1] <= 0.1
-    assert all(b[1] - a[1] <= 1.00001 for a, b in pairwise(commands))
+    assert all(b[1] - a[1] <= 10.00001 for a, b in pairwise(commands))
     assert 2000.0 - float(inverter.state) * 20 < 1500.0
 
 
@@ -441,7 +441,7 @@ async def test_rounded_readback_can_progress_after_sustained_import(
     if high_load:
         runtime._hardware_feedback_matches.assert_awaited_once_with(entity_id, 5.1)
     if verified and high_load:
-        assert hass.services.async_call.await_args.args[2]["value"] == 6.1
+        assert hass.services.async_call.await_args.args[2]["value"] == 15.1
     else:
         hass.services.async_call.assert_not_awaited()
 
