@@ -1,7 +1,7 @@
 # Per-inverter availability diagnostics
 
-Development main adds `inverter_availability` to the attributes of each
-existing battery status sensor. Published b16 does not contain this addition.
+Starting with b17, `inverter_availability` is included in the attributes of
+each existing battery status sensor. Published b16 does not contain this addition.
 No new dashboard, entity, device poll or hardware command is introduced.
 
 The mapping is keyed by the configured inverter number entity. It explains
