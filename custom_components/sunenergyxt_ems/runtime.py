@@ -61,6 +61,11 @@ MIN_OUTPUT_CHANGE_W = 10.0
 # upward *actuator* step to the project's existing 20 W smallest step.
 # This is a conservative software ramp, not a device/hardware power cap.
 MAX_POSITIVE_COMMAND_STEP_W = 20.0
+# Proposed actuator ramp for issue #68: 20 / 50 / 100 / 200 W at
+# 100 / 250 / 500 / 1000+ W of *confirmed* grid import.
+# These are software ceilings, not independently measured AC-safe jumps.
+MAX_ADAPTIVE_COMMAND_STEP_W = 200.0
+IMPORT_RAMP_GAIN = 0.2
 FEEDBACK_SETTLE_SECONDS = 5.0
 FEEDBACK_TIMEOUT_SECONDS = 30.0
 SHUTDOWN_RETRY_BACKOFF_SECONDS = 300.0
@@ -671,6 +676,22 @@ class EMSRuntime:
     async def _apply(
         self, targets: dict[str, float], now: float, *, emergency: bool = False, force: bool = False
     ) -> None:
+        # One shared positive budget per dispatch, not one 200 W jump per
+        # inverter. The minimum of three distinct samples avoids reacting
+        # to an isolated appliance start or a falling household load.
+        confirmed_import = (
+            self._grid_filter.confirmed_import_w()
+            if self._grid_raw_w is not None and not self.controller.feed_in
+            else None
+        )
+        available_increase_budget_w = (
+            min(
+                MAX_ADAPTIVE_COMMAND_STEP_W,
+                max(MAX_POSITIVE_COMMAND_STEP_W, confirmed_import * IMPORT_RAMP_GAIN),
+            )
+            if confirmed_import is not None
+            else MAX_POSITIVE_COMMAND_STEP_W
+        )
         for entity_id, target in targets.items():
             high_import = (
                 self._grid_raw_w is not None
@@ -709,16 +730,13 @@ class EMSRuntime:
                         previous_command * rating / 100 if unit == "%" else previous_command
                     )
                     baseline_w = min(baseline_w, previous_w)
-                # The nominal 20 W budget is NOT a safe physical step on
-                # Deye microinverters: at 1% the M80 (8 W nominal) made
-                # phase B drop ~73 W in a guarded trial, and the M200 has
-                # shown worse transients. Start fine percent actuators
-                # with one precision step (0.1pp maximum). Once a previous command
-                # is acknowledged and startup has settled, use the normal
-                # 20 W budget. Applying 0.1pp for the entire run made a
-                # 240 W household load take roughly 27 minutes to settle.
+                # A nominal watt step is NOT a safe physical startup step on
+                # Deye microinverters: a 1% M80 command (8 W nominal) caused
+                # a much larger measured phase response. Retain the 0.1pp
+                # first-start precision; after acknowledgement and settling,
+                # follow the confirmed-import, shared adaptive budget.
                 precision = self._float(state.attributes.get("step", 1))
-                positive_step_w = MAX_POSITIVE_COMMAND_STEP_W
+                positive_step_w = available_increase_budget_w
                 if unit == "%" and precision is not None and 0 < precision <= 0.1:
                     if (
                         previous_command is not None
@@ -788,8 +806,8 @@ class EMSRuntime:
                 continue
             if previous is not None and not force:
                 # A finely controlled percent actuator needs its 0.1pp
-                # steps to *pass* the old 10 W deadband. The 20-second
-                # increase interval and fresh Modbus/grid acknowledgements
+                # steps to *pass* the old 10 W deadband. The existing
+                # 5/20-second interval and fresh Modbus/grid acknowledgements
                 # still gate every step; other actuators keep their
                 # existing anti-chatter deadband.
                 fine_percent_increase = unit == "%" and 0 < step <= 0.1 and value > previous
@@ -810,9 +828,9 @@ class EMSRuntime:
                         value < previous or (reported_value is not None and value < reported_value)
                     )
                 ):
-                    # After sustained high import, allow the same bounded
-                    # 20 W steps at the device's normal interval. First start,
-                    # actuator acknowledgements, and meter gating remain unchanged.
+                    # Sustained >500 W import permits a shorter interval,
+                    # independently from the adaptive shared step budget.
+                    # First start, acknowledgement and meter gates remain.
                     required = interval if value <= previous or high_import else max(interval, 20.0)
                     if elapsed < required:
                         continue
@@ -869,6 +887,11 @@ class EMSRuntime:
             )
             self._last_sent[entity_id] = value
             self._last_dispatched_w[entity_id] = value * rating / 100 if unit == "%" else value
+            if not emergency and not force:
+                # Decrement only for a successfully sent *increase*. Failed
+                # writes and power reductions must not consume this budget.
+                increase_w = max(0.0, self._last_dispatched_w[entity_id] - baseline_w)
+                available_increase_budget_w = max(0.0, available_increase_budget_w - increase_w)
             self._sent_at[entity_id] = now
             self._pending[entity_id] = PendingCommand(
                 target=value,
