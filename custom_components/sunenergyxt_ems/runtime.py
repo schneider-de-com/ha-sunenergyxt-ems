@@ -7,7 +7,7 @@ import json
 import logging
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from math import isfinite
+from math import floor, isfinite
 from time import monotonic
 from typing import Any
 
@@ -61,6 +61,11 @@ MIN_OUTPUT_CHANGE_W = 10.0
 # upward *actuator* step to the project's existing 20 W smallest step.
 # This is a conservative software ramp, not a device/hardware power cap.
 MAX_POSITIVE_COMMAND_STEP_W = 20.0
+# Proposed actuator ramp for issue #68: 20 / 50 / 100 / 200 W at
+# 100 / 250 / 500 / 1000+ W of *confirmed* grid import.
+# These are software ceilings, not independently measured AC-safe jumps.
+MAX_ADAPTIVE_COMMAND_STEP_W = 200.0
+IMPORT_RAMP_GAIN = 0.2
 FEEDBACK_SETTLE_SECONDS = 5.0
 FEEDBACK_TIMEOUT_SECONDS = 30.0
 SHUTDOWN_RETRY_BACKOFF_SECONDS = 300.0
@@ -671,6 +676,24 @@ class EMSRuntime:
     async def _apply(
         self, targets: dict[str, float], now: float, *, emergency: bool = False, force: bool = False
     ) -> None:
+        # One shared positive budget per dispatch, not one 200 W jump per
+        # inverter. The minimum of three distinct samples avoids reacting
+        # to an isolated appliance start or a falling household load.
+        confirmed_import = (
+            self._grid_filter.confirmed_import_w()
+            if self._grid_raw_w is not None and not self.controller.feed_in
+            else None
+        )
+        # Before confirmation, preserve the existing 20 W *per-inverter*
+        # behavior; shared budgeting is only armed by real meter evidence.
+        available_increase_budget_w: float | None = (
+            min(
+                MAX_ADAPTIVE_COMMAND_STEP_W,
+                max(MAX_POSITIVE_COMMAND_STEP_W, confirmed_import * IMPORT_RAMP_GAIN),
+            )
+            if confirmed_import is not None
+            else None
+        )
         for entity_id, target in targets.items():
             high_import = (
                 self._grid_raw_w is not None
@@ -709,16 +732,17 @@ class EMSRuntime:
                         previous_command * rating / 100 if unit == "%" else previous_command
                     )
                     baseline_w = min(baseline_w, previous_w)
-                # The nominal 20 W budget is NOT a safe physical step on
-                # Deye microinverters: at 1% the M80 (8 W nominal) made
-                # phase B drop ~73 W in a guarded trial, and the M200 has
-                # shown worse transients. Start fine percent actuators
-                # with one precision step (0.1pp maximum). Once a previous command
-                # is acknowledged and startup has settled, use the normal
-                # 20 W budget. Applying 0.1pp for the entire run made a
-                # 240 W household load take roughly 27 minutes to settle.
+                # A nominal watt step is NOT a safe physical startup step on
+                # Deye microinverters: a 1% M80 command (8 W nominal) caused
+                # a much larger measured phase response. Retain the 0.1pp
+                # first-start precision; after acknowledgement and settling,
+                # follow the confirmed-import, shared adaptive budget.
                 precision = self._float(state.attributes.get("step", 1))
-                positive_step_w = MAX_POSITIVE_COMMAND_STEP_W
+                positive_step_w = (
+                    available_increase_budget_w
+                    if available_increase_budget_w is not None
+                    else MAX_POSITIVE_COMMAND_STEP_W
+                )
                 if unit == "%" and precision is not None and 0 < precision <= 0.1:
                     if (
                         previous_command is not None
@@ -739,11 +763,21 @@ class EMSRuntime:
                         previous_command is not None
                         and 0 < previous_command - reported < precision / 2
                         and target > previous_command * rating / 100
-                        and entity_id not in self._pending
-                        and now - self._sent_at.get(entity_id, 0)
-                        >= (interval if high_import else max(interval, 20.0))
-                        and await self._hardware_feedback_matches(entity_id, previous_command)
                     ):
+                        # Do not silently floor a rounded feedback mismatch
+                        # into a new command before the real register confirms
+                        # the preceding limit. The old 20 W ceiling happened
+                        # to prevent this via rounding; the adaptive ceiling
+                        # must enforce it explicitly.
+                        if (
+                            entity_id in self._pending
+                            or now - self._sent_at.get(entity_id, 0)
+                            < (interval if high_import else max(interval, 20.0))
+                            or not await self._hardware_feedback_matches(
+                                entity_id, previous_command
+                            )
+                        ):
+                            continue
                         baseline_w = previous_command * rating / 100
                 target = min(target, baseline_w + positive_step_w)
             value = target * 100 / rating if unit == "%" else target
@@ -757,10 +791,21 @@ class EMSRuntime:
                 maximum, max(minimum, round(round((value - minimum) / step) * step + minimum, 4))
             )
             if not emergency and not force:
-                # A coarse device step must not round above the ramp budget.
+                # Coarse percent steps can round a 60 W allowance *up*
+                # (e.g. 800 W inverter / 1pp precision). Floor to the
+                # largest representable SAFE step rather than stall the
+                # controller forever while the import remains high.
                 value_w = value * rating / 100 if unit == "%" else value
                 if value_w > baseline_w + positive_step_w + 0.001:
-                    continue
+                    ceiling = baseline_w + positive_step_w
+                    max_value = ceiling * 100 / rating if unit == "%" else ceiling
+                    value = round(
+                        minimum + floor(max(0.0, (max_value - minimum) / step)) * step,
+                        4,
+                    )
+                    value_w = value * rating / 100 if unit == "%" else value
+                    if value_w > ceiling + 0.001 or value_w <= baseline_w + 0.001:
+                        continue
             previous = self._last_sent.get(entity_id)
             if not emergency and not force and self._start_hold.active(entity_id, now):
                 # Sustained negative signed-grid readings still permit reductions.
@@ -788,8 +833,8 @@ class EMSRuntime:
                 continue
             if previous is not None and not force:
                 # A finely controlled percent actuator needs its 0.1pp
-                # steps to *pass* the old 10 W deadband. The 20-second
-                # increase interval and fresh Modbus/grid acknowledgements
+                # steps to *pass* the old 10 W deadband. The existing
+                # 5/20-second interval and fresh Modbus/grid acknowledgements
                 # still gate every step; other actuators keep their
                 # existing anti-chatter deadband.
                 fine_percent_increase = unit == "%" and 0 < step <= 0.1 and value > previous
@@ -810,9 +855,9 @@ class EMSRuntime:
                         value < previous or (reported_value is not None and value < reported_value)
                     )
                 ):
-                    # After sustained high import, allow the same bounded
-                    # 20 W steps at the device's normal interval. First start,
-                    # actuator acknowledgements, and meter gating remain unchanged.
+                    # Sustained >500 W import permits a shorter interval,
+                    # independently from the adaptive shared step budget.
+                    # First start, acknowledgement and meter gates remain.
                     required = interval if value <= previous or high_import else max(interval, 20.0)
                     if elapsed < required:
                         continue
@@ -869,6 +914,11 @@ class EMSRuntime:
             )
             self._last_sent[entity_id] = value
             self._last_dispatched_w[entity_id] = value * rating / 100 if unit == "%" else value
+            if not emergency and not force and available_increase_budget_w is not None:
+                # Decrement only for a successfully sent *increase*. Failed
+                # writes and power reductions must not consume this budget.
+                increase_w = max(0.0, self._last_dispatched_w[entity_id] - baseline_w)
+                available_increase_budget_w = max(0.0, available_increase_budget_w - increase_w)
             self._sent_at[entity_id] = now
             self._pending[entity_id] = PendingCommand(
                 target=value,

@@ -231,7 +231,7 @@ async def test_acknowledged_m200_reaches_household_load_within_five_minutes(
         await runtime.async_update()
 
     assert commands[0][1] <= 0.1
-    assert all(b[1] - a[1] <= 1.00001 for a, b in pairwise(commands))
+    assert all(b[1] - a[1] <= 10.00001 for a, b in pairwise(commands))
     assert all(b[0] - a[0] >= 20 for a, b in pairwise(commands))
     remaining_grid_w = load_w - float(inverter.state) * 20
     assert 0 <= remaining_grid_w <= 50, (
@@ -242,7 +242,7 @@ async def test_acknowledged_m200_reaches_household_load_within_five_minutes(
 
 @pytest.mark.asyncio
 async def test_sustained_import_accelerates_bounded_acknowledged_increases() -> None:
-    """Three real high-import samples permit a 20 W step without a 20 s delay."""
+    """Three real high-import samples permit up to 200 W without a 20 s delay."""
     runtime, hass = runtime_pair()
     runtime._last_sent["number.m200"] = 1.0
     runtime._sent_at["number.m200"] = 1000.0
@@ -256,7 +256,7 @@ async def test_sustained_import_accelerates_bounded_acknowledged_increases() -> 
     hass.services.async_call.assert_awaited_once()
     command = hass.services.async_call.await_args.args[2]
     assert command["entity_id"] == "number.m200"
-    assert 1.0 < command["value"] <= 2.0
+    assert command["value"] == pytest.approx(11.0)
 
 
 @pytest.mark.parametrize("gate", ["feed_in", "startup_hold"])
@@ -279,7 +279,7 @@ async def test_sustained_import_cannot_bypass_feed_in_or_startup_hold(gate: str)
     await runtime._apply({"number.m200": 540}, now=1031.0)
     hass.services.async_call.assert_awaited_once()
     command = hass.services.async_call.await_args.args[2]
-    assert 1.0 < command["value"] <= 2.0
+    assert 1.0 < command["value"] <= (2.0 if gate == "feed_in" else 11.0)
 
 
 @pytest.mark.parametrize("mode, immediate_calls", [("household", 1), ("pv", 0)])
@@ -306,7 +306,7 @@ async def test_selected_mode_controls_bounded_import_acceleration(
     assert hass.services.async_call.await_count == 1
     command = hass.services.async_call.await_args.args[2]
     assert command["entity_id"] == "number.m200"
-    assert 1.0 < command["value"] <= 2.0
+    assert 1.0 < command["value"] <= (11.0 if mode == "household" else 2.0)
 
 
 @pytest.mark.asyncio
@@ -379,7 +379,7 @@ async def test_high_import_does_not_bypass_delayed_hardware_readback(
 
     assert hass.services.async_call.await_count == 2
     next_limit = hass.services.async_call.await_args.args[2]["value"]
-    assert first < next_limit <= first + 1.0  # At most 20 W on a 2 kW inverter.
+    assert first < next_limit <= first + 10.0  # 200 W maximum; only after confirmed readback.
 
 
 @pytest.mark.asyncio
@@ -416,7 +416,7 @@ async def test_sustained_high_import_converges_faster_in_closed_loop(
         await runtime.async_update()
 
     assert commands[0][1] <= 0.1
-    assert all(b[1] - a[1] <= 1.00001 for a, b in pairwise(commands))
+    assert all(b[1] - a[1] <= 10.00001 for a, b in pairwise(commands))
     assert 2000.0 - float(inverter.state) * 20 < 1500.0
 
 
@@ -441,7 +441,7 @@ async def test_rounded_readback_can_progress_after_sustained_import(
     if high_load:
         runtime._hardware_feedback_matches.assert_awaited_once_with(entity_id, 5.1)
     if verified and high_load:
-        assert hass.services.async_call.await_args.args[2]["value"] == 6.1
+        assert hass.services.async_call.await_args.args[2]["value"] == 15.1
     else:
         hass.services.async_call.assert_not_awaited()
 
@@ -545,3 +545,132 @@ async def test_missing_grid_does_not_hide_second_actuator_timeout() -> None:
     assert runtime.status == "write_error"
     assert "number.m80" in runtime.last_error
     assert "number.m80" in runtime._shutdown_obligations
+
+
+# Issue #68: RED first against the fixed 20 W physical-command ramp.
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("import_w", "expected_step_w"),
+    [(100.0, 20.0), (250.0, 50.0), (500.0, 100.0), (1000.0, 200.0), (2000.0, 200.0)],
+)
+async def test_proportional_confirmed_import_sets_bounded_actuator_step(
+    import_w: float, expected_step_w: float
+) -> None:
+    """Actuator (not just controller) responds to three distinct import samples."""
+    runtime, hass = runtime_pair()
+    entity_id = "number.m200"
+    runtime._last_sent[entity_id] = 10.0
+    runtime._sent_at[entity_id] = 900.0
+    hass.states.get(entity_id).state = "10"
+    for seq in range(3):
+        runtime._grid_filter.observe(import_w, seq)
+    runtime._grid_raw_w = import_w
+
+    await runtime._apply({entity_id: 1500.0}, now=1000.0)
+
+    call = hass.services.async_call.await_args.args[2]
+    assert call["entity_id"] == entity_id
+    assert call["value"] == pytest.approx(10.0 + expected_step_w / 20.0)
+
+
+@pytest.mark.asyncio
+async def test_two_inverters_share_one_adaptive_increase_budget() -> None:
+    """Two 100 W increases may share a 200 W budget, never 200 W each."""
+    runtime, hass = runtime_pair()
+    runtime._last_sent.update({"number.m200": 10.0, "number.m80": 100.0})
+    runtime._sent_at.update({"number.m200": 900.0, "number.m80": 900.0})
+    hass.states.get("number.m200").state = "10"
+    hass.states.get("number.m80").state = "100"
+    for seq in range(3):
+        runtime._grid_filter.observe(1000.0, seq)
+    runtime._grid_raw_w = 1000.0
+
+    await runtime._apply({"number.m200": 300.0, "number.m80": 700.0}, now=1000.0)
+
+    calls = [c.args[2] for c in hass.services.async_call.await_args_list]
+    assert calls == [
+        {"entity_id": "number.m200", "value": 15.0},
+        {"entity_id": "number.m80", "value": 200},
+    ]
+    assert (calls[0]["value"] - 10) * 20 + calls[1]["value"] - 100 == 200
+
+
+@pytest.mark.asyncio
+async def test_single_import_spike_cannot_unlock_large_ramp() -> None:
+    runtime, hass = runtime_pair()
+    runtime._last_sent["number.m200"] = 10.0
+    runtime._sent_at["number.m200"] = 900.0
+    hass.states.get("number.m200").state = "10"
+    for seq, value in enumerate((25.0, 20.0, 2000.0)):
+        runtime._grid_filter.observe(value, seq)
+    runtime._grid_raw_w = 2000.0
+    await runtime._apply({"number.m200": 1500.0}, now=1000.0)
+    assert hass.services.async_call.await_args.args[2]["value"] == pytest.approx(11.0)
+
+
+def test_proportional_import_requires_three_distinct_fresh_samples() -> None:
+    meter = module.GridMedianFilter()
+    meter.observe(1000.0, 1)
+    meter.observe(1000.0, 1)
+    meter.observe(1000.0, 2)
+    assert meter.confirmed_import_w() is None
+    meter.observe(1000.0, 3)
+    assert meter.confirmed_import_w() == 1000.0
+    meter.observe(-100.0, 4)
+    assert meter.confirmed_import_w() is None
+    meter.reset()
+    assert meter.confirmed_import_w() is None
+
+
+@pytest.mark.asyncio
+async def test_proportional_ramp_reductions_do_not_wait_for_positive_budget() -> None:
+    runtime, hass = runtime_pair()
+    runtime._last_sent["number.m200"] = 40.0
+    runtime._sent_at["number.m200"] = 900.0
+    hass.states.get("number.m200").state = "40"
+    for seq in range(3):
+        runtime._grid_filter.observe(-500.0, seq)
+    runtime._grid_raw_w = -500.0
+    await runtime._apply({"number.m200": 0.0}, now=1000.0)
+    assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_coarse_percent_actuator_floors_60_w_allowance_instead_of_stalling() -> None:
+    """300 W import -> 60 W budget; 1pp M80 must not round above 60 W."""
+    runtime, hass = runtime_pair()
+    inverter = hass.states.get("number.m80")
+    inverter.attributes.update({"unit_of_measurement": "%", "step": 1, "max": 100})
+    inverter.state = "10"
+    runtime._last_sent["number.m80"] = 10.0
+    runtime._sent_at["number.m80"] = 900.0
+    for seq in range(3):
+        runtime._grid_filter.observe(300.0, seq)
+    runtime._grid_raw_w = 300.0
+
+    await runtime._apply({"number.m80": 500.0}, now=1000.0)
+
+    command = hass.services.async_call.await_args.args[2]
+    # 10% of 800 W = 80 W; 17% = 136 W (+56 W).
+    # 18% would be +64 W and exceed the confirmed-import budget.
+    assert command == {"entity_id": "number.m80", "value": 17}
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_import_preserves_old_per_inverter_20_w_fallback() -> None:
+    """Do not reduce legacy multi-battery progress while evidence is missing."""
+    runtime, hass = runtime_pair()
+    runtime._last_sent.update({"number.m200": 10.0, "number.m80": 100.0})
+    runtime._sent_at.update({"number.m200": 900.0, "number.m80": 900.0})
+    hass.states.get("number.m200").state = "10"
+    hass.states.get("number.m80").state = "100"
+    runtime._grid_filter.observe(1200.0, 1)
+    runtime._grid_raw_w = 1200.0
+
+    await runtime._apply({"number.m200": 300.0, "number.m80": 500.0}, now=1000.0)
+
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert commands == [
+        {"entity_id": "number.m200", "value": 11.0},
+        {"entity_id": "number.m80", "value": 120},
+    ]
