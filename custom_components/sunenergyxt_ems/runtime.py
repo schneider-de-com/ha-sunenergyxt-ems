@@ -7,7 +7,7 @@ import json
 import logging
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from math import isfinite
+from math import floor, isfinite
 from time import monotonic
 from typing import Any
 
@@ -684,13 +684,15 @@ class EMSRuntime:
             if self._grid_raw_w is not None and not self.controller.feed_in
             else None
         )
-        available_increase_budget_w = (
+        # Before confirmation, preserve the existing 20 W *per-inverter*
+        # behavior; shared budgeting is only armed by real meter evidence.
+        available_increase_budget_w: float | None = (
             min(
                 MAX_ADAPTIVE_COMMAND_STEP_W,
                 max(MAX_POSITIVE_COMMAND_STEP_W, confirmed_import * IMPORT_RAMP_GAIN),
             )
             if confirmed_import is not None
-            else MAX_POSITIVE_COMMAND_STEP_W
+            else None
         )
         for entity_id, target in targets.items():
             high_import = (
@@ -736,7 +738,11 @@ class EMSRuntime:
                 # first-start precision; after acknowledgement and settling,
                 # follow the confirmed-import, shared adaptive budget.
                 precision = self._float(state.attributes.get("step", 1))
-                positive_step_w = available_increase_budget_w
+                positive_step_w = (
+                    available_increase_budget_w
+                    if available_increase_budget_w is not None
+                    else MAX_POSITIVE_COMMAND_STEP_W
+                )
                 if unit == "%" and precision is not None and 0 < precision <= 0.1:
                     if (
                         previous_command is not None
@@ -775,10 +781,21 @@ class EMSRuntime:
                 maximum, max(minimum, round(round((value - minimum) / step) * step + minimum, 4))
             )
             if not emergency and not force:
-                # A coarse device step must not round above the ramp budget.
+                # Coarse percent steps can round a 60 W allowance *up*
+                # (e.g. 800 W inverter / 1pp precision). Floor to the
+                # largest representable SAFE step rather than stall the
+                # controller forever while the import remains high.
                 value_w = value * rating / 100 if unit == "%" else value
                 if value_w > baseline_w + positive_step_w + 0.001:
-                    continue
+                    ceiling = baseline_w + positive_step_w
+                    max_value = ceiling * 100 / rating if unit == "%" else ceiling
+                    value = round(
+                        minimum + floor(max(0.0, (max_value - minimum) / step)) * step,
+                        4,
+                    )
+                    value_w = value * rating / 100 if unit == "%" else value
+                    if value_w > ceiling + 0.001 or value_w <= baseline_w + 0.001:
+                        continue
             previous = self._last_sent.get(entity_id)
             if not emergency and not force and self._start_hold.active(entity_id, now):
                 # Sustained negative signed-grid readings still permit reductions.
@@ -887,7 +904,7 @@ class EMSRuntime:
             )
             self._last_sent[entity_id] = value
             self._last_dispatched_w[entity_id] = value * rating / 100 if unit == "%" else value
-            if not emergency and not force:
+            if not emergency and not force and available_increase_budget_w is not None:
                 # Decrement only for a successfully sent *increase*. Failed
                 # writes and power reductions must not consume this budget.
                 increase_w = max(0.0, self._last_dispatched_w[entity_id] - baseline_w)
