@@ -1,6 +1,6 @@
 # SunEnergyXT EMS for Home Assistant
 
-> **Experimental beta 0.1.1b16. Optional forecast planning, passive learning and operating evidence; unattended hardware control is not approved.**
+> **Experimental beta 0.1.1b17. Optional forecast planning, passive learning and operating evidence; unattended hardware control is not approved.**
 >
 > Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
@@ -38,7 +38,7 @@ Internal [operating evidence](docs/operating-evidence.md) retains individual sou
 > This is a custom repository, not a default Marketplace catalog entry.
 
 1. On **Home Assistant 2026.11 or later**, go to **Settings → Marketplace**. Earlier versions (including 2026.10.4) use **HACS**.
-2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.1b16` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
+2. Add the custom GitHub repository `https://github.com/schneider-de-com/ha-sunenergyxt-ems` (type **Integration**). Select the published `v0.1.1b17` prerelease (enable beta versions where supported); do not use a short Git SHA as a branch name. The Marketplace requires a GitHub account connection for custom repositories.
 3. Install **SunEnergyXT EMS** from the Marketplace or HACS. Restart Home Assistant if requested. Adding files does not start inverter control.
 4. Ensure your inverter controls and grid meter are ready before setup.
 5. For a live setup: **turn off all existing automations writing to the selected inverter power-limit entities before completing the EMS config flow.** Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
@@ -70,8 +70,9 @@ The new Marketplace uses the same `hacs.json` and GitHub release layout as HACS.
 - If the grid sensor fails, the controller briefly holds and then reduces reachable inverters. It resumes after several fresh samples.
 - A bad SoC reading disables only the affected battery; healthy batteries can continue. A BK215 DC-output reading above 1,920 W latches a protective shutdown; the trip is saved across HA restarts. To reset it, turn off EMS and use **Configure → Reset DC safety trip** only with recent BK215 DC output at or below 100 W. This is a software safety fallback, not a measurement certification.
 - Some Deye inverters report a known nonfatal diagnostic fault at 0% limit.
-- Development main adds [per-inverter HA availability reasons](docs/inverter-availability.md)
-  to each existing battery status entity. These diagnostics are not in published b16 yet.
+- b17 includes [per-inverter HA availability reasons](docs/inverter-availability.md)
+  on each existing battery status entity. These describe current HA checks,
+  not physical output or the historical cause of an outage.
 - Feed-in after full charge may export stored battery energy. Use it knowingly.
 - A physically failed controller or Home Assistant shutdown cannot issue a final safety command.
 - Current automated tests are not a replacement for real inverter and BK215 hardware validation. The BK215 combined **DC** 1,920 W limit is **not** equivalent to the sum of AC inverter setpoints. Avoid unattended live operation until actual DC/AC behavior is confirmed (#31).
@@ -88,4 +89,4 @@ Every commit should reference its relevant issue.
 
 For the validated Deye Solarman profile, recent nonzero AC voltage is now an additional condition for positive power control. This is a conservative software guard, not independent proof of measured AC output or stable zero-export.
 
-Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.1b16.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.
+Beta details and staged hardware validation: [release notes](RELEASE_NOTES_0.1.1b17.md). An installed entry intentionally set to **off** stays off after an update; do not enable it merely because the package installed successfully.
