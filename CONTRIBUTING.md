@@ -62,3 +62,59 @@ test(control): cover invalid grid measurements (Refs #4)
 Every project commit must reference its related GitHub issue with `Refs #<number>`.
 Use `Fixes #<number>` only when the issue is fully complete.
 Keep infrastructure and test work inside the existing MVP feature issues; do not open separate engineering-only tickets.
+
+## Versioning and release history
+
+This repository uses these public conventions **for new releases and commits**:
+
+- [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html):
+  use `MAJOR.MINOR.PATCH` (for example `1.0.0`, `1.0.1`, `1.1.0`).
+  Incompatible public interfaces/configuration behavior require a major bump;
+  backward-compatible features a minor bump; compatible fixes a patch bump.
+  Pre-releases use SemVer syntax, for example `1.0.0-beta.1` or
+  `1.0.0-rc.1`. Historical tags such as `0.1.1b18` are immutable
+  pre-SemVer beta tags; never rename or falsely describe them as 1.0.0.
+- [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
+  `<type>(<scope>): <imperative human-readable description>`.
+  Use `feat`, `fix`, `docs`, `test`, `refactor`, `perf`,
+  `build`, `ci` or `chore`, as appropriate. Use `!` and a
+  `BREAKING CHANGE:` footer for incompatible changes. Include
+  `Refs #<issue>` (or `Fixes #<issue>` only when truly completed).
+  A commit should describe **what changed and why**, not just a ticket ID.
+- [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/):
+  update `CHANGELOG.md` under `[Unreleased]` with only user-visible
+  changes. Use relevant `Added`, `Changed`, `Deprecated`, `Removed`,
+  `Fixed`, or `Security` headings. At release, move these notes to
+  a dated version section. Never substitute a raw Git commit dump for
+  human-readable release notes.
+
+### Release gates and rollback
+
+1. Keep each PR focused on one issue; add a behavioral test that initially
+   fails for bugs, then implement and rerun the complete required checks.
+2. Tag the exact tested commit only after the relevant hardware acceptance:
+   at least 24 hours of real, observable coordinated two-inverter regulation
+   for the stable 1.0.0 core. A later release introducing economic forecast
+   planning also needs its independently verified seven-day evaluation.
+3. Record the tested commit, actual Home Assistant and inverter versions,
+   measurable result and limitations, and a tested configuration-preserving
+   rollback to the previous working release. No green CI run alone proves
+   safe unattended inverter control.
+4. The automatic beta workflow must **never** tag stable releases.
+   Publish `v1.0.0` only after an explicit evidence-backed stable release
+   decision; unreleased experimental features must not be advertised as
+   hardware-validated.
+5. Keep existing Home Assistant mappings and the user's enabled/disabled
+   intent through an update or rollback. Verify inverter readback and pending
+   shutdown obligations rather than trusting a successful service call.
+
+**Examples:**
+
+```text
+fix(control): clear a startup-export hold after confirmed recovery (Refs #50)
+feat(config): separate routine settings from advanced mappings (Refs #41)
+docs(release): document tested 1.0.0 rollback steps (Refs #8)
+feat(control)!: rename an incompatible configuration option (Refs #27)
+
+BREAKING CHANGE: Previous option keys require an explicit one-time migration.
+```
