@@ -633,3 +633,44 @@ async def test_proportional_ramp_reductions_do_not_wait_for_positive_budget() ->
     runtime._grid_raw_w = -500.0
     await runtime._apply({"number.m200": 0.0}, now=1000.0)
     assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_coarse_percent_actuator_floors_60_w_allowance_instead_of_stalling() -> None:
+    """300 W import -> 60 W budget; 1pp M80 must not round above 60 W."""
+    runtime, hass = runtime_pair()
+    inverter = hass.states.get("number.m80")
+    inverter.attributes.update({"unit_of_measurement": "%", "step": 1, "max": 100})
+    inverter.state = "10"
+    runtime._last_sent["number.m80"] = 10.0
+    runtime._sent_at["number.m80"] = 900.0
+    for seq in range(3):
+        runtime._grid_filter.observe(300.0, seq)
+    runtime._grid_raw_w = 300.0
+
+    await runtime._apply({"number.m80": 500.0}, now=1000.0)
+
+    command = hass.services.async_call.await_args.args[2]
+    # 10% of 800 W = 80 W; 17% = 136 W (+56 W).
+    # 18% would be +64 W and exceed the confirmed-import budget.
+    assert command == {"entity_id": "number.m80", "value": 17}
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_import_preserves_old_per_inverter_20_w_fallback() -> None:
+    """Do not reduce legacy multi-battery progress while evidence is missing."""
+    runtime, hass = runtime_pair()
+    runtime._last_sent.update({"number.m200": 10.0, "number.m80": 100.0})
+    runtime._sent_at.update({"number.m200": 900.0, "number.m80": 900.0})
+    hass.states.get("number.m200").state = "10"
+    hass.states.get("number.m80").state = "100"
+    runtime._grid_filter.observe(1200.0, 1)
+    runtime._grid_raw_w = 1200.0
+
+    await runtime._apply({"number.m200": 300.0, "number.m80": 500.0}, now=1000.0)
+
+    commands = [call.args[2] for call in hass.services.async_call.await_args_list]
+    assert commands == [
+        {"entity_id": "number.m200", "value": 11.0},
+        {"entity_id": "number.m80", "value": 120},
+    ]
