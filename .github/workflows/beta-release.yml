@@ -66,10 +66,22 @@ jobs:
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           version="$(python -c 'import json; print(json.load(open("custom_components/sunenergyxt_ems/manifest.json", encoding="utf-8"))["version"])')"
-          case "$version" in
-            *b[0-9]*|*rc[0-9]*) ;;
-            *) echo "::error::Non-prerelease version forbidden by this workflow."; exit 1 ;;
-          esac
+          # Permit immutable historical 0.x Python betas and future strict
+          # SemVer prereleases. Never publish a stable version automatically.
+          VERSION="$version" python -c '
+          import os
+          import re
+          import sys
+
+          version = os.environ["VERSION"]
+          legacy = re.fullmatch(r"0\.\d+\.\d+b\d+", version)
+          semver = re.fullmatch(
+              r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-(alpha|beta|rc)\.(0|[1-9]\d*)",
+              version,
+          )
+          if not (legacy or semver):
+              sys.exit("Refusing automatic stable or invalid prerelease: " + version)
+          '
           tag="v$version"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "::notice::Release $tag already exists; no overwrite."
