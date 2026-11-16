@@ -226,7 +226,7 @@ async def test_options_replace_two_conflicting_export_inputs_with_one_mode(flow,
         options={"enabled": False, "feed_in": False, "feed_in_mode": "pv"},
     )
     monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: old))
-    result = await options.async_step_init()
+    result = await options.async_step_basic()
     names = [key.schema for key in result["data_schema"].schema]
     assert "feed_in_mode" in names
     assert "feed_in" not in names
@@ -329,7 +329,7 @@ async def test_setup_options_allow_simple_grid_target(flow, monkeypatch):
             )
         ),
     )
-    result = await options.async_step_init()
+    result = await options.async_step_basic()
     assert "grid_target_w" in [key.schema for key in result["data_schema"].schema]
     new = await options.async_step_init(
         {
@@ -480,7 +480,7 @@ async def test_options_display_household_and_pv_modes(flow, monkeypatch):
             )
         ),
     )
-    result = await options.async_step_init()
+    result = await options.async_step_basic()
     assert "feed_in_mode" in [key.schema for key in result["data_schema"].schema]
     saved = await options.async_step_init(
         {"enabled": False, "feed_in": True, "feed_in_mode": "household", "grid_target_w": 20}
