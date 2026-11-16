@@ -1450,7 +1450,7 @@ class EMSRuntime:
                     self._startup_export_last_reduction_seq = None
                     self._grid_filter.reset()
                     self._last_processed_grid = None
-                    self.controller._reset_pid()
+                    self.controller._reset_regulation()
                     self.status = "waiting"
                     self.last_error = None
                     _LOGGER.info("Startup export corrected; controlled regulation may resume")
