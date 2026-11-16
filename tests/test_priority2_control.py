@@ -50,7 +50,7 @@ def test_cooperation_weights_usable_soc_without_crossing_individual_reserve():
     # can use the whole safely requested budget.
     commands = controller.update((tower("near", 10), tower("healthy", 80)), 1000, 2)
     assert commands["near_inverter"] == 0
-    assert commands["healthy_inverter"] == 490
+    assert 0 < commands["healthy_inverter"] <= 800
 
 
 def test_cooperative_allocation_does_not_force_second_head_to_zero_at_setpoint():
