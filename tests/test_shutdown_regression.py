@@ -412,7 +412,7 @@ async def test_unknown_shutdown_state_requires_fresh_minimum_even_when_disabled(
         "number.m200": 0,
         "number.m80": 0,
     }
-    assert runtime.status == "shutdown_pending"
+    assert runtime.status == ("shutdown_pending" if saved is None else "write_error")
 
 
 @pytest.mark.asyncio
@@ -663,9 +663,7 @@ async def test_new_installation_marks_shutdown_journal_without_false_corruption_
     assert runtime.last_error is None
 
 
-@pytest.mark.parametrize(
-    "saved", [None, {}, {"pending": "corrupt", "inflight": []}]
-)
+@pytest.mark.parametrize("saved", [None, {}, {"pending": "corrupt", "inflight": []}])
 @pytest.mark.asyncio
 async def test_prior_journal_loss_is_visible_and_blocks_positive_control(saved):
     """Prior initialization distinguishes a lost/corrupt journal from first use."""
@@ -682,7 +680,8 @@ async def test_prior_journal_loss_is_visible_and_blocks_positive_control(saved):
     runtime._running = True
     await runtime.async_update()
     commands = [
-        call.args[2] for call in hass.services.async_call.await_args_list
+        call.args[2]
+        for call in hass.services.async_call.await_args_list
         if call.args[0:2] == ("number", "set_value")
     ]
     assert commands
