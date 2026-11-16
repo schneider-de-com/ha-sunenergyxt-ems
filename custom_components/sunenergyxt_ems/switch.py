@@ -9,7 +9,15 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_ENABLED, CONF_FEED_IN, DOMAIN
+from .const import (
+    CONF_ENABLED,
+    CONF_FEED_IN,
+    CONF_FEED_IN_MODE,
+    DOMAIN,
+    FEED_IN_MODE_HOUSEHOLD,
+    FEED_IN_MODE_PV,
+    configured_export_mode,
+)
 from .runtime import EMSRuntime
 
 
@@ -49,12 +57,19 @@ class EMSToggle(SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return the persisted setting."""
+        if self._key == CONF_FEED_IN:
+            return configured_export_mode(self._entry.options) == FEED_IN_MODE_PV
         return bool(self._entry.options.get(self._key, self._key == CONF_ENABLED))
 
     async def async_turn_on(self, **kwargs: object) -> None:
         """Enable one control option."""
+        changes = {self._key: True}
+        if self._key == CONF_FEED_IN:
+            # One consistent choice from either the UI selector or the
+            # existing compatible switch entity.
+            changes[CONF_FEED_IN_MODE] = FEED_IN_MODE_PV
         self._runtime.hass.config_entries.async_update_entry(
-            self._entry, options={**self._entry.options, self._key: True}
+            self._entry, options={**self._entry.options, **changes}
         )
         self.async_write_ha_state()
 
@@ -62,8 +77,11 @@ class EMSToggle(SwitchEntity):
         """Record the shutdown before persisting a disabled EMS switch."""
         if self._key == CONF_ENABLED and self.is_on:
             await self._runtime.async_disable()
+        changes = {self._key: False}
+        if self._key == CONF_FEED_IN:
+            changes[CONF_FEED_IN_MODE] = FEED_IN_MODE_HOUSEHOLD
         self._runtime.hass.config_entries.async_update_entry(
-            self._entry, options={**self._entry.options, self._key: False}
+            self._entry, options={**self._entry.options, **changes}
         )
         self.async_write_ha_state()
 
