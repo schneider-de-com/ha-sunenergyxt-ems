@@ -87,18 +87,27 @@ def entry_and_runtime():
 
 
 @pytest.mark.asyncio
-async def test_pid_is_directly_discoverable_and_switchable_in_ha():
-    entry, runtime, writes = entry_and_runtime()
+async def test_one_controller_has_no_user_switch_for_competing_pid_algorithm():
+    entry, runtime, _writes = entry_and_runtime()
+    entry.options["adaptive_pid"] = True  # Historical user option remains on disk.
     entities = []
     await switch.async_setup_entry(runtime.hass, entry, entities.extend)
     by_id = {e.unique_id: e for e in entities}
-    pid = by_id[f"{entry.entry_id}_adaptive_pid"]
-    assert pid.is_on is False
-    pid.async_write_ha_state = lambda: None
-    await pid.async_turn_on()
-    assert entry.options["adaptive_pid"] is True
-    assert entry.options["enabled"] is False
-    assert writes[-1][1] is None
+    assert f"{entry.entry_id}_enabled" in by_id
+    assert f"{entry.entry_id}_feed_in" in by_id
+    assert f"{entry.entry_id}_adaptive_pid" not in by_id
+    assert entry.options["adaptive_pid"] is True  # No destructive migration.
+
+
+@pytest.mark.asyncio
+async def test_legacy_pid_flag_is_not_a_user_selectable_options_flow_mode(monkeypatch):
+    entry, runtime, _writes = entry_and_runtime()
+    handler = config_flow.EMSEntryOptionsFlow()
+    monkeypatch.setattr(config_flow.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
+    handler.hass = runtime.hass
+    form = await handler.async_step_init()
+    fields = {getattr(marker, "schema", str(marker)) for marker in form["data_schema"].schema}
+    assert "adaptive_pid" not in fields
 
 
 @pytest.mark.asyncio
