@@ -163,16 +163,23 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 fields[vol.Required(f"lower_{index}", default=10 if lower is None else lower)] = (
                     vol.All(vol.Coerce(float), vol.Range(min=0, max=90))
                 )
-            upper = battery.get(CONF_UPPER)
-            if isinstance(upper, str) and upper:
-                fields[vol.Required(f"upper_{index}", default=upper)] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="number")
-                )
-            else:
-                upper_kwargs = {"default": upper} if upper is not None else {}
-                fields[vol.Optional(f"upper_{index}", **upper_kwargs)] = vol.All(
-                    vol.Coerce(float), vol.Range(min=70, max=100)
-                )
+            # BK/BK Plus use BMS hardware ceilings; no redundant
+            # charge-target override can change that physical limit.
+            if (
+                not isinstance(self.hass, HomeAssistant)
+                or registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC))
+                is None
+            ):
+                upper = battery.get(CONF_UPPER)
+                if isinstance(upper, str) and upper:
+                    fields[vol.Required(f"upper_{index}", default=upper)] = (
+                        selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
+                    )
+                else:
+                    upper_kwargs = {"default": upper} if upper is not None else {}
+                    fields[vol.Optional(f"upper_{index}", **upper_kwargs)] = vol.All(
+                        vol.Coerce(float), vol.Range(min=70, max=100)
+                    )
             fields[
                 vol.Optional(
                     f"dc_output_{index}",
