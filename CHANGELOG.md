@@ -4,7 +4,7 @@ Human-readable changes follow [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ## [Unreleased]
 
-**Target milestone: `1.0.0-beta.1` (not yet published).** This section consolidates the important features and fixes from the legacy `0.1.0b3–0.1.1b18` experimental releases and subsequent development. **Most features listed below already exist in published betas**; their inclusion here is the curated baseline for the 1.0.0 beta, not a claim of new implementation or stable physical acceptance.
+**Candidate milestone: `1.0.0-beta.1` (publication depends on full green CI/HACS/CodeQL).** This section consolidates the important features and fixes from the legacy `0.1.0b3–0.1.1b18` experimental releases and subsequent development. **Most features listed below already exist in published betas**; their inclusion here is the curated baseline for the 1.0.0 beta, not a claim of new implementation or stable physical acceptance.
 
 ### Added
 
@@ -26,6 +26,7 @@ Human-readable changes follow [Keep a Changelog 1.1.0](https://keepachangelog.co
 ### Fixed
 
 - PID integral carry-over after entering the grid-target deadband or reversing import/export direction, which could otherwise command an inappropriate increase.
+- A severe startup net-export sample no longer causes an irreversible software lockout: subsequent distinct meter reports trigger proportional reductions and a staged restart only after settled actuator feedback and fresh stable import (PR #129).
 - A normal change of preferred storage head no longer forces the previous, still-eligible inverter to 0%; allocation remains bounded by its actual available reserve, confirmed limits and independent safety gates.
 - Recovery of pending inverter minimum commands across disconnect/reconnect, startup and Home Assistant restart; errors remain explicit if the hardware cannot be reached or acknowledged.
 - Loss or staleness of one configured storage DC sensor now lowers only its own inverter outputs and keeps healthy independent heads eligible after acknowledged safe reduction; diagnostics identify the affected tower.
@@ -38,7 +39,7 @@ Human-readable changes follow [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 - Twenty-seven duplicated `RELEASE_NOTES_*.md` files from the repository. Their important user-facing history is consolidated here; previously published [GitHub Releases](https://github.com/schneider-de-com/ha-sunenergyxt-ems/releases), tags and Git history remain intact. Future prerelease notes are generated from this changelog.
 
-**Still open for `1.0.0-beta.1`:** correct the permanent export-only startup lockout ([#53](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/53), draft [PR #129](https://github.com/schneider-de-com/ha-sunenergyxt-ems/pull/129)); confirm stable coordinated inverter dispatch and independent partial-failure recovery ([#27](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/27), [#68](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/68)); and document tested actuator profiles honestly. Beta publication requires software/installation checks and known limits, not a claim of safe unattended field operation. **Stable `1.0.0` remains gated by meaningful 24-hour two-inverter field evidence, genuine hardware ACK and tested update/rollback.**
+**Field-validation gaps:** The original Deye M200 95.5%→0% transition and large net export on 15 November are not yet proven to a physical root cause. The controller-side permanent software lockout, the unnecessary emergency role-switch zero, the unsupported DC software latch and the all-tower stale-DC reaction have been corrected and regression-tested; **this does not demonstrate that every physical Deye 0%→positive AC transient or every inverter firmware is safe**. The newly introduced BK215 Plus and non-Deye inverter mappings still require separately verified model/firmware write/readback and actual AC behavior. This is **experimental beta software, not approved for unattended operation**. See [#53](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/53), [#27](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/27) and [the compatibility matrix](docs/device-compatibility.md). **Stable `1.0.0` remains gated by meaningful 24-hour two-inverter field evidence, real device acknowledgements and tested install/update/rollback.**
 
 Forecast-based economic optimization and automatic tariff dispatch are **outside the 1.0.0-beta.1 core scope** and require separate assessment.
 
