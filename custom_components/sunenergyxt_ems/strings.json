@@ -231,13 +231,13 @@
         "title": "Expert settings",
         "data": {
           "feed_in_hysteresis_pct": "PV mode: SoC hysteresis (percentage points)",
-          "adaptive_pid": "Enable adaptive PID control",
           "start_hold_seconds": "Inverter startup settling time (seconds)",
           "pid_kp_min": "PID proportional gain Kp at small import errors",
           "pid_kp_max": "PID Kp at large import errors",
           "pid_kp_export": "PID proportional gain Kp during export",
           "pid_ki": "PID integral gain Ki",
-          "pid_kd": "PID derivative gain Kd"
+          "pid_kd": "PID derivative gain Kd",
+          "migrate_legacy_pid": "Migrate existing PID configuration to unified regulator (one time; previous parameters retained for rollback)"
         },
         "description": "Adjust advanced control parameters only if their effects are understood. Every existing parameter remains available for legacy installations."
       }
