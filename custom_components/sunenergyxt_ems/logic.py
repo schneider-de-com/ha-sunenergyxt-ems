@@ -182,7 +182,7 @@ class GridMedianFilter:
         recent = list(self._samples)
         if sum(abs(watts - requested_w) <= 150 for watts in recent) < 3:
             return requested_w
-        noise = median(abs(current - prior) for prior, current in zip(recent, recent[1:]))
+        noise = median(abs(current - prior) for prior, current in zip(recent, recent[1:], strict=False))
         margin = max(0.0, (noise - 30.0) * 0.25)
         return min(200.0, requested_w + margin)
 
