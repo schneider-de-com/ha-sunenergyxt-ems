@@ -477,8 +477,11 @@ class Controller:
             )
             for battery in ranked
         )
-        if exiting_full and grid_w < 0:
-            correction = grid_w - self.grid_target_w
+        if exiting_full and grid_w <= self.grid_target_w:
+            # A stale/missing PV source revokes the prior export allowance
+            # immediately, even when the meter is at zero rather than negative.
+            # Fresh positive import remains ordinary household load-following.
+            correction = -current
         total_w = max(0, current + correction)
         commands = safe.copy()
         for battery in ranked:
