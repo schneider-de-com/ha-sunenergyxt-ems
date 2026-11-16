@@ -174,6 +174,16 @@ class EMSStatus(SensorEntity):
         return {
             "last_error": runtime.last_error,
             "control_mode": "adaptive_pid" if runtime.controller.adaptive_pid else "proportional",
+            "grid_target_configured_w": runtime.controller.grid_target_w,
+            "grid_target_effective_w": runtime.controller._grid_target(),
+            "cooperative_dispatch_active": runtime.controller.state.cooperative_active,
+            "cooperative_dispatch_reason": (
+                "confirmed_sustained_import"
+                if runtime.controller.cooperative_dispatch
+                else "retained_confirmed_split"
+                if runtime.controller.state.cooperative_active
+                else "ordinary_allocation"
+            ),
             "requested_total_w": _last_dispatched_total(runtime),
             "requested_total_semantics": "last_successful_ha_dispatch_per_inverter",
             "pending_actuator_reads": sorted(runtime._pending),

@@ -864,6 +864,11 @@ class EMSRuntime:
             if confirmed_import is not None
             else None
         )
+        if self._grid_filter.rapid_import_decline():
+            # A quickly disappearing household load must immediately revoke
+            # adaptive high-import acceleration, even if each sample >500 W.
+            available_increase_budget_w = MAX_POSITIVE_COMMAND_STEP_W
+        started_positive = False
         for entity_id, target in targets.items():
             high_import = (
                 self._grid_raw_w is not None
@@ -987,6 +992,18 @@ class EMSRuntime:
             reported_value = self._float(state.state)
             pending = self._pending.get(entity_id)
             if (
+                started_positive
+                and not emergency
+                and not force
+                and reported_value is not None
+                and reported_value <= 0
+                and value > 0
+            ):
+                # Serialize first startup of multiple microinverters: an
+                # acknowledged register write is not AC burst evidence.
+                # On the next meter/ACK cycle the second head may start.
+                continue
+            if (
                 not force
                 and emergency
                 and pending is not None
@@ -1074,6 +1091,14 @@ class EMSRuntime:
                 self.status = "write_error"
                 _LOGGER.warning("Unable to set %s limit: %s", entity_id, exc)
                 continue
+            if (
+                not emergency
+                and not force
+                and reported_value is not None
+                and reported_value <= 0
+                and value > 0
+            ):
+                started_positive = True
             self._start_hold.record(
                 entity_id,
                 before_w=(reported_value or 0) * rating / 100
@@ -1269,6 +1294,13 @@ class EMSRuntime:
                     ),
                 )
                 for battery in self._batteries()
+            )
+            self.controller.cooperative_dispatch = (
+                self._grid_filter.sustained_import()
+                and not self._intentional_export_active(batteries)
+            )
+            self.controller.effective_grid_target_w = self._grid_filter.dynamic_target(
+                self.controller.grid_target_w
             )
             if self._grid_raw_w is not None and sequence != self._last_raw_grid_sequence:
                 # A first severe *fresh* signed-grid export during a startup
