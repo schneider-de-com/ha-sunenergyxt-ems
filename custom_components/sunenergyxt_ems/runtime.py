@@ -1222,7 +1222,11 @@ class EMSRuntime:
                 bool(self.entry.options.get(CONF_FEED_IN, False))
                 and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
             )
-            self.controller.adaptive_pid = bool(self.entry.options.get("adaptive_pid", False))
+            # One deployed closed-loop policy: the conservative proportional
+            # feedback plus adaptive grid reserve and coordinated actuator ramp.
+            # Historical PID options remain persisted for rollback, but are
+            # not an alternate user-selectable runtime strategy.
+            self.controller.adaptive_pid = False
             self.controller.pid_gains = PIDGains(
                 kp_min=float(self.entry.options.get("pid_kp_min", 0.5)),
                 kp_max=float(self.entry.options.get("pid_kp_max", 0.9)),
@@ -1626,10 +1630,9 @@ class EMSRuntime:
             bool(self.entry.options.get(CONF_FEED_IN, False))
             and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
         )
-        adaptive = bool(self.entry.options.get("adaptive_pid", False))
-        if adaptive != self.controller.adaptive_pid:
-            self.controller.adaptive_pid = adaptive
-            self.controller._reset_pid()
+        # Retain old PID settings in the config entry for reversible migration.
+        # They must not silently toggle the live algorithm on options reload.
+        self.controller.adaptive_pid = False
         self._start_hold.seconds = float(self.entry.options.get("start_hold_seconds", 30.0))
         if not enabled and self.controller.enabled:
             await self.async_disable()
