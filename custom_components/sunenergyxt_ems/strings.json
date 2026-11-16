@@ -124,7 +124,8 @@
           "basic": "Basic operation",
           "devices": "Devices and measurement sources",
           "expert": "Expert settings"
-        }
+        },
+        "description": "Choose which Home Assistant EMS options to change. Basic operation, source configuration, and expert settings are separate so a simple edit never silently changes existing device mappings."
       },
       "basic": {
         "title": "Basic operation",
@@ -133,7 +134,8 @@
           "grid_target_w": "Grid import target (W)",
           "feed_in_mode": "Output mode (exclusive)",
           "planning_enabled": "Enable forecast storage priority"
-        }
+        },
+        "description": "Daily EMS enable, the mutually exclusive export strategy, grid-import target and optional planning setting. Other mappings remain unchanged."
       },
       "devices": {
         "title": "Devices and measurement sources",
@@ -222,7 +224,8 @@
           "output_limit_8": "Storage 8: combined AC setpoint budget (W; verify hardware rating)",
           "output_limit_9": "Storage 9: combined AC setpoint budget (W; verify hardware rating)",
           "output_limit_10": "Storage 10: combined AC setpoint budget (W; verify hardware rating)"
-        }
+        },
+        "description": "Inspect physical towers, inverter mappings and optional PV, AC, EV and forecast sources. User-confirmed capacities and ratings are retained."
       },
       "expert": {
         "title": "Expert settings",
@@ -235,7 +238,8 @@
           "pid_kp_export": "PID proportional gain Kp during export",
           "pid_ki": "PID integral gain Ki",
           "pid_kd": "PID derivative gain Kd"
-        }
+        },
+        "description": "Adjust advanced control parameters only if their effects are understood. Every existing parameter remains available for legacy installations."
       }
     },
     "error": {
