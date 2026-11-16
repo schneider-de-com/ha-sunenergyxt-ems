@@ -152,11 +152,11 @@ async def test_existing_bk215_upper_soc_mapping_can_be_changed_in_options(monkey
     handler = config_flow.EMSEntryOptionsFlow()
     monkeypatch.setattr(config_flow.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
     handler.hass = runtime.hass
-    form = await handler.async_step_init()
+    form = await handler.async_step_devices()
     fields = {getattr(marker, "schema", str(marker)) for marker in form["data_schema"].schema}
     assert "upper_source_1" in fields
     assert "upper_pct_2" in fields
-    result = await handler.async_step_init(
+    result = await handler.async_step_devices(
         {
             "enabled": False,
             "feed_in": False,
