@@ -219,6 +219,29 @@ async def test_positive_options_flow_returns_editable_switches(flow, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_options_replace_two_conflicting_export_inputs_with_one_mode(flow, monkeypatch):
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    old = SimpleNamespace(
+        data={"batteries": []},
+        options={"enabled": False, "feed_in": False, "feed_in_mode": "pv"},
+    )
+    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: old))
+    result = await options.async_step_init()
+    names = [key.schema for key in result["data_schema"].schema]
+    assert "feed_in_mode" in names
+    assert "feed_in" not in names
+    mode = next(key for key in result["data_schema"].schema if key.schema == "feed_in_mode")
+    assert mode.default() == "household"  # Disabled old checkbox still wins.
+
+    saved = await options.async_step_init({"enabled": False, "feed_in_mode": "pv"})
+    assert saved["data"]["feed_in_mode"] == "pv"
+    assert saved["data"]["feed_in"] is True
+    saved = await options.async_step_init({"enabled": False, "feed_in_mode": "household"})
+    assert saved["data"]["feed_in_mode"] == "household"
+    assert saved["data"]["feed_in"] is False
+
+
+@pytest.mark.asyncio
 async def test_reconfigure_keeps_existing_batteries_and_preserves_options(flow, monkeypatch):
     entry = SimpleNamespace(
         data={

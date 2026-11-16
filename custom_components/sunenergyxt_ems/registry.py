@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import timedelta
+from math import isfinite
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util.dt import utcnow
 
 from .discovery import (
     BK_SOURCE_DOMAINS,
@@ -223,6 +226,65 @@ def registered_bk_hardware_sources(
     return sources
 
 
+# The BK215/215 Plus head and each confirmed compatible B215 extension
+# contribute 2,150 Wh nominal, according to the supported product family.
+# This is capacity metadata, not an independent usable-kWh measurement.
+BK_MODULE_CAPACITY_WH = 2150
+
+
+def _fresh_bk_percent(hass: HomeAssistant, source: str | None) -> float | None:
+    """Accept only recently reported, numeric, correct-unit BMS telemetry."""
+    if not source:
+        return None
+    state = hass.states.get(source)
+    if state is None or state.attributes.get("unit_of_measurement") != "%":
+        return None
+    stamp = getattr(state, "last_reported", None) or getattr(state, "last_updated", None)
+    if stamp is None:
+        return None
+    age = utcnow() - stamp
+    if age < timedelta(seconds=-5) or age > timedelta(seconds=90):
+        return None
+    try:
+        value = float(state.state)
+    except TypeError, ValueError:
+        return None
+    return value if isfinite(value) and 0 <= value <= 100 else None
+
+
+def suggested_bk_capacity_wh(hass: HomeAssistant, soc_entity_id: str | None) -> int | None:
+    """Offer 2,150 Wh per *positively observed* BK module, never by name.
+
+    One missing side of a module's SOC/hardware pair is ambiguous and
+    prevents autodetection. Both unavailable means not positively detected;
+    preserve a user's previously confirmed capacity rather than overwriting
+    it with this lower observed count during later configuration edits.
+    """
+    sources = registered_bk_hardware_sources(hass, soc_entity_id)
+    if sources is None:
+        return None
+    head_limit = _fresh_bk_percent(hass, sources.get("head_limit"))
+    if (
+        _fresh_bk_percent(hass, sources.get("head_soc")) is None
+        or head_limit is None
+        or not 70 <= head_limit <= 100
+    ):
+        return None
+    modules = 1
+    for index in range(1, 8):
+        measured = _fresh_bk_percent(hass, sources.get(f"extension_soc_{index}"))
+        hardware = _fresh_bk_percent(hass, sources.get(f"extension_limit_{index}"))
+        if (measured is None) != (hardware is None):
+            return None
+        if hardware is not None:
+            # A zero or corrupt module hardware ceiling is not a physically
+            # validated attached B215; do not quietly count or drop it.
+            if not 70 <= hardware <= 100:
+                return None
+            modules += 1
+    return modules * BK_MODULE_CAPACITY_WH
+
+
 def registered_connection(hass: HomeAssistant, inverter_entity_id: str) -> str | None:
     """Find a Solarman connectivity binary sensor by stable device registry ID.
 
@@ -315,17 +377,65 @@ def suggested_grid(hass: HomeAssistant) -> str | None:
 
 
 def device_rated_w(hass: HomeAssistant, entity_id: str) -> float | None:
-    """Infer watts only when the actual control entity explicitly provides them."""
+    """Read an actuator's rated AC watts from its own hardware contract.
+
+    W controls may advertise a rated maximum directly. For a percent Deye
+    control, read the exact Solarman-owned *same-device* Device sensor;
+    %/100 alone never proves rated inverter output. No name matching.
+    """
     state = hass.states.get(entity_id)
-    if state is None:
+    if state is None or getattr(state, "state", None) in ("unknown", "unavailable"):
         return None
     unit = state.attributes.get("unit_of_measurement")
-    if unit != "W":
-        # Percent controls don't imply any nominal AC rating.
+    if unit == "W":
+        maximum = state.attributes.get("max")
+        if (
+            isinstance(maximum, (float, int))
+            and not isinstance(maximum, bool)
+            and isfinite(maximum)
+            and 0 < maximum <= 5000
+        ):
+            return float(maximum)
         return None
-    maximum = state.attributes.get("max")
-    if isinstance(maximum, (float, int)) and 0 < maximum <= 5000:
-        return float(maximum)
+    if unit != "%":
+        return None
+
+    registry = er.async_get(hass)
+    control = registry.async_get(entity_id)
+    if (
+        control is None
+        or control.platform.lower() != "solarman"
+        or control.domain != "number"
+        or not control.config_entry_id
+        or not control.device_id
+        or control.unique_id.lower()
+        != f"{control.config_entry_id.lower()}_active_power_regulation_number"
+    ):
+        return None
+    expected = f"{control.config_entry_id.lower()}_device_sensor"
+    matches = [
+        candidate.entity_id
+        for candidate in getattr(registry, "entities", {}).values()
+        if candidate.domain == "sensor"
+        and candidate.platform.lower() == "solarman"
+        and candidate.device_id == control.device_id
+        and candidate.config_entry_id == control.config_entry_id
+        and candidate.unique_id.lower() == expected
+        and candidate.disabled_by is None
+    ]
+    if len(matches) != 1:
+        return None
+    device = hass.states.get(matches[0])
+    if device is None or device.state != "Microinverter":
+        return None
+    rated = device.attributes.get("Rated Power")
+    if (
+        isinstance(rated, (float, int))
+        and not isinstance(rated, bool)
+        and isfinite(rated)
+        and 0 < rated <= 5000
+    ):
+        return float(rated)
     return None
 
 

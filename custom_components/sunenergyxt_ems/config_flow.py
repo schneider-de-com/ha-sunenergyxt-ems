@@ -31,6 +31,7 @@ from .const import (
     DOMAIN,
     FEED_IN_MODE_HOUSEHOLD,
     FEED_IN_MODE_PV,
+    configured_export_mode,
 )
 from .forecast import ForecastError
 from .registry import (
@@ -39,6 +40,8 @@ from .registry import (
     device_rated_w,
     forecast_solar_entry,
     inverter_device_suggestions,
+    registered_bk_hardware_sources,
+    suggested_bk_capacity_wh,
     suggested_forecasts,
     suggested_grid,
 )
@@ -160,16 +163,22 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 fields[vol.Required(f"lower_{index}", default=10 if lower is None else lower)] = (
                     vol.All(vol.Coerce(float), vol.Range(min=0, max=90))
                 )
-            upper = battery.get(CONF_UPPER)
-            if isinstance(upper, str) and upper:
-                fields[vol.Required(f"upper_{index}", default=upper)] = selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="number")
-                )
-            else:
-                upper_kwargs = {"default": upper} if upper is not None else {}
-                fields[vol.Optional(f"upper_{index}", **upper_kwargs)] = vol.All(
-                    vol.Coerce(float), vol.Range(min=70, max=100)
-                )
+            # BK/BK Plus use BMS hardware ceilings; no redundant
+            # charge-target override can change that physical limit.
+            if (
+                not isinstance(self.hass, HomeAssistant)
+                or registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC)) is None
+            ):
+                upper = battery.get(CONF_UPPER)
+                if isinstance(upper, str) and upper:
+                    fields[vol.Required(f"upper_{index}", default=upper)] = selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="number")
+                    )
+                else:
+                    upper_kwargs = {"default": upper} if upper is not None else {}
+                    fields[vol.Optional(f"upper_{index}", **upper_kwargs)] = vol.All(
+                        vol.Coerce(float), vol.Range(min=70, max=100)
+                    )
             fields[
                 vol.Optional(
                     f"dc_output_{index}",
@@ -262,9 +271,11 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 for battery_index, entities in enumerate(pending):
                     battery_inverters = []
                     for inverter_index, entity in enumerate(entities):
-                        rating = device_rated_w(self.hass, entity)
-                        if rating is None and self._reconfigure:
-                            rating = next(
+                        # An existing user-confirmed rating is authoritative
+                        # during reconfigure. Discovery supplies missing/new
+                        # devices, never silently overwrites a saved mapping.
+                        rating = (
+                            next(
                                 (
                                     previous[CONF_RATED_W]
                                     for stored in self._previous.get(CONF_BATTERIES, [])
@@ -273,6 +284,11 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 ),
                                 None,
                             )
+                            if self._reconfigure
+                            else None
+                        )
+                        if rating is None:
+                            rating = device_rated_w(self.hass, entity)
                         battery_inverters.append(
                             {
                                 "entity_id": entity,
@@ -387,10 +403,17 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         return self.async_update_reload_and_abort(entry, data_updates=data)
                 else:
                     self._abort_if_unique_id_configured()
+                    capacities = {}
+                    if isinstance(self.hass, HomeAssistant):
+                        for battery in self._batteries:
+                            suggested = suggested_bk_capacity_wh(self.hass, battery.get(CONF_SOC))
+                            if suggested is not None:
+                                capacities[battery[CONF_DEVICE]] = suggested
                     return self.async_create_entry(
                         title="SunEnergyXT EMS",
                         data=data,
                         options={
+                            "capacity_wh": capacities,
                             # New installations must explicitly opt in to physical control.
                             # Reconfigure never changes the existing enabled intent.
                             CONF_ENABLED: False,
@@ -433,6 +456,29 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             requested = dict(user_input)
+            # One mutually exclusive selector replaces the old checkbox +
+            # mode pair. API callers submitting the historical checkbox
+            # remain accepted. Explicit selected mode always wins.
+            legacy_enabled = requested.pop(CONF_FEED_IN, None)
+            if CONF_FEED_IN_MODE not in requested:
+                if legacy_enabled is True:
+                    requested[CONF_FEED_IN_MODE] = self.config_entry.options.get(
+                        CONF_FEED_IN_MODE, FEED_IN_MODE_PV
+                    )
+                elif legacy_enabled is False:
+                    requested[CONF_FEED_IN_MODE] = FEED_IN_MODE_HOUSEHOLD
+                else:
+                    requested[CONF_FEED_IN_MODE] = configured_export_mode(self.config_entry.options)
+            selected_mode = requested[CONF_FEED_IN_MODE]
+            if selected_mode not in (FEED_IN_MODE_HOUSEHOLD, FEED_IN_MODE_PV):
+                errors["base"] = "invalid_export_mode"
+            requested[CONF_FEED_IN] = selected_mode == FEED_IN_MODE_PV
+            auto_forecast = (
+                suggested_forecasts(self.hass)
+                if isinstance(getattr(self, "hass", None), HomeAssistant)
+                and not self.config_entry.options.get("pv_forecast")
+                else {}
+            )
             forecast_maps = {}
             for device, suffix, old in [
                 ("aggregate", "", self.config_entry.options.get("pv_forecast", {})),
@@ -448,7 +494,12 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 ),
             ]:
                 selected = {
-                    role: requested.pop(f"pv_forecast_{role}{suffix}", old.get(role))
+                    role: requested.pop(
+                        f"pv_forecast_{role}{suffix}",
+                        old.get(role, auto_forecast.get(role))
+                        if device == "aggregate"
+                        else old.get(role),
+                    )
                     for role in ("today", "tomorrow", "updated")
                 }
                 complete = all(selected.values())
@@ -493,7 +544,10 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             for index, battery in enumerate(existing, start=1):
                 device = battery[CONF_DEVICE]
                 capacity = requested.pop(f"capacity_wh_{index}", capacities.get(device))
+                if capacity is None and isinstance(self.hass, HomeAssistant):
+                    capacity = suggested_bk_capacity_wh(self.hass, battery.get(CONF_SOC))
                 if capacity is not None:
+                    # Auto-infer only when no confirmed/manual value exists.
                     capacities[device] = capacity
                 # AC command budget per physical head; extensions do not add actuators.
                 # No device DC/BMS rating is inferred from nominal inverter power.
@@ -551,7 +605,14 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     self.config_entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV),
                 )
                 == FEED_IN_MODE_PV
-                and any(battery.get(CONF_UPPER) is None for battery in new_batteries)
+                and any(
+                    battery.get(CONF_UPPER) is None
+                    and (
+                        not isinstance(self.hass, HomeAssistant)
+                        or registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC)) is None
+                    )
+                    for battery in new_batteries
+                )
             ):
                 errors["base"] = "missing_upper"
             if float(requested.get("pid_kp_max", 0.9)) < float(requested.get("pid_kp_min", 0.5)):
@@ -603,22 +664,18 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 default=self.config_entry.options.get(CONF_ENABLED, True),
             ): selector.BooleanSelector(),
             vol.Required(
-                CONF_FEED_IN,
-                default=self.config_entry.options.get(CONF_FEED_IN, False),
-            ): selector.BooleanSelector(),
-            vol.Required(
                 CONF_FEED_IN_MODE,
-                default=self.config_entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV),
+                default=configured_export_mode(self.config_entry.options),
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
                         {
                             "value": FEED_IN_MODE_HOUSEHOLD,
-                            "label": "Household load / Haushaltslast",
+                            "label": "Household load · no intentional export / Haushaltslast",
                         },
                         {
                             "value": FEED_IN_MODE_PV,
-                            "label": "Full charge then max inverter / PV-Erzeugung",
+                            "label": "PV only after verified BMS full / Nur PV nach BMS-Vollladung",
                         },
                     ]
                 )
@@ -681,6 +738,8 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         for index, battery in enumerate(existing, start=1):
             device = battery[CONF_DEVICE]
             capacity = self.config_entry.options.get("capacity_wh", {}).get(device)
+            if capacity is None and isinstance(self.hass, HomeAssistant):
+                capacity = suggested_bk_capacity_wh(self.hass, battery.get(CONF_SOC))
             budget = self.config_entry.options.get(CONF_OUTPUT_LIMITS, {}).get(device)
             max_rated = sum(
                 float(inv[CONF_RATED_W])
@@ -729,6 +788,14 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         # the user inspect or correct it. Changing this EMS mapping never
         # changes the BK215 hardware charging ceiling.
         for index, battery in enumerate(existing, start=1):
+            if (
+                isinstance(self.hass, HomeAssistant)
+                and registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC)) is not None
+            ):
+                # The BMS hardware limit is authoritative; do not offer a
+                # redundant EMS number which cannot move physical full charge.
+                # Keep the old stored mapping intact for rollback.
+                continue
             upper = battery.get(CONF_UPPER)
             source = upper if isinstance(upper, str) else None
             fields[

@@ -120,6 +120,7 @@
     "step": {
       "init": {
         "title": "EMS settings",
+        "description": "Choose one output mode: household demand (no intentional export), or fresh PV power only after verified BMS full. The BK BMS hardware ceiling is authoritative. Detected capacity remains editable and existing values are preserved.",
         "data": {
           "enabled": "Enable EMS",
           "feed_in": "Feed-in after full charge",
@@ -129,7 +130,7 @@
           "upper_3": "Battery 3: upper SoC limit (feed-in only)",
           "upper_4": "Battery 4: upper SoC limit (feed-in only)",
           "upper_5": "Battery 5: upper SoC limit (feed-in only)",
-          "feed_in_mode": "Feed-in behavior",
+          "feed_in_mode": "Output mode (exclusive)",
           "feed_in_hysteresis_pct": "PV mode: SoC hysteresis (percentage points)",
           "adaptive_pid": "Enable adaptive PID control",
           "start_hold_seconds": "Inverter startup settling time (seconds)",
@@ -227,6 +228,7 @@
       "invalid_pid_gains": "PID maximum Kp must be at least its minimum.",
       "incomplete_forecast_mapping": "Choose matching daily sources from one forecast entry, or clear the group. Forecast.Solar needs today and tomorrow; Solcast also needs the update timestamp.",
       "invalid_pv_power_source": "Select an existing power source in W or kW, or remove the optional PV source.",
+      "invalid_export_mode": "Select exactly one supported output mode.",
       "invalid_output_limit": "AC setpoint budget must be positive and at most the total rated inverter output."
     }
   },

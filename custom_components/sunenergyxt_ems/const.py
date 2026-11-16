@@ -1,5 +1,7 @@
 """Shared configuration keys for SunEnergyXT EMS."""
 
+from collections.abc import Mapping
+
 DOMAIN = "sunenergyxt_ems"
 CONF_BATTERIES = "batteries"
 CONF_GRID = "grid"
@@ -21,3 +23,15 @@ CONF_FEED_IN_MODE = "feed_in_mode"
 FEED_IN_MODE_HOUSEHOLD = "household"
 FEED_IN_MODE_PV = "pv"
 CONF_FEED_IN_HYSTERESIS = "feed_in_hysteresis_pct"
+
+
+def configured_export_mode(options: Mapping[str, object]) -> str:
+    """Read legacy settings as one effective, mutually exclusive export mode.
+
+    A stored 'feed_in=True' with household mode never authorized intentional
+    export. Keep that observed behavior during upgrades instead of promoting
+    the stale boolean into PV-only feed-in.
+    """
+    enabled = options.get(CONF_FEED_IN, False) is True
+    mode = options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV)
+    return FEED_IN_MODE_PV if enabled and mode == FEED_IN_MODE_PV else FEED_IN_MODE_HOUSEHOLD
