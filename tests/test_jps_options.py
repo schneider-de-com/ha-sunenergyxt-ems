@@ -43,8 +43,9 @@ async def test_options_save_total_capacity_including_expansion(options):
 
 
 @pytest.mark.asyncio
-async def test_options_save_pid_start_hold_full_pv_ev_and_measured_ac(options):
-    handler, _entry = options
+async def test_options_preserve_legacy_pid_and_save_tuning_pv_ev_ac(options):
+    handler, entry = options
+    entry.options["adaptive_pid"] = True
     result = await handler.async_step_init(
         {
             "enabled": False,
@@ -132,3 +133,13 @@ async def test_device_page_rejects_new_invalid_pv_mapping_but_retains_other_opti
     assert result["type"] == "form"
     assert result["errors"]["pv_input_1"] == "invalid_pv_power_source"
     assert entry.options["pv_input"] == {"bk1": "sensor.existing_pv"}
+
+
+@pytest.mark.asyncio
+async def test_old_options_payload_cannot_reenable_pid_without_explicit_migration(options):
+    handler, entry = options
+    entry.options["adaptive_pid"] = False
+    result = await handler.async_step_init({"enabled": False, "adaptive_pid": True})
+
+    assert result["type"] == "create_entry"
+    assert result["data"]["adaptive_pid"] is False
