@@ -378,7 +378,7 @@ def device_rated_w(hass: HomeAssistant, entity_id: str) -> float | None:
     %/100 alone never proves rated inverter output. No name matching.
     """
     state = hass.states.get(entity_id)
-    if state is None or state.state in ("unknown", "unavailable"):
+    if state is None or getattr(state, "state", None) in ("unknown", "unavailable"):
         return None
     unit = state.attributes.get("unit_of_measurement")
     if unit == "W":
