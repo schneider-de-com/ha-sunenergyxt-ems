@@ -259,6 +259,15 @@ async def test_sustained_import_accelerates_bounded_acknowledged_increases() -> 
     assert command["value"] == pytest.approx(11.0)
 
 
+def authorize_verified_pv_export(runtime: EMSRuntime, hass: SimpleNamespace) -> None:
+    """A selected option alone is not proof of an actual full-charge bypass."""
+    runtime.controller.feed_in = True
+    runtime.entry.data["batteries"][0]["upper"] = 90
+    runtime.entry.options["pv_input"] = {"battery1": "sensor.pv"}
+    hass.states.get.__self__["sensor.pv"] = entity(150, "W")
+    runtime.controller.state.full.add("battery1")
+
+
 @pytest.mark.parametrize("gate", ["feed_in", "startup_hold"])
 @pytest.mark.asyncio
 async def test_sustained_import_cannot_bypass_feed_in_or_startup_hold(gate: str) -> None:
@@ -271,7 +280,7 @@ async def test_sustained_import_cannot_bypass_feed_in_or_startup_hold(gate: str)
         runtime._grid_filter.observe(watts, i)
     runtime._grid_raw_w = 1100.0
     if gate == "feed_in":
-        runtime.controller.feed_in = True
+        authorize_verified_pv_export(runtime, hass)
     else:
         runtime._start_hold.record("number.m200", before_w=0, after_w=20, now=1000.0)
     await runtime._apply({"number.m200": 540}, now=1010.0)
@@ -282,7 +291,7 @@ async def test_sustained_import_cannot_bypass_feed_in_or_startup_hold(gate: str)
     assert 1.0 < command["value"] <= (2.0 if gate == "feed_in" else 11.0)
 
 
-@pytest.mark.parametrize("mode, immediate_calls", [("household", 1), ("pv", 0)])
+@pytest.mark.parametrize("mode, immediate_calls", [("household", 1), ("pv", 1)])
 @pytest.mark.asyncio
 async def test_selected_mode_controls_bounded_import_acceleration(
     monkeypatch: pytest.MonkeyPatch, mode: str, immediate_calls: int
@@ -306,7 +315,7 @@ async def test_selected_mode_controls_bounded_import_acceleration(
     assert hass.services.async_call.await_count == 1
     command = hass.services.async_call.await_args.args[2]
     assert command["entity_id"] == "number.m200"
-    assert 1.0 < command["value"] <= (11.0 if mode == "household" else 2.0)
+    assert 1.0 < command["value"] <= 11.0
 
 
 @pytest.mark.asyncio
