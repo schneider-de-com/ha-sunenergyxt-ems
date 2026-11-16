@@ -87,18 +87,17 @@ def entry_and_runtime():
 
 
 @pytest.mark.asyncio
-async def test_pid_is_directly_discoverable_and_switchable_in_ha():
+async def test_hidden_legacy_pid_does_not_offer_competing_strategy_switch():
     entry, runtime, writes = entry_and_runtime()
+    entry.options["adaptive_pid"] = True
     entities = []
     await switch.async_setup_entry(runtime.hass, entry, entities.extend)
-    by_id = {e.unique_id: e for e in entities}
-    pid = by_id[f"{entry.entry_id}_adaptive_pid"]
-    assert pid.is_on is False
-    pid.async_write_ha_state = lambda: None
-    await pid.async_turn_on()
+    ids = {entity.unique_id for entity in entities}
+    assert f"{entry.entry_id}_enabled" in ids
+    assert f"{entry.entry_id}_feed_in" in ids
+    assert f"{entry.entry_id}_adaptive_pid" not in ids
     assert entry.options["adaptive_pid"] is True
-    assert entry.options["enabled"] is False
-    assert writes[-1][1] is None
+    assert writes == []
 
 
 @pytest.mark.asyncio
