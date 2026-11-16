@@ -505,9 +505,12 @@ class Controller:
                 and self._valid_soc(battery.upper_soc)
                 and battery.upper_soc is not None
             ):
-                if battery.soc <= battery.upper_soc - self.full_hysteresis_pct:
+                if (
+                    battery.bms_full_verified is False
+                    or battery.soc <= battery.upper_soc - self.full_hysteresis_pct
+                ):
                     self.state.full.discard(battery.key)
-                elif battery.soc >= battery.upper_soc and battery.bms_full_verified is not False:
+                elif battery.soc >= battery.upper_soc:
                     # A fresh full-module BMS observation is required to enter
                     # the policy; hysteresis preserves an already-entered state.
                     self.state.full.add(battery.key)
