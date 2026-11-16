@@ -124,7 +124,8 @@
           "basic": "Grundbetrieb",
           "devices": "Geräte und Messwertquellen",
           "expert": "Experteneinstellungen"
-        }
+        },
+        "description": "Wähle den Einstellungsbereich für das EMS. Grundbetrieb, Geräte- und Messwertquellen sowie Expertenwerte sind getrennt, damit bestehende Einstellungen und Gerätezuordnungen beim Speichern erhalten bleiben."
       },
       "basic": {
         "title": "Grundbetrieb",
@@ -133,7 +134,8 @@
           "grid_target_w": "Netzbezug-Zielwert (W)",
           "feed_in_mode": "Ausgabemodus (exklusiv)",
           "planning_enabled": "Prognosebasierte Speicherpriorität aktivieren"
-        }
+        },
+        "description": "Aktivierung, Einspeiseverhalten, Netzbezugspuffer und optionale Planung für den normalen Betrieb einstellen. Gerätezuordnungen bleiben unverändert."
       },
       "devices": {
         "title": "Geräte und Messwertquellen",
@@ -222,7 +224,8 @@
           "output_limit_8": "Speicher 8: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
           "output_limit_9": "Speicher 9: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
           "output_limit_10": "Speicher 10: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)"
-        }
+        },
+        "description": "Speichersysteme, Wechselrichter, bestätigte Kapazitäten sowie optionale PV-, AC-, EV- und Prognosequellen prüfen und zuordnen."
       },
       "expert": {
         "title": "Experteneinstellungen",
@@ -235,7 +238,8 @@
           "pid_kp_export": "PID Kp bei Einspeisung",
           "pid_ki": "PID Integralverstärkung",
           "pid_kd": "PID Differentialverstärkung"
-        }
+        },
+        "description": "Erweiterte Reglerparameter nur bei Bedarf ändern. Bestehende Werte bleiben erhalten und sind für frühere Installationen weiterhin verfügbar."
       }
     },
     "error": {
