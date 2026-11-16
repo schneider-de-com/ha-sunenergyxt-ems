@@ -1,6 +1,6 @@
 # ADR-0002: Release verified two-inverter core before economic forecasting
 
-- Status: **Accepted by user**
+- Status: **Superseded in milestone allocation by [ADR-0005](0005-beta-first-core-scope.md)**; retained as the 2026-11-15 historical decision
 - Date: 2026-11-15
 - Related: #8, #37, #53, #68, #92
 

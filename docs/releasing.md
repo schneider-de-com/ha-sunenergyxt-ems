@@ -12,8 +12,8 @@ the bare SemVer version.
   migration that cannot preserve existing working configuration.
 - **MINOR**: backwards-compatible features, options, devices or sensors.
 - **PATCH**: backwards-compatible bug fixes and their tests.
-- **Prerelease**: 1.0.0-rc.1, 1.0.0-rc.2, and so on, until the real acceptance
-  gate passes. A release candidate is **not** a stable 1.0.0.
+- **Prerelease**: 1.0.0-beta.1, 1.0.0-beta.2, then 1.0.0-rc.1 when
+  appropriate. A beta is experimental and **not** a stable 1.0.0.
 
 A maintenance-only docs or CI change does not require a runtime version bump.
 Mark releases with a tested commit SHA and the known supported combinations.
@@ -51,36 +51,59 @@ Added, Changed, Deprecated, Removed, Fixed and Security. Maintain an
 commit messages. Link material issues/ADRs and state hardware or firmware
 restrictions plainly.
 
-## Release 1.0.0: required gates
+## Beta scope: 1.0.0-beta.1
 
-1. Confirm the v1.0.0 **core-only scope** in ADR-0002. Do not silently
-   release experimental economic forecast planning or dynamic tariff control.
-2. Finish the open core control defects, including Deye startup/zero-percent
-   transients, regulation settling, actual register readback and correct
-   mode-aware PV export. Preserve manual-off safety, reservations and
-   user-selected options. Do not use a sensor-only >1920 W DC software latch.
-3. Run deterministic negative/positive regressions, native HA config/options
-   and lifecycle tests, type/format/security checks, and all required CI
-   jobs. Document initial failing reproduction and final verified behavior.
-4. Observe at least **24 hours of meaningful live two-inverter control**
-   in the initial reference combination, including actual power feedback,
-   fresh meter observations, offline/recovery and shutdown behavior.
-   This is a release reference test, **not** a Deye-only product requirement.
-   Do not claim support for any additional head/inverter/firmware combination
-   before its own compatibility and physical ACK/settling validation.
-   Report gaps and inactivity; elapsed time alone does not count as success.
-5. Verify supported HACS/Marketplace clean install, upgrade, configuration
-   preservation and a real rollback to the last verified build. A manual
-   documented rollback is acceptable when it is tested; do not claim an
-   automatic rollback facility.
-6. Record the exact commit, Home Assistant and inverter firmware versions,
-   observation window, errors and explicit pass/fail/insufficient-evidence.
-   Publish the tag, manifest version and short release notes only after
-   all applicable checks pass.
+**ADR-0005 supersedes the original 1.0.0 scope allocation in ADR-0002.**
+The full core feature scope is targeted at **1.0.0-beta.1**, not promised
+as already field-accepted stable 1.0.0. Previously published 0.1.x beta
+tags remain immutable; no automatic retagging or forced live activation.
 
-**Economic forecast planning** is deferred to a later 1.x release with
-its own seven-day field assessment. The future price strategy requires
-separate evidence and explicit user activation.
+The beta target covers:
 
-Do not make an unvalidated controller available as an unattended stable
-release. Document remaining blockers rather than creating an empty v1.0.0 tag.
+1. Signed whole-site grid following with independently eligible BK215 and
+   BK215 Plus heads; extension capacity is configured per tower, and every
+   lower SoC reserve is enforced independently.
+2. Coordinated, bounded multi-inverter allocation, recoverable net-export
+   correction, true model-specific hardware limit ACK when the integration
+   claims support, safe manual OFF/HA restart, and isolation of failures.
+   Close the known startup/zero-percent and settling defects (#27, #53, #68).
+3. User-selected no-intentional-export or PV-after-full-charge modes, simple
+   HA-native configuration, useful status/diagnostics and retained settings.
+4. Device-neutral arc42, ADRs and a clear, **evidence-based** compatibility
+   matrix, with non-Deye/Plus hardware explicitly marked as unvalidated
+   until its own firmware/actuator tests pass.
+5. Reproducible positive and negative tests, HA configuration/options and
+   lifecycle suites, style/type/security checks, HACS/Marketplace packaging,
+   and documented installation/rollback steps.
+
+**Beta publication rule:** all mandatory software/CI and packaging gates
+must pass. A beta can disclose explicitly unresolved *field* acceptance and
+must be labelled **experimental / not approved for unattended operation**.
+Never publish a known irreversible control lockout as a supported use case,
+silently expand vendor support, or suppress a failed shutdown ACK. Keep the
+manifest version, tag and release notes generated from the curated
+`CHANGELOG.md` consistent.
+
+## Stable 1.0.0: evidence-based promotion, not another feature bucket
+
+Only promote a beta-derived, **unchanged functionally scoped** candidate
+once these independent acceptance criteria pass:
+
+1. At least **24 hours of meaningful two-inverter closed-loop field
+   operation** for the initial declared reference combination, covering
+   import, export/load drop, startup, settling, actual power feedback,
+   offline/recovery and confirmed shutdown. Inactivity is not a pass.
+2. Specific ACK and physical output/ramp/zero-percent behavior for **each
+   newly claimed** head/inverter/firmware/provider combination; a Deye
+   reference test never automatically certifies Hoymiles, APsystems, TSUN
+   or BK215 Plus electrical limits.
+3. Confirm supported HACS/Marketplace clean install, upgrades with option
+   preservation and a **real tested rollback** to the last verified build.
+4. Record exact commit, HA version, inverter firmware, observation
+   timestamps, gaps and failures; publish immutable `v1.0.0` and dated
+   changelog entry only with truthful pass/fail evidence.
+
+**Economic forecast planning** remains experimental and will need its
+separate seven-day evaluation before an optional later 1.x feature
+claim. Dynamic tariff hardware dispatch is outside the 1.0.0-beta.1
+core. Do not equate a green CI badge with physical safety.

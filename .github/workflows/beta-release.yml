@@ -67,7 +67,7 @@ jobs:
         run: |
           version="$(python -c 'import json; print(json.load(open("custom_components/sunenergyxt_ems/manifest.json", encoding="utf-8"))["version"])')"
           case "$version" in
-            *b[0-9]*|*rc[0-9]*) ;;
+            *b[0-9]*|*-alpha.[0-9]*|*-beta.[0-9]*|*-rc.[0-9]*) ;;
             *) echo "::error::Non-prerelease version forbidden by this workflow."; exit 1 ;;
           esac
           tag="v$version"
@@ -75,8 +75,19 @@ jobs:
             echo "::notice::Release $tag already exists; no overwrite."
             exit 0
           fi
+          notes="$(mktemp)"
+          trap 'rm -f "$notes"' EXIT
+          {
+            printf '# SunEnergyXT EMS v%s — experimental prerelease\n\n' "$version"
+            # Keep a Changelog: copy only the current Unreleased section.
+            awk '/^## \[Unreleased\]/{capture=1; next} /^## /{if (capture) exit} capture {print}' CHANGELOG.md
+          } > "$notes"
+          if ! grep -q '^### ' "$notes"; then
+            echo "::error::CHANGELOG.md has no publishable Unreleased section."
+            exit 1
+          fi
           gh release create "$tag" \
             --target "$SOURCE_SHA" \
             --title "SunEnergyXT EMS $version — experimental MVP beta" \
-            --notes-file "RELEASE_NOTES_$version.md" \
+            --notes-file "$notes" \
             --prerelease
