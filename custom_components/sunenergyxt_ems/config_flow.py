@@ -476,13 +476,13 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             requested = dict(user_input)
-            # A user with an existing PID policy must explicitly opt in to
-            # the unified proportional controller. Keep saved PID options
-            # unchanged through every other Configure/Options operation.
-            migration_requested = requested.pop("migrate_legacy_pid", False) is True
-            requested.pop("adaptive_pid", None)
-            if migration_requested and self.config_entry.options.get("adaptive_pid") is True:
-                requested["adaptive_pid"] = False
+            # Pre-stable beta migration: previous PID mode and tuning are
+            # obsolete. Ignore any old fields, never let them change dispatch.
+            for obsolete in (
+                "adaptive_pid", "migrate_legacy_pid", "pid_kp_min",
+                "pid_kp_max", "pid_kp_export", "pid_ki", "pid_kd",
+            ):
+                requested.pop(obsolete, None)
             # One mutually exclusive selector replaces the old checkbox +
             # mode pair. API callers submitting the historical checkbox
             # remain accepted. Explicit selected mode always wins.
@@ -655,8 +655,6 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 )
             ):
                 errors["base"] = "missing_upper"
-            if float(requested.get("pid_kp_max", 0.9)) < float(requested.get("pid_kp_min", 0.5)):
-                errors["base"] = "invalid_pid_gains"
             if not errors:
                 if requested.get(CONF_ENABLED) is False and self.config_entry.options.get(
                     CONF_ENABLED, True
@@ -678,12 +676,6 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                         CONF_FEED_IN_MODE,
                         CONF_FEED_IN_HYSTERESIS,
                         "grid_target_w",
-                        "adaptive_pid",
-                        "pid_kp_min",
-                        "pid_kp_max",
-                        "pid_kp_export",
-                        "pid_ki",
-                        "pid_kd",
                         "start_hold_seconds",
                         "planning_enabled",
                     )
@@ -729,10 +721,6 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 default=self.config_entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W),
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
         }
-        if self.config_entry.options.get("adaptive_pid") is True:
-            # Migration is an explicit one-time action, not an alternate
-            # algorithm selector available to new configurations.
-            fields[vol.Optional("migrate_legacy_pid", default=False)] = selector.BooleanSelector()
         fields[
             vol.Optional(
                 "planning_enabled", default=self.config_entry.options.get("planning_enabled", False)
@@ -765,11 +753,6 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 )
         for key, default, minimum, maximum in (
             ("start_hold_seconds", 30, 5, 60),
-            ("pid_kp_min", 0.5, 0, 2),
-            ("pid_kp_max", 0.9, 0, 2),
-            ("pid_kp_export", 1.0, 0, 2),
-            ("pid_ki", 0.02, 0, 0.5),
-            ("pid_kd", 0.12, 0, 1),
         ):
             fields[vol.Optional(key, default=self.config_entry.options.get(key, default))] = (
                 vol.All(vol.Coerce(float), vol.Range(min=minimum, max=maximum))
@@ -852,12 +835,6 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         expert = {
             CONF_FEED_IN_HYSTERESIS,
             "start_hold_seconds",
-            "migrate_legacy_pid",
-            "pid_kp_min",
-            "pid_kp_max",
-            "pid_kp_export",
-            "pid_ki",
-            "pid_kd",
         }
 
         def in_section(marker: Any) -> bool:
