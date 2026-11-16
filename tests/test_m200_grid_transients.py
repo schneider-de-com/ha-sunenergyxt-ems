@@ -450,9 +450,7 @@ async def test_startup_export_reduces_two_live_inverters_proportionally(
     Dispatch limits are nominal, not a claim about actual AC generation.
     """
     hass, entry = configured_runtime()
-    entry.data["batteries"][0]["inverters"].append(
-        {"entity_id": "number.m80", "rated_w": 800}
-    )
+    entry.data["batteries"][0]["inverters"].append({"entity_id": "number.m80", "rated_w": 800})
     old_get = hass.states.get
     m80 = sample(5, "%", min=0, max=100, step=0.1)
     hass.states.get = lambda key: m80 if key == "number.m80" else old_get(key)
