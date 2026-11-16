@@ -120,6 +120,7 @@
     "step": {
       "init": {
         "title": "EMS-Einstellungen",
+        "description": "Ein Ausgabemodus: Haushaltslast (keine beabsichtigte Einspeisung) oder ausschließlich aktuelle PV-Leistung nach bestätigter BMS-Vollladung. Die BMS-Hardwaregrenze ist für BK-Speicher maßgeblich. Erkannte Kapazitäten bleiben korrigierbar; bereits gespeicherte Werte werden nicht überschrieben.",
         "data": {
           "enabled": "EMS aktivieren",
           "feed_in": "Einspeisung nach Vollladung",
@@ -129,7 +130,7 @@
           "upper_3": "Speicher 3: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_4": "Speicher 4: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)",
-          "feed_in_mode": "Einspeiseverhalten",
+          "feed_in_mode": "Ausgabemodus (exklusiv)",
           "feed_in_hysteresis_pct": "PV-Modus: SoC-Hysterese (Prozentpunkte)",
           "adaptive_pid": "Adaptiven PID-Regler aktivieren",
           "start_hold_seconds": "Anlaufhaltezeit (Sekunden)",
@@ -227,6 +228,7 @@
       "invalid_pid_gains": "PID Kp-Maximum muss mindestens dem Minimum entsprechen.",
       "incomplete_forecast_mapping": "Passende Tagesquellen desselben Prognoseeintrags wählen oder die Gruppe leeren. Forecast.Solar benötigt heute und morgen; Solcast zusätzlich den Aktualisierungszeitpunkt.",
       "invalid_pv_power_source": "Eine vorhandene Leistungsquelle mit Einheit W oder kW auswählen oder die optionale PV-Quelle entfernen.",
+      "invalid_export_mode": "Bitte genau einen gültigen Ausgabemodus wählen.",
       "invalid_output_limit": "Das AC-Leistungslimit muss positiv sein und darf die Summe der Wechselrichter-Nennleistungen nicht überschreiten."
     }
   },
