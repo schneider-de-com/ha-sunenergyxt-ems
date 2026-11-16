@@ -98,12 +98,14 @@ def suggested_forecasts(hass: HomeAssistant) -> dict[str, str]:
             role = solcast_roles.get(unique_id)
         else:
             prefix = f"{owner}_"
-            role = solar_roles.get(unique_id[len(prefix) :]) if unique_id.startswith(prefix) else None
+            role = (
+                solar_roles.get(unique_id[len(prefix) :]) if unique_id.startswith(prefix) else None
+            )
             if role is not None:
                 state = hass.states.get(entity.entity_id)
-                if (
-                    state is None
-                    or state.attributes.get("unit_of_measurement") not in ("Wh", "kWh")
+                if state is None or state.attributes.get("unit_of_measurement") not in (
+                    "Wh",
+                    "kWh",
                 ):
                     continue
         if role is not None:
@@ -113,9 +115,7 @@ def suggested_forecasts(hass: HomeAssistant) -> dict[str, str]:
         return {}
     (provider, _), selected = next(iter(groups.items()))
     required = (
-        {"today", "tomorrow"}
-        if provider == "forecast_solar"
-        else {"today", "tomorrow", "updated"}
+        {"today", "tomorrow"} if provider == "forecast_solar" else {"today", "tomorrow", "updated"}
     )
     return selected if set(selected) == required else {}
 
