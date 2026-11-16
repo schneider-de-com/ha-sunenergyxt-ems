@@ -22,7 +22,8 @@ from homeassistant.util.dt import utcnow
 
 from .const import (
     CONF_BATTERIES,
-    CONF_DC_TRIPPED,
+    CONF_OUTPUT_LIMITS,
+    DEFAULT_TOWER_OUTPUT_LIMIT_W,
     CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
@@ -54,7 +55,7 @@ MAX_SOC_AGE = timedelta(seconds=45)
 MAX_DC_AGE = timedelta(seconds=90)
 # Fresh diagnostic voltage is required only for validated Deye Solarman profiles.
 MAX_AC_VOLTAGE_AGE = timedelta(seconds=30)
-MAX_BK215_DC_W = 1920.0
+# DC telemetry is observed for diagnostics only; no uncertified software trip.
 MIN_OUTPUT_CHANGE_W = 10.0
 # Live 2026-11-04: an initial 520 W / 26% M200 command produced
 # -646 W net export after a transient 2.5 kW household load. Bound each
@@ -130,7 +131,6 @@ class EMSRuntime:
         self._shutdown_store: Store[dict[str, list[str]]] = Store(
             hass, 1, f"{DOMAIN}.shutdown.{entry.entry_id}", atomic_writes=True
         )
-        self._overload_latched: set[str] = set(entry.options.get(CONF_DC_TRIPPED, ()))
         self._dc_monitored: dict[str, str] = {}
         self._last_processed_grid: datetime | None = None
         self._grid_filter = GridMedianFilter()
@@ -354,6 +354,9 @@ class EMSRuntime:
 
     def _batteries(self) -> tuple[Battery, ...]:
         batteries = []
+        limits = self.entry.options.get(CONF_OUTPUT_LIMITS, {})
+        if not isinstance(limits, dict):
+            limits = {}
         for record in self.entry.data[CONF_BATTERIES]:
             inverters = []
             for definition in record[CONF_INVERTERS]:
@@ -386,6 +389,12 @@ class EMSRuntime:
                     lower_soc=self._float(record.get(CONF_LOWER)),
                     upper_soc=self._float(record.get(CONF_UPPER)),
                     inverters=tuple(inverters),
+                    # A per-tower AC setpoint ceiling is not measured DC power.
+                    # Existing entries retain the conservative 1,920 W default.
+                    output_limit_w=self._float(
+                        limits.get(record[CONF_DEVICE], DEFAULT_TOWER_OUTPUT_LIMIT_W)
+                    )
+                    or 0.0,
                     charging_w=charging,
                     dc_output_w=self._fresh_dc_output(dc_source),
                     pv_input_w=fresh_power(
@@ -1188,38 +1197,6 @@ class EMSRuntime:
                         else 0
                     )
                 self._last_raw_grid_sequence = sequence
-            detected_trips = {
-                battery.key
-                for battery in batteries
-                if battery.dc_output_w is not None and battery.dc_output_w > MAX_BK215_DC_W
-            }
-            if detected_trips - self._overload_latched:
-                self._overload_latched.update(detected_trips)
-                self.hass.config_entries.async_update_entry(
-                    self.entry,
-                    options={
-                        **self.entry.options,
-                        CONF_DC_TRIPPED: sorted(self._overload_latched),
-                    },
-                )
-            if self._overload_latched:
-                safe = {
-                    inv.key: inv.minimum_w
-                    for battery in batteries
-                    if battery.key in self._overload_latched
-                    for inv in battery.inverters
-                    if inv.online
-                }
-                self.last_error = None
-                await self._apply(safe, now, emergency=True)
-                if self.last_error is None:
-                    self.status = "hardware_limit"
-                    self.last_error = (
-                        "BK215 DC output above 1920 W; manual inspection required: "
-                        + ", ".join(sorted(self._overload_latched))
-                    )
-                self._publish()
-                return
             if self._startup_export_trip:
                 # One proportional downward correction per *fresh* grid report.
                 # If the meter disappears, fail closed to the safe minimum.
@@ -1478,7 +1455,6 @@ class EMSRuntime:
             self.horizon.invalidate()
         if not enabled:
             # A deliberate reset in Configure is permitted only while EMS is off.
-            self._overload_latched = set(self.entry.options.get(CONF_DC_TRIPPED, ()))
         self.controller.feed_in = (
             bool(self.entry.options.get(CONF_FEED_IN, False))
             and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
