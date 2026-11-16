@@ -110,7 +110,7 @@ def test_positive_status_sensor_reports_waiting_and_running(objects):
     assert entity.native_value == "running"
     diagnostics = entity.extra_state_attributes
     assert diagnostics["last_error"] is None
-    assert diagnostics["control_mode"] == "proportional"
+    assert diagnostics["control_mode"] == "adaptive_proportional"
     assert diagnostics["requested_total_w"] is None
     assert diagnostics["pending_actuator_reads"] == []
     assert diagnostics["pending_shutdown_reads"] == []
@@ -146,7 +146,7 @@ def test_negative_status_sensor_exposes_write_failure(objects):
     assert entity.native_value == "write_error"
     diagnostics = entity.extra_state_attributes
     assert diagnostics["last_error"] == "number.inverter: unavailable"
-    assert diagnostics["control_mode"] == "proportional"
+    assert diagnostics["control_mode"] == "adaptive_proportional"
     assert diagnostics["pending_actuator_reads"] == []
 
 
@@ -183,14 +183,14 @@ async def test_positive_sensor_setup_creates_status(objects):
     hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     created = []
     await sensors.async_setup_entry(hass, entry, created.extend)
-    assert len(created) == 4 + len(sensors.PID_VALUES)
+    assert len(created) == 4 + len(sensors.CONTROL_VALUES)
     assert created[0].unique_id == "ems-entry_status"
-    assert {entity.unique_id for entity in created[1 : 1 + len(sensors.PID_VALUES)]} == {
-        f"ems-entry_{key}" for key, _ in sensors.PID_VALUES
+    assert {entity.unique_id for entity in created[1 : 1 + len(sensors.CONTROL_VALUES)]} == {
+        f"ems-entry_{key}" for key, _ in sensors.CONTROL_VALUES
     }
     assert all(
         isinstance(entity, sensors.EMSControlValue)
-        for entity in created[1 : 1 + len(sensors.PID_VALUES)]
+        for entity in created[1 : 1 + len(sensors.CONTROL_VALUES)]
     )
     assert created[-1].unique_id == "ems-entry_startup_hold_remaining"
 
@@ -283,7 +283,7 @@ async def test_batteries_have_separate_visible_status_entities(objects):
     runtime.hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     added = []
     await sensors.async_setup_entry(runtime.hass, entry, added.extend)
-    assert len(added) == 5 + len(sensors.PID_VALUES) + 1 + 2 * 8
+    assert len(added) == 5 + len(sensors.CONTROL_VALUES) + 1 + 2 * 8
     by_id = {entity.unique_id: entity for entity in added}
     assert {"ems-entry_status", "ems-entry_battery_bk1", "ems-entry_battery_bk2"} <= set(by_id)
     main = by_id["ems-entry_battery_bk1"]
@@ -342,27 +342,23 @@ def test_disabled_grid_diagnostics_do_not_display_last_running_power(objects):
     for key, field in (
         ("grid_raw", "raw_grid_w"),
         ("grid_effective", "effective_grid_w"),
-        ("grid_error", "pid_error_w"),
+        ("grid_error", "regulation_error_w"),
     ):
         sensor = sensors.EMSControlValue(entry, runtime, key, field)
         assert sensor.native_value is None
 
 
-def test_grid_loss_hides_previous_error_and_pid_contributions(objects):
+def test_grid_loss_hides_previous_regulation_error_and_correction(objects):
     """Old controller terms are not current diagnostics after the meter is lost."""
     entry, runtime, _ = objects
     runtime.controller.enabled = True
     runtime.status = "running"
-    runtime.controller.state.pid_error_w = 42.0
-    runtime.controller.state.pid_p_w = 20.0
-    runtime.controller.state.pid_i_w = 10.0
-    runtime.controller.state.pid_d_w = 5.0
+    runtime.controller.state.regulation_error_w = 42.0
+    runtime.controller.state.regulation_correction_w = 20.0
     runtime._grid_filtered_w = None
     for key, field in (
-        ("grid_error", "pid_error_w"),
-        ("pid_proportional", "pid_p_w"),
-        ("pid_integral", "pid_i_w"),
-        ("pid_derivative", "pid_d_w"),
+        ("grid_error", "regulation_error_w"),
+        ("controller_correction", "regulation_correction_w"),
     ):
         entity = sensors.EMSControlValue(entry, runtime, key, field)
         assert entity.native_value is None
@@ -398,13 +394,13 @@ def test_aggregate_is_last_dispatched_limits_not_stale_controller_plan(objects):
 @pytest.mark.parametrize(
     "status", ["hardware_limit", "dc_unavailable", "reserve_safety", "write_error", "waiting"]
 )
-def test_safety_paths_do_not_expose_last_pid_cycle_as_current(objects, status):
+def test_safety_paths_do_not_expose_last_regulator_cycle_as_current(objects, status):
     entry, runtime, _ = objects
     runtime.controller.enabled = True
     runtime._grid_filtered_w = 50
-    runtime.controller.state.pid_error_w = 30
+    runtime.controller.state.regulation_error_w = 30
     runtime.status = status
-    sensor = sensors.EMSControlValue(entry, runtime, "grid_error", "pid_error_w")
+    sensor = sensors.EMSControlValue(entry, runtime, "grid_error", "regulation_error_w")
     assert sensor.native_value is None
     runtime.status = "running"
     assert sensor.native_value == 30
@@ -413,13 +409,13 @@ def test_safety_paths_do_not_expose_last_pid_cycle_as_current(objects, status):
 
 
 @pytest.mark.parametrize("status", ["waiting_feedback", "waiting_meter"])
-def test_waiting_pid_value_describes_previous_calculation(objects, status):
+def test_waiting_regulation_value_describes_previous_calculation(objects, status):
     entry, runtime, _ = objects
     runtime.controller.enabled = True
     runtime._grid_filtered_w = 50
-    runtime.controller.state.pid_error_w = 30
+    runtime.controller.state.regulation_error_w = 30
     runtime.status = status
-    sensor = sensors.EMSControlValue(entry, runtime, "grid_error", "pid_error_w")
+    sensor = sensors.EMSControlValue(entry, runtime, "grid_error", "regulation_error_w")
     assert sensor.native_value == 30
     assert sensor.extra_state_attributes == {
         "value_semantics": "last_completed_controller_calculation",
