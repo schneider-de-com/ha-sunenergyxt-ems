@@ -93,15 +93,12 @@ def suggested_forecasts(hass: HomeAssistant) -> dict[str, str]:
         ):
             continue
         group = groups.setdefault((provider, owner), {})
+        unique_id = entity.unique_id or ""
         if provider == "solcast_solar":
-            role = solcast_roles.get(entity.unique_id)
+            role = solcast_roles.get(unique_id)
         else:
             prefix = f"{owner}_"
-            role = (
-                solar_roles.get(entity.unique_id[len(prefix) :])
-                if entity.unique_id.startswith(prefix)
-                else None
-            )
+            role = solar_roles.get(unique_id[len(prefix) :]) if unique_id.startswith(prefix) else None
             if role is not None:
                 state = hass.states.get(entity.entity_id)
                 if (
