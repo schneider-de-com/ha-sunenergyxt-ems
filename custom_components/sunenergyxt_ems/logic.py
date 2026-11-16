@@ -60,6 +60,10 @@ class Battery:
     pv_input_w: float | None = None
     pv_input_configured: bool = False
     ev3600_charging: bool | None = False
+    # For identified BK hardware, require every attached module to report
+    # reaching its BMS ceiling before FIRST entering the full-charge policy.
+    # None retains the explicit/manual non-BK upper-SoC contract.
+    bms_full_verified: bool | None = None
 
 
 @dataclass(slots=True)
@@ -320,6 +324,16 @@ class Controller:
                 eligible.append(battery)
         return eligible
 
+    @staticmethod
+    def _fresh_pv_budget(battery: Battery) -> bool:
+        """Runtime owns PV sample freshness; the policy rejects missing/bad input."""
+        return (
+            battery.pv_input_configured
+            and battery.pv_input_w is not None
+            and isfinite(battery.pv_input_w)
+            and 0 <= battery.pv_input_w <= 10000
+        )
+
     def _rank(self, batteries: list[Battery]) -> list[Battery]:
         original_order = {battery.key: index for index, battery in enumerate(batteries)}
 
@@ -454,6 +468,7 @@ class Controller:
             battery.key in self.state.full
             and (
                 not self.feed_in
+                or not self._fresh_pv_budget(battery)
                 or (
                     battery.soc is not None
                     and battery.upper_soc is not None
@@ -469,27 +484,41 @@ class Controller:
         for battery in ranked:
             if battery.soc is None:
                 continue
+            eligible_inverters = [inv for inv in battery.inverters if self._valid_inverter(inv)]
+            maximum_w = min(battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters))
+            pv_ready = self._fresh_pv_budget(battery)
+            if (
+                pv_ready
+                and battery.pv_input_w is not None
+                and sum(inv.minimum_w for inv in eligible_inverters) > battery.pv_input_w
+            ):
+                # A positive hardware minimum must not exceed the fresh PV budget.
+                pv_ready = False
+
             if (
                 self.feed_in
+                and pv_ready
                 and self._valid_soc(battery.upper_soc)
                 and battery.upper_soc is not None
             ):
-                if battery.soc >= battery.upper_soc:
-                    self.state.full.add(battery.key)
-                elif battery.soc <= battery.upper_soc - self.full_hysteresis_pct:
+                if battery.soc <= battery.upper_soc - self.full_hysteresis_pct:
                     self.state.full.discard(battery.key)
+                elif (
+                    battery.soc >= battery.upper_soc
+                    and battery.bms_full_verified is not False
+                ):
+                    # A fresh full-module BMS observation is required to enter
+                    # the policy; hysteresis preserves an already-entered state.
+                    self.state.full.add(battery.key)
             else:
                 self.state.full.discard(battery.key)
 
-            eligible_inverters = [inv for inv in battery.inverters if self._valid_inverter(inv)]
-            maximum_w = min(battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters))
-            if battery.key in self.state.full and battery.pv_input_configured:
-                if battery.pv_input_w is None or not isfinite(battery.pv_input_w):
-                    budget_w = min(total_w, maximum_w)
-                else:
-                    budget_w = min(maximum_w, max(0.0, battery.pv_input_w))
+            if battery.key in self.state.full and battery.pv_input_w is not None:
+                budget_w = min(maximum_w, battery.pv_input_w)
             else:
-                budget_w = maximum_w if battery.key in self.state.full else min(total_w, maximum_w)
+                # Missing PV evidence resumes ordinary household load-following,
+                # never unbounded full-charge battery discharge.
+                budget_w = min(total_w, maximum_w)
             for inverter in eligible_inverters:
                 power_w = min(inverter.rated_w, max(inverter.minimum_w, budget_w))
                 commands[inverter.key] = power_w
