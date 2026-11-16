@@ -415,15 +415,11 @@ class EMSRuntime:
 
         head_soc_source = sources.get("head_soc")
         head_actual = self._fresh_bms_percentage(head_soc_source)
-        if head_soc_source and head_actual is None:
-            # A formerly known module whose SOC data vanished is not
-            # proven physically full. Do not retain an export override.
+        if head_actual is None:
+            # An aggregate system SoC cannot prove the head itself is full
+            # alongside connected expansions.
             return None, False, sources
-        full_verified = (
-            head_actual is not None and head_actual >= head_limit
-            if head_soc_source
-            else (self._fresh_soc(record.get(CONF_SOC)) or -1) >= head_limit
-        )
+        full_verified = head_actual >= head_limit
         for index in sorted(seen):
             module_limit = self._fresh_bms_percentage(sources.get(f"extension_limit_{index}"))
             module_soc = self._fresh_bms_percentage(sources.get(f"extension_soc_{index}"))
@@ -502,7 +498,11 @@ class EMSRuntime:
         startup and grid guards while every battery is still below BMS full,
         or while the PV evidence has gone stale.
         """
-        if not self.controller.enabled or not self.controller.feed_in or not self.controller.state.full:
+        if (
+            not self.controller.enabled
+            or not self.controller.feed_in
+            or not self.controller.state.full
+        ):
             return False
         checked = self._batteries() if batteries is None else batteries
         return any(
