@@ -120,6 +120,33 @@ async def test_startup_hold_and_pid_gains_are_native_ha_number_entities():
 
 
 @pytest.mark.asyncio
+async def test_options_flow_groups_basic_device_and_expert_settings(monkeypatch):
+    entry, runtime, _writes = entry_and_runtime()
+    handler = config_flow.EMSEntryOptionsFlow()
+    monkeypatch.setattr(config_flow.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
+    handler.hass = runtime.hass
+
+    menu = await handler.async_step_init()
+    assert menu["type"] == "menu"
+    assert set(menu["menu_options"]) == {"basic", "devices", "expert"}
+
+    forms = {}
+    for step in ("basic", "devices", "expert"):
+        result = await getattr(handler, f"async_step_{step}")()
+        assert result["type"] == "form"
+        forms[step] = {
+            getattr(marker, "schema", str(marker)) for marker in result["data_schema"].schema
+        }
+
+    assert {"enabled", "feed_in_mode", "grid_target_w", "planning_enabled"} <= forms["basic"]
+    assert "pid_kp_min" not in forms["basic"]
+    assert "capacity_wh_1" not in forms["basic"]
+    assert "capacity_wh_1" in forms["devices"]
+    assert "pid_kp_min" in forms["expert"]
+    assert "capacity_wh_1" not in forms["expert"]
+
+
+@pytest.mark.asyncio
 async def test_existing_bk215_upper_soc_mapping_can_be_changed_in_options(monkeypatch):
     entry, runtime, _writes = entry_and_runtime()
     handler = config_flow.EMSEntryOptionsFlow()
