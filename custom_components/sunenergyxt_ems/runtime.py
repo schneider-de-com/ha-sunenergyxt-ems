@@ -132,6 +132,7 @@ class EMSRuntime:
             hass, 1, f"{DOMAIN}.shutdown.{entry.entry_id}", atomic_writes=True
         )
         self._dc_monitored: dict[str, str] = {}
+        self._dc_unavailable_keys: set[str] = set()
         self._last_processed_grid: datetime | None = None
         self._grid_filter = GridMedianFilter()
         self._grid_raw_w: float | None = None
@@ -1254,25 +1255,51 @@ class EMSRuntime:
                     )
                 self._publish()
                 return
-            missing_dc = sorted(
-                self._dc_monitored[battery.key]
+            self._dc_unavailable_keys = {
+                battery.key
                 for battery in batteries
                 if battery.key in self._dc_monitored and battery.dc_output_w is None
-            )
-            if missing_dc:
-                safe = {
+            }
+            if self._dc_unavailable_keys:
+                # A stale DC source only invalidates its own head. First
+                # request safe minima; the ordinary pending-ACK gate below
+                # prevents healthy heads from ramping before those writes
+                # have been acknowledged.
+                reductions = {
                     inv.key: inv.minimum_w
                     for battery in batteries
+                    if battery.key in self._dc_unavailable_keys
                     for inv in battery.inverters
                     if inv.online
                 }
                 self.last_error = None
-                await self._apply(safe, now, emergency=True)
-                if self.last_error is None:
-                    self.status = "dc_unavailable"
-                    self.last_error = "BK215 DC sensor not current: " + ", ".join(missing_dc)
-                self._publish()
-                return
+                await self._apply(reductions, now, emergency=True)
+                if self.last_error is not None:
+                    self._publish()
+                    return
+                # Model affected actuators as unavailable to *normal*
+                # allocation. Keep the original reachable inverter for the
+                # emergency minimum write above; do not suppress healthy heads.
+                batteries = tuple(
+                    replace(
+                        battery,
+                        inverters=tuple(replace(inv, online=False) for inv in battery.inverters),
+                    )
+                    if battery.key in self._dc_unavailable_keys
+                    else battery
+                    for battery in batteries
+                )
+                if not any(inv.online for battery in batteries for inv in battery.inverters):
+                    # Even with no other eligible head, continue verifying
+                    # pending emergency writes so errors can time out visibly.
+                    await self._feedback_ready(now, sequence)
+                    if self.status != "write_error":
+                        self.status = "dc_unavailable"
+                        self.last_error = "Storage DC sensor not current: " + ", ".join(
+                            sorted(self._dc_unavailable_keys)
+                        )
+                    self._publish()
+                    return
             # Protect the battery independently of normal feedback settling.
             # Do not increase another inverter until an earlier required
             # reduction has been written and acknowledged.
