@@ -167,13 +167,12 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # charge-target override can change that physical limit.
             if (
                 not isinstance(self.hass, HomeAssistant)
-                or registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC))
-                is None
+                or registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC)) is None
             ):
                 upper = battery.get(CONF_UPPER)
                 if isinstance(upper, str) and upper:
-                    fields[vol.Required(f"upper_{index}", default=upper)] = (
-                        selector.EntitySelector(selector.EntitySelectorConfig(domain="number"))
+                    fields[vol.Required(f"upper_{index}", default=upper)] = selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="number")
                     )
                 else:
                     upper_kwargs = {"default": upper} if upper is not None else {}
@@ -469,9 +468,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 elif legacy_enabled is False:
                     requested[CONF_FEED_IN_MODE] = FEED_IN_MODE_HOUSEHOLD
                 else:
-                    requested[CONF_FEED_IN_MODE] = configured_export_mode(
-                        self.config_entry.options
-                    )
+                    requested[CONF_FEED_IN_MODE] = configured_export_mode(self.config_entry.options)
             selected_mode = requested[CONF_FEED_IN_MODE]
             if selected_mode not in (FEED_IN_MODE_HOUSEHOLD, FEED_IN_MODE_PV):
                 errors["base"] = "invalid_export_mode"
@@ -612,8 +609,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     battery.get(CONF_UPPER) is None
                     and (
                         not isinstance(self.hass, HomeAssistant)
-                        or registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC))
-                        is None
+                        or registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC)) is None
                     )
                     for battery in new_batteries
                 )
@@ -794,8 +790,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         for index, battery in enumerate(existing, start=1):
             if (
                 isinstance(self.hass, HomeAssistant)
-                and registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC))
-                is not None
+                and registered_bk_hardware_sources(self.hass, battery.get(CONF_SOC)) is not None
             ):
                 # The BMS hardware limit is authoritative; do not offer a
                 # redundant EMS number which cannot move physical full charge.
