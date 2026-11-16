@@ -104,7 +104,6 @@ def test_invalid_dc_unit_is_not_treated_as_watts():
     assert "dc_output" not in find_batteries(entries)["bk"]
 
 
-
 def test_plus_and_first_generation_head_roles_are_independent():
     """Extension modules add capacity to their head; they are not EMS towers.
 
