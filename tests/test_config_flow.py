@@ -225,9 +225,7 @@ async def test_options_replace_two_conflicting_export_inputs_with_one_mode(flow,
         data={"batteries": []},
         options={"enabled": False, "feed_in": False, "feed_in_mode": "pv"},
     )
-    monkeypatch.setattr(
-        flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: old)
-    )
+    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: old))
     result = await options.async_step_init()
     names = [key.schema for key in result["data_schema"].schema]
     assert "feed_in_mode" in names
