@@ -683,3 +683,43 @@ async def test_unconfirmed_import_preserves_old_per_inverter_20_w_fallback() -> 
         {"entity_id": "number.m200", "value": 11.0},
         {"entity_id": "number.m80", "value": 120},
     ]
+
+
+@pytest.mark.asyncio
+async def test_cooperative_first_start_serializes_independent_inverters() -> None:
+    """Two head requests must not trigger two unobserved Deye startup pulses."""
+    runtime, hass = runtime_pair()
+    await runtime._apply({"number.m200": 200, "number.m80": 100}, now=1000)
+    hass.services.async_call.assert_awaited_once()
+    assert hass.services.async_call.await_args.args[2]["entity_id"] == "number.m200"
+    assert "number.m200" in runtime._pending
+    assert "number.m80" not in runtime._pending
+
+
+@pytest.mark.asyncio
+async def test_rapid_import_decline_revokes_accelerated_positive_command() -> None:
+    """A falling household load must not keep its old 200 W ramp allowance."""
+    runtime, hass = runtime_pair()
+    runtime._last_sent["number.m200"] = 1.0
+    runtime._sent_at["number.m200"] = 1000.0
+    hass.states.get("number.m200").state = "1"
+    for i, watts in enumerate((1500.0, 1100.0, 700.0)):
+        runtime._grid_filter.observe(watts, i)
+    runtime._grid_raw_w = 700.0
+    await runtime._apply({"number.m200": 540}, now=1010.0)
+    command = hass.services.async_call.await_args.args[2]
+    assert command["entity_id"] == "number.m200"
+    assert 1.0 < command["value"] <= 2.0
+
+
+@pytest.mark.asyncio
+async def test_emergency_shutdown_is_not_serialized_as_positive_start() -> None:
+    """Emergency reductions must still reach both heads in the same cycle."""
+    runtime, hass = runtime_pair()
+    runtime._last_sent = {"number.m200": 20.0, "number.m80": 100.0}
+    runtime._sent_at = {"number.m200": 1000.0, "number.m80": 1000.0}
+    hass.states.get("number.m200").state = "20"
+    hass.states.get("number.m80").state = "100"
+    await runtime._apply({"number.m200": 0, "number.m80": 0}, now=1001.0, emergency=True)
+    assert hass.services.async_call.await_count == 2
+    assert all(call.args[2]["value"] == 0 for call in hass.services.async_call.await_args_list)
