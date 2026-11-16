@@ -247,7 +247,7 @@ def _fresh_bk_percent(hass: HomeAssistant, source: str | None) -> float | None:
         return None
     try:
         value = float(state.state)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return value if isfinite(value) and 0 <= value <= 100 else None
 
