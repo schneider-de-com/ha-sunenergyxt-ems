@@ -460,7 +460,9 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
     async def async_step_basic(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return await self._async_step_edit(user_input, "basic")
 
-    async def async_step_devices(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_devices(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         return await self._async_step_edit(user_input, "devices")
 
     async def async_step_expert(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -850,6 +852,8 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id=section,
-            data_schema=vol.Schema({key: value for key, value in fields.items() if in_section(key)}),
+            data_schema=vol.Schema(
+                {key: value for key, value in fields.items() if in_section(key)}
+            ),
             errors=errors,
         )
