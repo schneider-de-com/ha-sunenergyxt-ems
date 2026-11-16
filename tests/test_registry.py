@@ -109,9 +109,7 @@ def test_multiple_forecast_solar_entries_require_manual_selection(registry):
                 "forecast_solar",
                 config=owner,
             )
-    hass.states.get = lambda entity: SimpleNamespace(
-        attributes={"unit_of_measurement": "kWh"}
-    )
+    hass.states.get = lambda entity: SimpleNamespace(attributes={"unit_of_measurement": "kWh"})
     assert module.suggested_forecasts(hass) == {}
 
 
@@ -128,12 +126,8 @@ def test_mixed_solcast_and_forecast_solar_require_manual_selection(registry):
         )
     for role in ("total_kwh_forecast_today", "total_kwh_forecast_tomorrow", "lastupdated"):
         entity_id = f"sensor.solcast_{role}"
-        entries[entity_id] = item(
-            entity_id, role, "solar", "solcast_solar", config="solcast_a"
-        )
-    hass.states.get = lambda entity: SimpleNamespace(
-        attributes={"unit_of_measurement": "kWh"}
-    )
+        entries[entity_id] = item(entity_id, role, "solar", "solcast_solar", config="solcast_a")
+    hass.states.get = lambda entity: SimpleNamespace(attributes={"unit_of_measurement": "kWh"})
     assert module.suggested_forecasts(hass) == {}
 
 
@@ -149,9 +143,7 @@ def test_another_incomplete_configured_source_prevents_silent_autoselection(regi
             "forecast_solar",
             config="forecast_a",
         )
-    hass.states.get = lambda entity: SimpleNamespace(
-        attributes={"unit_of_measurement": "Wh"}
-    )
+    hass.states.get = lambda entity: SimpleNamespace(attributes={"unit_of_measurement": "Wh"})
     hass.config_entries = SimpleNamespace(
         async_entries=lambda domain: (
             [
