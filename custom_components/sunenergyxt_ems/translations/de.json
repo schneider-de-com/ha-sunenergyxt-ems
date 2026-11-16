@@ -94,7 +94,7 @@
       },
       "inverters_manual": {
         "title": "Wechselrichter manuell zuordnen",
-        "description": "Wähle pro BK215 ein oder zwei Home-Assistant-**number-Entitäten**, die wirklich eine **AC-Wirkleistungsgrenze in W oder %** darstellen. Keine Netzspannungs-, Frequenz-, Leistungsfaktor- oder Akkulade-Einstellungen auswählen. Prüfe die physische Zuordnung.",
+        "description": "Wähle pro BK215 ein bis vier Home-Assistant-**number-Entitäten**, die wirklich eine **AC-Wirkleistungsgrenze in W oder %** darstellen. Keine Netzspannungs-, Frequenz-, Leistungsfaktor- oder Akkulade-Einstellungen auswählen. Prüfe die physische Zuordnung.",
         "data": {
           "inverters_1": "Speicher 1: Wechselrichter",
           "inverters_2": "Speicher 2: Wechselrichter",
@@ -107,7 +107,7 @@
     "error": {
       "invalid_setup": "Prüfe die gewählten Sensoren und Leistungsgrenzen.",
       "duplicate_inverter": "Ein Wechselrichter darf nur einmal zugeordnet werden.",
-      "invalid_inverter": "Wähle je Speicher einen oder zwei Wechselrichter.",
+      "invalid_inverter": "Wähle pro Speicherturm einen bis vier Wechselrichter-Leistungsregler.",
       "no_battery": "Wähle mindestens einen Speicher.",
       "other_controller": "Bitte zuerst andere Wechselrichtersteuerungen deaktivieren.",
       "inverter_stop_failed": "Ein bisheriger Wechselrichter konnte nicht sicher abgeregelt werden. Bitte prüfen und erneut versuchen."
@@ -131,7 +131,6 @@
           "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)",
           "feed_in_mode": "Einspeiseverhalten",
           "feed_in_hysteresis_pct": "PV-Modus: SoC-Hysterese (Prozentpunkte)",
-          "reset_dc_trip": "Gespeicherte DC-Schutzsperre zurücksetzen (EMS aus, frische BK215-Ausgangsleistung höchstens 100 W)",
           "adaptive_pid": "Adaptiven PID-Regler aktivieren",
           "start_hold_seconds": "Anlaufhaltezeit (Sekunden)",
           "pid_kp_min": "PID Kp klein",
@@ -207,19 +206,28 @@
           "clear_pv_input_2": "Speicher 2: optionale PV-Leistungsquelle entfernen",
           "clear_pv_input_3": "Speicher 3: optionale PV-Leistungsquelle entfernen",
           "clear_pv_input_4": "Speicher 4: optionale PV-Leistungsquelle entfernen",
-          "clear_pv_input_5": "Speicher 5: optionale PV-Leistungsquelle entfernen"
+          "clear_pv_input_5": "Speicher 5: optionale PV-Leistungsquelle entfernen",
+          "output_limit_1": "Speicher 1: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
+          "output_limit_2": "Speicher 2: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
+          "output_limit_3": "Speicher 3: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
+          "output_limit_4": "Speicher 4: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
+          "output_limit_5": "Speicher 5: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
+          "output_limit_6": "Speicher 6: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
+          "output_limit_7": "Speicher 7: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
+          "output_limit_8": "Speicher 8: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
+          "output_limit_9": "Speicher 9: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
+          "output_limit_10": "Speicher 10: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)"
         },
         "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
       }
     },
     "error": {
       "missing_upper": "Bitte die obere SoC-Grenze für alle Speicher ohne entsprechende Entität eintragen.",
-      "disable_before_trip_reset": "Vor dem Zurücksetzen der DC-Schutzsperre zuerst EMS deaktivieren.",
-      "trip_reset_unconfirmed": "Zurücksetzen verweigert: BK215-DC-Ausgangsleistung fehlt, ist veraltet oder liegt über 100 W.",
       "incomplete_ev3600": "EV3600-Schalter und Ladeleistungssensor gemeinsam auswählen.",
       "invalid_pid_gains": "PID Kp-Maximum muss mindestens dem Minimum entsprechen.",
       "incomplete_forecast_mapping": "Passende Tagesquellen desselben Prognoseeintrags wählen oder die Gruppe leeren. Forecast.Solar benötigt heute und morgen; Solcast zusätzlich den Aktualisierungszeitpunkt.",
-      "invalid_pv_power_source": "Eine vorhandene Leistungsquelle mit Einheit W oder kW auswählen oder die optionale PV-Quelle entfernen."
+      "invalid_pv_power_source": "Eine vorhandene Leistungsquelle mit Einheit W oder kW auswählen oder die optionale PV-Quelle entfernen.",
+      "invalid_output_limit": "Das AC-Leistungslimit muss positiv sein und darf die Summe der Wechselrichter-Nennleistungen nicht überschreiten."
     }
   },
   "entity": {
@@ -234,7 +242,6 @@
           "disabled": "Deaktiviert",
           "shutdown_pending": "Wartet auf Abschaltbestätigung",
           "write_error": "Kommunikations- oder Steuerungsfehler",
-          "hardware_limit": "DC-Leistungsgrenze überschritten",
           "dc_unavailable": "DC-Messwert nicht verfügbar",
           "reserve_safety": "Speicherreserve-Schutz aktiv",
           "grid_unavailable": "Netzmesswert nicht verfügbar",
