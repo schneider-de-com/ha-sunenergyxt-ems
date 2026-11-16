@@ -469,6 +469,7 @@ async def test_pv_feed_in_mode_uses_only_fresh_measured_input_after_upper_soc() 
     assert hass.services.async_call.await_args.args[2]["value"] == 20
     assert runtime.controller.state.outputs["number.inverter"] == 500
 
+
 def _identified_bk_head(hass, entry, monkeypatch):
     """Supply registry identities from the actual SunEnergyXT-BK integration."""
     states = hass.states.get.__self__
