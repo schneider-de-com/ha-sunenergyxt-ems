@@ -106,6 +106,22 @@ def test_pv_only_bypass_never_exceeds_verified_pv_input():
     assert engine.state.full == set()
 
 
+def test_existing_bms_pv_bypass_closes_if_any_module_no_longer_full():
+    engine = Controller()
+    engine.feed_in = True
+    full = replace(
+        pack(soc=90), pv_input_w=300, pv_input_configured=True, bms_full_verified=True
+    )
+    assert engine.update((full,), 0, 1)["a_inv"] == 300
+    assert engine.state.full == {"a"}
+
+    # An attached module is below its real hardware full threshold, while
+    # the aggregate level remains 90% and normal hysteresis would retain export.
+    incomplete = replace(full, bms_full_verified=False)
+    assert engine.update((incomplete,), 0, 2)["a_inv"] == 0
+    assert engine.state.full == set()
+
+
 def test_pv_only_bypass_rejects_nonfinite_and_negative_pv_values():
     engine = Controller()
     engine.feed_in = True
