@@ -140,6 +140,7 @@ class EMSRuntime:
         self._startup_export_trip = False
         self._startup_export_started_at: float | None = None
         self._startup_export_recovery_count = 0
+        self._startup_export_last_reduction_seq: datetime | None = None
         self._start_hold = StartHold(seconds=30.0)
         self._running = False
         self._seen_valid = False
@@ -648,6 +649,55 @@ class EMSRuntime:
                 if max(requested, current) > inverter.minimum_w:
                     reductions[inverter.key] = inverter.minimum_w
         return reductions
+
+    def _startup_export_reduction_targets(
+        self, batteries: tuple[Battery, ...], signed_grid_w: float
+    ) -> dict[str, float]:
+        """Reduce *dispatched limits* by the signed net deviation, not all to zero.
+
+        These limits are NOT measured AC power. Missing, stale or contradictory
+        command baselines are deliberately treated as zero, never as permission
+        to increase an inverter during an export correction. Each fresh meter
+        sample can request a further downward correction.
+        """
+        commanded: dict[str, float] = {}
+        minimums: dict[str, float] = {}
+        for battery in batteries:
+            for inverter in battery.inverters:
+                if not inverter.online:
+                    continue
+                minimums[inverter.key] = inverter.minimum_w
+                dispatched = self._last_dispatched_w.get(inverter.key)
+                state = self.hass.states.get(inverter.key)
+                reported = self._float(state.state) if state else None
+                unit = state.attributes.get("unit_of_measurement") if state else None
+                if reported is not None and unit == "%":
+                    reported = reported * inverter.rated_w / 100
+                if unit not in ("%", "W"):
+                    reported = None
+                if (
+                    dispatched is None
+                    or reported is None
+                    or not isfinite(dispatched)
+                    or not isfinite(reported)
+                ):
+                    commanded[inverter.key] = inverter.minimum_w
+                else:
+                    commanded[inverter.key] = max(
+                        inverter.minimum_w,
+                        min(inverter.rated_w, dispatched, reported),
+                    )
+        headroom = {
+            key: max(0.0, value - minimums[key]) for key, value in commanded.items()
+        }
+        total = sum(headroom.values())
+        correction = max(0.0, self.controller.grid_target_w - signed_grid_w)
+        if total <= 0:
+            return minimums
+        return {
+            key: max(minimums[key], commanded[key] - correction * available / total)
+            for key, available in headroom.items()
+        }
 
     def _reconnected_inverters(self, batteries: tuple[Battery, ...]) -> set[str]:
         """Detect actual HA availability recovery without policing manual limits.
@@ -1173,14 +1223,29 @@ class EMSRuntime:
                 self._publish()
                 return
             if self._startup_export_trip:
-                safe = {
-                    inv.key: inv.minimum_w
-                    for battery in batteries
-                    for inv in battery.inverters
-                    if inv.online
-                }
+                # One proportional downward correction per *fresh* grid report.
+                # If the meter disappears, fail closed to the safe minimum.
+                if self._grid_raw_w is None:
+                    reduction = {
+                        inv.key: inv.minimum_w
+                        for battery in batteries
+                        for inv in battery.inverters
+                        if inv.online
+                    }
+                elif (
+                    isinstance(sequence, datetime)
+                    and sequence != self._startup_export_last_reduction_seq
+                    and self._grid_raw_w < self.controller.grid_target_w
+                ):
+                    reduction = self._startup_export_reduction_targets(
+                        batteries, self._grid_raw_w
+                    )
+                    self._startup_export_last_reduction_seq = sequence
+                else:
+                    reduction = {}
                 self.last_error = None
-                await self._apply(safe, now, emergency=True)
+                if reduction:
+                    await self._apply(reduction, now, emergency=True)
                 if self.last_error is not None:
                     # A real failed minimum command remains a write error and
                     # must never be treated as a successful recovery.
@@ -1201,6 +1266,7 @@ class EMSRuntime:
                     self._startup_export_trip = False
                     self._startup_export_started_at = None
                     self._startup_export_recovery_count = 0
+                    self._startup_export_last_reduction_seq = None
                     self._grid_filter.reset()
                     self._last_processed_grid = None
                     self.controller._reset_pid()
@@ -1355,6 +1421,7 @@ class EMSRuntime:
             self._startup_export_trip = False
             self._startup_export_started_at = None
             self._startup_export_recovery_count = 0
+            self._startup_export_last_reduction_seq = None
             self._last_raw_grid_sequence = None
             self.controller.pid_hold = False
             self.last_error = None
