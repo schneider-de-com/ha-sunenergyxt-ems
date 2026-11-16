@@ -119,26 +119,33 @@
   "options": {
     "step": {
       "init": {
-        "title": "EMS settings",
-        "description": "Choose one output mode: household demand (no intentional export), or fresh PV power only after verified BMS full. The BK BMS hardware ceiling is authoritative. Detected capacity remains editable and existing values are preserved.",
+        "title": "Choose settings section",
+        "menu_options": {
+          "basic": "Basic operation",
+          "devices": "Devices and measurement sources",
+          "expert": "Expert settings"
+        },
+        "description": "Choose which Home Assistant EMS options to change. Basic operation, source configuration, and expert settings are separate so a simple edit never silently changes existing device mappings."
+      },
+      "basic": {
+        "title": "Basic operation",
         "data": {
           "enabled": "Enable EMS",
-          "feed_in": "Feed-in after full charge",
           "grid_target_w": "Grid import target (W)",
+          "feed_in_mode": "Output mode (exclusive)",
+          "planning_enabled": "Enable forecast storage priority"
+        },
+        "description": "Daily EMS enable, the mutually exclusive export strategy, grid-import target and optional planning setting. Other mappings remain unchanged."
+      },
+      "devices": {
+        "title": "Devices and measurement sources",
+        "data": {
+          "feed_in": "Feed-in after full charge",
           "upper_1": "Battery 1: upper SoC limit (feed-in only)",
           "upper_2": "Battery 2: upper SoC limit (feed-in only)",
           "upper_3": "Battery 3: upper SoC limit (feed-in only)",
           "upper_4": "Battery 4: upper SoC limit (feed-in only)",
           "upper_5": "Battery 5: upper SoC limit (feed-in only)",
-          "feed_in_mode": "Output mode (exclusive)",
-          "feed_in_hysteresis_pct": "PV mode: SoC hysteresis (percentage points)",
-          "adaptive_pid": "Enable adaptive PID control",
-          "start_hold_seconds": "Inverter startup settling time (seconds)",
-          "pid_kp_min": "PID proportional gain Kp at small import errors",
-          "pid_kp_max": "PID Kp at large import errors",
-          "pid_kp_export": "PID proportional gain Kp during export",
-          "pid_ki": "PID integral gain Ki",
-          "pid_kd": "PID derivative gain Kd",
           "pv_input_1": "Battery 1: optional PV input power sensor (W/kW)",
           "ev_mode_1": "Battery 1: EV3600 auto-charge switch",
           "ev_power_1": "Battery 1: EV3600 charging power sensor (W/kW)",
@@ -184,7 +191,6 @@
           "capacity_wh_8": "Battery 8: total capacity including expansions (Wh)",
           "capacity_wh_9": "Battery 9: total capacity including expansions (Wh)",
           "capacity_wh_10": "Battery 10: total capacity including expansions (Wh)",
-          "planning_enabled": "Enable forecast storage priority",
           "pv_forecast_today": "Aggregate solar forecast: today",
           "pv_forecast_tomorrow": "Aggregate solar forecast: tomorrow",
           "pv_forecast_updated": "Aggregate solar forecast: last successful API update (Solcast only)",
@@ -219,7 +225,21 @@
           "output_limit_9": "Storage 9: combined AC setpoint budget (W; verify hardware rating)",
           "output_limit_10": "Storage 10: combined AC setpoint budget (W; verify hardware rating)"
         },
-        "description": "The EMS uses one shared grid meter. **Household demand** follows the house load regardless of upper SoC and avoids intentional export. **PV generation** releases the inverter's configured output limit only after the battery reaches the configured upper SoC threshold and may export stored energy. The displayed SoC hysteresis is an EMS software choice, not a universal manufacturer value. Leave feed-in off until hardware-tested."
+        "description": "Inspect physical towers, inverter mappings and optional PV, AC, EV and forecast sources. User-confirmed capacities and ratings are retained."
+      },
+      "expert": {
+        "title": "Expert settings",
+        "data": {
+          "feed_in_hysteresis_pct": "PV mode: SoC hysteresis (percentage points)",
+          "adaptive_pid": "Enable adaptive PID control",
+          "start_hold_seconds": "Inverter startup settling time (seconds)",
+          "pid_kp_min": "PID proportional gain Kp at small import errors",
+          "pid_kp_max": "PID Kp at large import errors",
+          "pid_kp_export": "PID proportional gain Kp during export",
+          "pid_ki": "PID integral gain Ki",
+          "pid_kd": "PID derivative gain Kd"
+        },
+        "description": "Adjust advanced control parameters only if their effects are understood. Every existing parameter remains available for legacy installations."
       }
     },
     "error": {

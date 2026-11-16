@@ -100,3 +100,35 @@ async def test_options_refuse_inverted_pid_gains(options):
         }
     )
     assert result["errors"]["base"] == "invalid_pid_gains"
+
+
+@pytest.mark.asyncio
+async def test_basic_save_preserves_existing_pv_mapping_when_sensor_is_offline(options):
+    """Changing an unrelated target does not require optional PV to be online."""
+    handler, entry = options
+    entry.options.update(
+        {
+            "pv_input": {"bk1": "sensor.offline_pv"},
+            "capacity_wh": {"bk1": 4300},
+            "grid_target_w": 20,
+            "pid_ki": 0.03,
+        }
+    )
+    handler.hass.states.get = lambda _entity: None
+    result = await handler.async_step_basic({"enabled": False, "grid_target_w": 35})
+    assert result["type"] == "create_entry"
+    assert result["data"]["grid_target_w"] == 35
+    assert result["data"]["pv_input"] == {"bk1": "sensor.offline_pv"}
+    assert result["data"]["capacity_wh"] == {"bk1": 4300}
+    assert result["data"]["pid_ki"] == 0.03
+
+
+@pytest.mark.asyncio
+async def test_device_page_rejects_new_invalid_pv_mapping_but_retains_other_options(options):
+    handler, entry = options
+    entry.options["pv_input"] = {"bk1": "sensor.existing_pv"}
+    handler.hass.states.get = lambda _entity: None
+    result = await handler.async_step_devices({"pv_input_1": "sensor.invalid_pv"})
+    assert result["type"] == "form"
+    assert result["errors"]["pv_input_1"] == "invalid_pv_power_source"
+    assert entry.options["pv_input"] == {"bk1": "sensor.existing_pv"}

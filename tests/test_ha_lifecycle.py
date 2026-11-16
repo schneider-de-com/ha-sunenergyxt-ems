@@ -273,6 +273,19 @@ async def test_forecast_solar_real_coordinator_receipts_service_and_unload(
     owner._async_set_state(hass, ConfigEntryState.NOT_LOADED, None)
 
 
+async def _device_options_form(hass: HomeAssistant, entry: MockConfigEntry):
+    """Enter the native devices/sources page instead of the old one-page form."""
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    assert menu["type"] == "menu"
+    assert "devices" in menu["menu_options"]
+    form = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "devices"}
+    )
+    assert form["type"] == "form"
+    assert form["step_id"] == "devices"
+    return form
+
+
 @pytest.mark.usefixtures("enable_custom_integrations")
 @pytest.mark.asyncio
 async def test_options_select_forecast_solar_pair_without_reusing_solcast_timestamp(hass):
@@ -307,7 +320,7 @@ async def test_options_select_forecast_solar_pair_without_reusing_solcast_timest
     }
     entry = MockConfigEntry(domain=DOMAIN, data={"batteries": []}, options=original)
     entry.add_to_hass(hass)
-    form = await hass.config_entries.options.async_init(entry.entry_id)
+    form = await _device_options_form(hass, entry)
     result = await hass.config_entries.options.async_configure(
         form["flow_id"],
         {"pv_forecast_today": selected["today"], "pv_forecast_tomorrow": selected["tomorrow"]},
@@ -356,7 +369,7 @@ async def test_options_reject_invalid_forecast_solar_binding_without_mutation(ha
     original = {"enabled": False, "feed_in": True, "grid_target_w": 20, "pid_ki": 0.07}
     entry = MockConfigEntry(domain=DOMAIN, data={"batteries": []}, options=original)
     entry.add_to_hass(hass)
-    form = await hass.config_entries.options.async_init(entry.entry_id)
+    form = await _device_options_form(hass, entry)
     data = {"pv_forecast_today": selected["today"]}
     if fault != "partial":
         data["pv_forecast_tomorrow"] = selected["tomorrow"]
@@ -386,7 +399,7 @@ async def test_options_reject_energy_as_pv_power_and_allow_explicit_removal(hass
     entry.add_to_hass(hass)
     hass.states.async_set("sensor.monthly_energy", "0.3328", {"unit_of_measurement": "kWh"})
     hass.states.async_set("sensor.pv_power", "unavailable", {"unit_of_measurement": "kW"})
-    form = await hass.config_entries.options.async_init(entry.entry_id)
+    form = await _device_options_form(hass, entry)
     result = await hass.config_entries.options.async_configure(
         form["flow_id"], {"pv_input_1": "sensor.monthly_energy"}
     )
@@ -413,12 +426,12 @@ async def test_options_reject_energy_as_pv_power_and_allow_explicit_removal(hass
     # An offline but correctly typed source remains configurable; runtime decides freshness.
     for unit in ("W", "kW"):
         hass.states.async_set("sensor.pv_power", "100", {"unit_of_measurement": unit})
-        form = await hass.config_entries.options.async_init(entry.entry_id)
+        form = await _device_options_form(hass, entry)
         result = await hass.config_entries.options.async_configure(
             form["flow_id"], {"pv_input_1": "sensor.pv_power"}
         )
         assert result["type"] == "create_entry"
-    form = await hass.config_entries.options.async_init(entry.entry_id)
+    form = await _device_options_form(hass, entry)
     result = await hass.config_entries.options.async_configure(
         form["flow_id"], {"clear_pv_input_1": True}
     )
@@ -426,12 +439,12 @@ async def test_options_reject_energy_as_pv_power_and_allow_explicit_removal(hass
     assert entry.options["pv_input"] == {}
     for key in ("enabled", "feed_in", "grid_target_w", "pid_ki", "capacity_wh"):
         assert entry.options[key] == original[key]
-    form = await hass.config_entries.options.async_init(entry.entry_id)
+    form = await _device_options_form(hass, entry)
     assert "clear_pv_input_1" not in form["data_schema"].schema
     # Removal must also work directly on the pre-existing invalid mapping.
     hass.config_entries.options.async_abort(form["flow_id"])
     hass.config_entries.async_update_entry(entry, options=original)
-    form = await hass.config_entries.options.async_init(entry.entry_id)
+    form = await _device_options_form(hass, entry)
     result = await hass.config_entries.options.async_configure(
         form["flow_id"], {"clear_pv_input_1": True}
     )

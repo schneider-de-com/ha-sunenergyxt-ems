@@ -119,26 +119,33 @@
   "options": {
     "step": {
       "init": {
-        "title": "EMS-Einstellungen",
-        "description": "Ein Ausgabemodus: Haushaltslast (keine beabsichtigte Einspeisung) oder ausschließlich aktuelle PV-Leistung nach bestätigter BMS-Vollladung. Die BMS-Hardwaregrenze ist für BK-Speicher maßgeblich. Erkannte Kapazitäten bleiben korrigierbar; bereits gespeicherte Werte werden nicht überschrieben.",
+        "title": "Einstellungsbereich auswählen",
+        "menu_options": {
+          "basic": "Grundbetrieb",
+          "devices": "Geräte und Messwertquellen",
+          "expert": "Experteneinstellungen"
+        },
+        "description": "Wähle den Einstellungsbereich für das EMS. Grundbetrieb, Geräte- und Messwertquellen sowie Expertenwerte sind getrennt, damit bestehende Einstellungen und Gerätezuordnungen beim Speichern erhalten bleiben."
+      },
+      "basic": {
+        "title": "Grundbetrieb",
         "data": {
           "enabled": "EMS aktivieren",
-          "feed_in": "Einspeisung nach Vollladung",
           "grid_target_w": "Netzbezug-Zielwert (W)",
+          "feed_in_mode": "Ausgabemodus (exklusiv)",
+          "planning_enabled": "Prognosebasierte Speicherpriorität aktivieren"
+        },
+        "description": "Aktivierung, Einspeiseverhalten, Netzbezugspuffer und optionale Planung für den normalen Betrieb einstellen. Gerätezuordnungen bleiben unverändert."
+      },
+      "devices": {
+        "title": "Geräte und Messwertquellen",
+        "data": {
+          "feed_in": "Einspeisung nach Vollladung",
           "upper_1": "Speicher 1: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_2": "Speicher 2: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_3": "Speicher 3: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_4": "Speicher 4: Ladegrenze (nur für Vollladungseinspeisung)",
           "upper_5": "Speicher 5: Ladegrenze (nur für Vollladungseinspeisung)",
-          "feed_in_mode": "Ausgabemodus (exklusiv)",
-          "feed_in_hysteresis_pct": "PV-Modus: SoC-Hysterese (Prozentpunkte)",
-          "adaptive_pid": "Adaptiven PID-Regler aktivieren",
-          "start_hold_seconds": "Anlaufhaltezeit (Sekunden)",
-          "pid_kp_min": "PID Kp klein",
-          "pid_kp_max": "PID Kp groß",
-          "pid_kp_export": "PID Kp bei Einspeisung",
-          "pid_ki": "PID Integralverstärkung",
-          "pid_kd": "PID Differentialverstärkung",
           "pv_input_1": "Speicher 1: PV-Eingangsleistung (optional)",
           "ev_mode_1": "Speicher 1: EV3600-Autoladeschalter",
           "ev_power_1": "Speicher 1: EV3600-Ladeleistung",
@@ -184,7 +191,6 @@
           "capacity_wh_8": "Speicher 8: Gesamtkapazität einschließlich Erweiterungen (Wh)",
           "capacity_wh_9": "Speicher 9: Gesamtkapazität einschließlich Erweiterungen (Wh)",
           "capacity_wh_10": "Speicher 10: Gesamtkapazität einschließlich Erweiterungen (Wh)",
-          "planning_enabled": "Prognosebasierte Speicherpriorität aktivieren",
           "pv_forecast_today": "Gesamte Solarprognose: heute",
           "pv_forecast_tomorrow": "Gesamte Solarprognose: morgen",
           "pv_forecast_updated": "Gesamte Solarprognose: letzter erfolgreicher API-Abruf (nur Solcast)",
@@ -219,7 +225,21 @@
           "output_limit_9": "Speicher 9: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)",
           "output_limit_10": "Speicher 10: maximales gemeinsames AC-Leistungslimit (W; Hardwaregrenze prüfen)"
         },
-        "description": "Das EMS verwendet einen gemeinsamen Netzzähler. **Gemäß Haushaltslast** folgt der Regler der Hauslast unabhängig von der oberen SoC-Grenze und vermeidet absichtliche Einspeisung. **Gemäß PV-Erzeugung** gibt er nach Erreichen der oberen SoC-Grenze das konfigurierte Wechselrichterlimit frei; dabei kann gespeicherte Energie ins öffentliche Netz fließen. Bis zum Hardwaretest deaktiviert lassen."
+        "description": "Speichersysteme, Wechselrichter, bestätigte Kapazitäten sowie optionale PV-, AC-, EV- und Prognosequellen prüfen und zuordnen."
+      },
+      "expert": {
+        "title": "Experteneinstellungen",
+        "data": {
+          "feed_in_hysteresis_pct": "PV-Modus: SoC-Hysterese (Prozentpunkte)",
+          "adaptive_pid": "Adaptiven PID-Regler aktivieren",
+          "start_hold_seconds": "Anlaufhaltezeit (Sekunden)",
+          "pid_kp_min": "PID Kp klein",
+          "pid_kp_max": "PID Kp groß",
+          "pid_kp_export": "PID Kp bei Einspeisung",
+          "pid_ki": "PID Integralverstärkung",
+          "pid_kd": "PID Differentialverstärkung"
+        },
+        "description": "Erweiterte Reglerparameter nur bei Bedarf ändern. Bestehende Werte bleiben erhalten und sind für frühere Installationen weiterhin verfügbar."
       }
     },
     "error": {
