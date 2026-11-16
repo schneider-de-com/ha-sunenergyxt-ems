@@ -46,12 +46,19 @@ from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
 from .observer import DemandObserver, HouseholdObservation
 from .operating_history import OperatingSample
 from .pid import PIDGains
-from .registry import registered_ac_voltage, registered_connection, registered_dc_output
+from .registry import (
+    registered_ac_voltage,
+    registered_bk_hardware_sources,
+    registered_connection,
+    registered_dc_output,
+)
 
 _LOGGER = logging.getLogger(__name__)
 UPDATE_PERIOD = timedelta(seconds=5)
 MAX_GRID_AGE = timedelta(seconds=30)
 MAX_SOC_AGE = timedelta(seconds=45)
+# A PV-only export allowance must not use the normal 90-second power cache.
+MAX_PV_BYPASS_AGE = timedelta(seconds=30)
 MAX_DC_AGE = timedelta(seconds=90)
 # Fresh diagnostic voltage is required only for validated Deye Solarman profiles.
 MAX_AC_VOLTAGE_AGE = timedelta(seconds=30)
@@ -131,6 +138,9 @@ class EMSRuntime:
         self._shutdown_store: Store[dict[str, list[str]]] = Store(
             hass, 1, f"{DOMAIN}.shutdown.{entry.entry_id}", atomic_writes=True
         )
+        # Keep discovered extension slots through transient unavailable readings.
+        # The persisted capacity mapping also guards topology after a restart.
+        self._known_bms_extensions: dict[str, set[int]] = {}
         self._dc_monitored: dict[str, str] = {}
         self._dc_unavailable_keys: set[str] = set()
         self._last_processed_grid: datetime | None = None
@@ -353,6 +363,74 @@ class EMSRuntime:
             return "ac_voltage_unavailable"
         return "available"
 
+    def _fresh_bms_percentage(self, source: str | None) -> float | None:
+        """A BMS limit is authoritative only while its exact % sensor is fresh."""
+        if not source:
+            return None
+        state = self.hass.states.get(source)
+        if state is None or state.attributes.get("unit_of_measurement") != "%":
+            return None
+        value = self._fresh_soc(source)
+        return value if value is not None and 0 <= value <= 100 else None
+
+    def _bms_hardware_upper(
+        self, record: dict[str, Any]
+    ) -> tuple[float | None, bool | None, dict[str, str] | None]:
+        """Resolve the effective BK BMS ceiling and full-module evidence.
+
+        Legacy/manual batteries retain their configured upper threshold. For a
+        recognized BK, missing head/attached-module telemetry must never fall
+        back to the user-configurable charge target. Different module ceilings
+        cannot be compared with one aggregate SoC without additional evidence.
+        """
+        sources = registered_bk_hardware_sources(self.hass, record.get(CONF_SOC))
+        if sources is None:
+            return self._float(record.get(CONF_UPPER)), None, None
+
+        head_limit = self._fresh_bms_percentage(sources.get("head_limit"))
+        if head_limit is None:
+            return None, False, sources
+
+        key = record[CONF_DEVICE]
+        seen = self._known_bms_extensions.setdefault(key, set())
+        for index in range(1, 8):
+            if (
+                self._fresh_bms_percentage(sources.get(f"extension_soc_{index}")) is not None
+                or self._fresh_bms_percentage(sources.get(f"extension_limit_{index}"))
+                is not None
+            ):
+                seen.add(index)
+
+        # Previous, explicitly configured physical capacity is evidence that
+        # an expansion exists even when its sensors are currently unavailable.
+        capacities = self.entry.options.get("capacity_wh", {})
+        configured_wh = (
+            self._float(capacities.get(key)) if isinstance(capacities, dict) else None
+        )
+        if configured_wh is not None and configured_wh >= 2150:
+            module_count = round(configured_wh / 2150)
+            if (
+                1 <= module_count <= 8
+                and abs(configured_wh - module_count * 2150) <= 0.01
+                and len(seen) < module_count - 1
+            ):
+                return None, False, sources
+
+        head_soc_source = sources.get("head_soc")
+        head_actual = self._fresh_bms_percentage(head_soc_source)
+        full_verified = (
+            head_actual is not None and head_actual >= head_limit
+            if head_soc_source
+            else (self._fresh_soc(record.get(CONF_SOC)) or -1) >= head_limit
+        )
+        for index in sorted(seen):
+            module_limit = self._fresh_bms_percentage(sources.get(f"extension_limit_{index}"))
+            module_soc = self._fresh_bms_percentage(sources.get(f"extension_soc_{index}"))
+            if module_limit is None or module_soc is None or module_limit != head_limit:
+                return None, False, sources
+            full_verified = full_verified and module_soc >= module_limit
+        return head_limit, full_verified, sources
+
     def _batteries(self) -> tuple[Battery, ...]:
         batteries = []
         limits = self.entry.options.get(CONF_OUTPUT_LIMITS, {})
@@ -375,6 +453,16 @@ class EMSRuntime:
                 inverters.append(
                     Inverter(entity_id, rated_w=rated, minimum_w=minimum, online=online)
                 )
+            upper_soc, full_verified, bms_sources = self._bms_hardware_upper(record)
+            configured_pv = self.entry.options.get("pv_input", {})
+            selected_pv = (
+                configured_pv.get(record[CONF_DEVICE])
+                if isinstance(configured_pv, dict)
+                else None
+            )
+            pv_source = selected_pv or (
+                bms_sources.get("pv_input") if bms_sources is not None else None
+            )
             charging = self._float(record.get("charging")) or 0
             dc_source = (
                 record.get("dc_output")
@@ -388,7 +476,7 @@ class EMSRuntime:
                     key=record[CONF_DEVICE],
                     soc=self._fresh_soc(record.get(CONF_SOC)),
                     lower_soc=self._float(record.get(CONF_LOWER)),
-                    upper_soc=self._float(record.get(CONF_UPPER)),
+                    upper_soc=upper_soc,
                     inverters=tuple(inverters),
                     # A per-tower AC setpoint ceiling is not measured DC power.
                     # Existing entries retain the conservative 1,920 W default.
@@ -399,14 +487,13 @@ class EMSRuntime:
                     charging_w=charging,
                     dc_output_w=self._fresh_dc_output(dc_source),
                     pv_input_w=fresh_power(
-                        self.hass, self.entry.options.get("pv_input", {}).get(record[CONF_DEVICE])
+                        self.hass, pv_source, max_age=MAX_PV_BYPASS_AGE
                     ),
-                    pv_input_configured=bool(
-                        self.entry.options.get("pv_input", {}).get(record[CONF_DEVICE])
-                    ),
+                    pv_input_configured=bool(pv_source),
                     ev3600_charging=ev3600_charging(
                         self.hass, self.entry.options.get("ev3600", {}).get(record[CONF_DEVICE])
                     ),
+                    bms_full_verified=full_verified,
                 )
             )
         return tuple(batteries)
