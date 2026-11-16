@@ -494,12 +494,17 @@ async def test_tower_output_limit_can_be_configured_without_changing_dc_protecti
     """The AC setpoint budget belongs to the configured head, not the DC sensor."""
     options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
     entry = SimpleNamespace(
-        data={"batteries": [
-            {"device_id": "plus", "inverters": [
-                {"entity_id": "number.inv1", "rated_w": 2000},
-                {"entity_id": "number.inv2", "rated_w": 2000},
-            ]}
-        ]},
+        data={
+            "batteries": [
+                {
+                    "device_id": "plus",
+                    "inverters": [
+                        {"entity_id": "number.inv1", "rated_w": 2000},
+                        {"entity_id": "number.inv2", "rated_w": 2000},
+                    ],
+                }
+            ]
+        },
         options={"enabled": False},
     )
     monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
@@ -515,11 +520,11 @@ async def test_tower_output_limit_rejects_more_than_inverter_ratings(monkeypatch
     """A user's manual budget cannot exceed the total selected inverter rating."""
     options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
     entry = SimpleNamespace(
-        data={"batteries": [
-            {"device_id": "plus", "inverters": [
-                {"entity_id": "number.inv1", "rated_w": 2000}
-            ]}
-        ]},
+        data={
+            "batteries": [
+                {"device_id": "plus", "inverters": [{"entity_id": "number.inv1", "rated_w": 2000}]}
+            ]
+        },
         options={"enabled": False},
     )
     monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
@@ -532,9 +537,13 @@ async def test_tower_output_limit_rejects_more_than_inverter_ratings(monkeypatch
 @pytest.mark.asyncio
 async def test_legacy_dc_trip_option_is_dropped_when_saving_options(monkeypatch):
     options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
-    entry = SimpleNamespace(data={"batteries": []}, options={
-        "enabled": False, "dc_tripped_batteries": ["bk1"],
-    })
+    entry = SimpleNamespace(
+        data={"batteries": []},
+        options={
+            "enabled": False,
+            "dc_tripped_batteries": ["bk1"],
+        },
+    )
     monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
     result = await options.async_step_init({"enabled": False, "feed_in": False})
     assert result["type"] == "create_entry"
