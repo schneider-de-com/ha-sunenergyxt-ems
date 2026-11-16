@@ -1453,8 +1453,6 @@ class EMSRuntime:
         enabled = bool(self.entry.options.get(CONF_ENABLED, True))
         if self.horizon is not None:
             self.horizon.invalidate()
-        if not enabled:
-            # A deliberate reset in Configure is permitted only while EMS is off.
         self.controller.feed_in = (
             bool(self.entry.options.get(CONF_FEED_IN, False))
             and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
