@@ -12,9 +12,10 @@ CONF_DEVICE = "device_id"
 CONF_GRID_INVERT = "invert_grid"
 CONF_ENABLED = "enabled"
 CONF_FEED_IN = "feed_in"
-CONF_DC_TRIPPED = "dc_tripped_batteries"
+CONF_OUTPUT_LIMITS = "output_limit_w"
 DEFAULT_GRID_TARGET_W = 20.0
-BK215_MAX_AC_W = 1920.0
+# Backwards-compatible AC command budget for pre-Plus configurations; not a BMS/DC trip.
+DEFAULT_TOWER_OUTPUT_LIMIT_W = 1920.0
 
 CONF_FEED_IN_MODE = "feed_in_mode"
 FEED_IN_MODE_HOUSEHOLD = "household"
