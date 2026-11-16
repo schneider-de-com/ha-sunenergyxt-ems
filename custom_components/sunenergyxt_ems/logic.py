@@ -182,7 +182,9 @@ class GridMedianFilter:
         recent = list(self._samples)
         if sum(abs(watts - requested_w) <= 150 for watts in recent) < 3:
             return requested_w
-        noise = median(abs(current - prior) for prior, current in zip(recent, recent[1:], strict=False))
+        noise = median(
+            abs(current - prior) for prior, current in zip(recent, recent[1:], strict=False)
+        )
         margin = max(0.0, (noise - 30.0) * 0.25)
         return min(200.0, requested_w + margin)
 
@@ -417,8 +419,7 @@ class Controller:
         }
         allocations = {b.key: 0.0 for b in batteries}
         weights = {
-            b.key: max(0.0, (b.soc or 0.0) - (b.lower_soc or 0.0) - 5.0)
-            * budgets[b.key]
+            b.key: max(0.0, (b.soc or 0.0) - (b.lower_soc or 0.0) - 5.0) * budgets[b.key]
             for b in batteries
         }
         remaining = min(max(0.0, requested_w), sum(budgets.values()))
@@ -576,9 +577,7 @@ class Controller:
             self.cooperative_dispatch or self.state.cooperative_active
         )
         shared_budgets = (
-            self._cooperative_allocation(ranked, total_w)
-            if self.state.cooperative_active
-            else {}
+            self._cooperative_allocation(ranked, total_w) if self.state.cooperative_active else {}
         )
         for battery in ranked:
             if battery.soc is None:
