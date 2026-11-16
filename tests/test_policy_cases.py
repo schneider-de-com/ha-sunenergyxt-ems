@@ -1,5 +1,6 @@
 """Positive, negative, and implausible input cases for MVP safety behavior."""
 
+from dataclasses import replace
 from math import inf, nan
 
 import pytest
@@ -75,11 +76,57 @@ def test_positive_multiple_batteries_keep_operating_if_one_is_unavailable():
 
 def test_positive_full_charge_is_opt_in_and_has_soc_hysteresis():
     engine = Controller()
-    assert engine.update((pack(soc=90),), 0, 1)["a_inv"] == 0
+    solar = pack(soc=90)
+    solar = replace(solar, pv_input_w=800, pv_input_configured=True)
+    assert engine.update((solar,), 0, 1)["a_inv"] == 0
     engine.feed_in = True
-    assert engine.update((pack(soc=90),), 0, 2)["a_inv"] == 800
-    assert engine.update((pack(soc=89),), 0, 3)["a_inv"] == 800
-    assert engine.update((pack(soc=88),), -800, 4)["a_inv"] == 0
+    assert engine.update((solar,), 0, 2)["a_inv"] == 800
+    assert engine.update((replace(solar, soc=89),), 0, 3)["a_inv"] == 800
+    assert engine.update((replace(solar, soc=88),), -800, 4)["a_inv"] == 0
+
+
+def test_pv_only_bypass_cannot_use_battery_when_pv_input_missing():
+    engine = Controller()
+    engine.feed_in = True
+    for index, reading in enumerate(
+        (pack(soc=90), replace(pack(soc=90), pv_input_configured=True)),
+        start=1,
+    ):
+        assert engine.update((reading,), 0, index)["a_inv"] == 0
+        assert engine.state.full == set()
+
+
+def test_pv_only_bypass_never_exceeds_verified_pv_input():
+    engine = Controller()
+    engine.feed_in = True
+    solar = replace(pack(soc=90), pv_input_w=125, pv_input_configured=True)
+    assert engine.update((solar,), 0, 1)["a_inv"] == 125
+    assert engine.state.full == {"a"}
+    assert engine.update((replace(solar, pv_input_w=None),), -100, 2)["a_inv"] == 0
+    assert engine.state.full == set()
+
+
+def test_existing_bms_pv_bypass_closes_if_any_module_no_longer_full():
+    engine = Controller()
+    engine.feed_in = True
+    full = replace(pack(soc=90), pv_input_w=300, pv_input_configured=True, bms_full_verified=True)
+    assert engine.update((full,), 0, 1)["a_inv"] == 300
+    assert engine.state.full == {"a"}
+
+    # An attached module is below its real hardware full threshold, while
+    # the aggregate level remains 90% and normal hysteresis would retain export.
+    incomplete = replace(full, bms_full_verified=False)
+    assert engine.update((incomplete,), 0, 2)["a_inv"] == 0
+    assert engine.state.full == set()
+
+
+def test_pv_only_bypass_rejects_nonfinite_and_negative_pv_values():
+    engine = Controller()
+    engine.feed_in = True
+    for i, watts in enumerate((nan, inf, -1.0), start=1):
+        reading = replace(pack(soc=90), pv_input_w=watts, pv_input_configured=True)
+        assert engine.update((reading,), 0, i)["a_inv"] == 0
+        assert engine.state.full == set()
 
 
 def test_positive_zero_grid_reading_is_valid():

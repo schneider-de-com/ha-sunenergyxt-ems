@@ -170,8 +170,14 @@ async def test_severe_export_when_feed_in_enabled_does_not_trip(
     hass, entry = configured_runtime()
     entry.options["feed_in"] = True
     entry.options["feed_in_mode"] = "pv"
+    entry.options["pv_input"] = {"bk215-1": "sensor.pv"}
+    states = hass.states.get.__self__
+    states["sensor.pv"] = sample(450, "W")
+    states["sensor.soc"].state = "100"
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
+    # Previous controller cycle has entered PV-only full-charge mode.
+    runtime.controller.state.full.add("bk215-1")
     clock = [1000.0]
     monkeypatch.setattr(module, "monotonic", lambda: clock[0])
     runtime._start_hold.record("number.m200", before_w=0, after_w=110, now=1000)
@@ -184,6 +190,28 @@ async def test_severe_export_when_feed_in_enabled_does_not_trip(
     assert runtime.controller.feed_in is True
     assert runtime._startup_export_trip is False
     assert "Excess grid export" not in (runtime.last_error or "")
+
+
+@pytest.mark.asyncio
+async def test_pv_mode_selected_but_not_full_must_retain_startup_export_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The enabled mode alone is not evidence of intentional PV export."""
+    hass, entry = configured_runtime()
+    entry.options.update({"feed_in": True, "feed_in_mode": "pv"})
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    runtime._start_hold.record("number.m200", before_w=0, after_w=110, now=1000)
+    meter = hass.states.get("sensor.grid")
+    meter.state = "-695.867"
+    meter.last_reported = datetime.now(UTC) - timedelta(seconds=1)
+
+    await runtime.async_update()
+
+    assert runtime.controller.feed_in is True
+    assert runtime._startup_export_trip is True
 
 
 @pytest.mark.asyncio
@@ -331,8 +359,14 @@ async def test_confirmed_export_does_not_override_intentional_feed_in(monkeypatc
     """The faster feedback path must not override explicit feed-in mode."""
     hass, entry = configured_runtime()
     entry.options["feed_in"] = True
+    entry.options["feed_in_mode"] = "pv"
+    entry.options["pv_input"] = {"bk215-1": "sensor.pv"}
+    states = hass.states.get.__self__
+    states["sensor.pv"] = sample(350, "W")
+    states["sensor.soc"].state = "100"
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
+    runtime.controller.state.full.add("bk215-1")
     clock = [1000.0]
     monkeypatch.setattr(module, "monotonic", lambda: clock[0])
     meter = hass.states.get("sensor.grid")

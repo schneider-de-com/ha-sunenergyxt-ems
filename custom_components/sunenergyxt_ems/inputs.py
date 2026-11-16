@@ -4,7 +4,9 @@ from datetime import UTC, datetime, timedelta
 from math import isfinite
 
 
-def fresh_power(hass, source: str | None) -> float | None:
+def fresh_power(
+    hass, source: str | None, *, max_age: timedelta = timedelta(seconds=90)
+) -> float | None:
     if not source:
         return None
     state = hass.states.get(source)
@@ -12,7 +14,7 @@ def fresh_power(hass, source: str | None) -> float | None:
         return None
     stamp = getattr(state, "last_reported", None) or state.last_updated
     age = datetime.now(UTC) - stamp
-    if age < timedelta(seconds=-5) or age > timedelta(seconds=90):
+    if age < timedelta(seconds=-5) or age > max_age:
         return None
     unit = state.attributes.get("unit_of_measurement")
     try:

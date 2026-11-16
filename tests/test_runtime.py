@@ -451,15 +451,137 @@ async def test_household_feed_in_mode_ignores_upper_soc_for_normal_demand() -> N
 
 
 @pytest.mark.asyncio
-async def test_pv_feed_in_mode_uses_maximum_only_at_upper_soc() -> None:
-    """The PV mode can release maximum power after reaching the upper SoC."""
+async def test_pv_feed_in_mode_uses_only_fresh_measured_input_after_upper_soc() -> None:
+    """PV-only mode must never grant a maximum without a PV power reading."""
     hass, entry = configured(grid=100, soc=95)
-    entry.options.update({"feed_in": True, "feed_in_mode": "pv"})
+    states = hass.states.get.__self__
+    states["sensor.pv"] = sample(500, "W")
+    entry.options.update(
+        {
+            "feed_in": True,
+            "feed_in_mode": "pv",
+            "pv_input": {"battery-1": "sensor.pv"},
+        }
+    )
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
     assert hass.services.async_call.await_args.args[2]["value"] == 20
-    assert runtime.controller.state.outputs["number.inverter"] == 800
+    assert runtime.controller.state.outputs["number.inverter"] == 500
+
+
+def _identified_bk_head(hass, entry, monkeypatch):
+    """Supply registry identities from the actual SunEnergyXT-BK integration."""
+    states = hass.states.get.__self__
+    state_items = {
+        "sensor.soc": ("bk-entry_wifi_soc", "sensor"),
+        "sensor.bms_hw": ("bk-entry_wifi_mbms_hw_limited_chg_soc_max", "sensor"),
+        "sensor.head_real_soc": ("bk-entry_wifi_b_actual_soc", "sensor"),
+        "sensor.bk_pv": ("bk-entry_wifi_inputpower_total", "sensor"),
+        "sensor.extension_soc": ("bk-entry_wifi_b1_actual_soc", "sensor"),
+        "sensor.extension_hw": ("bk-entry_wifi_sbms1_hw_limited_chg_soc_max", "sensor"),
+    }
+    entries = {
+        entity_id: SimpleNamespace(
+            entity_id=entity_id,
+            unique_id=uid,
+            device_id="battery-1",
+            platform="sunenergyxt_bk",
+            domain=domain,
+            config_entry_id="bk-entry",
+            disabled_by=None,
+        )
+        for entity_id, (uid, domain) in state_items.items()
+    }
+    monkeypatch.setattr(
+        module.er,
+        "async_get",
+        lambda _: SimpleNamespace(async_get=entries.get, entities=entries),
+    )
+    entry.data["batteries"][0]["charging"] = "sensor.bk_pv"
+    entry.options.update({"feed_in": True, "feed_in_mode": "pv"})
+    states["number.upper"].state = "100"
+    states["sensor.bms_hw"] = sample(90, "%")
+    states["sensor.head_real_soc"] = sample(90, "%")
+    states["sensor.bk_pv"] = sample(275, "W")
+    return states, entries
+
+
+def test_live_bk_hardware_ceiling_overrides_unreachable_configured_100(monkeypatch):
+    hass, entry = configured(soc=90)
+    _identified_bk_head(hass, entry, monkeypatch)
+    runtime = EMSRuntime(hass, entry)
+    battery = runtime._batteries()[0]
+    assert battery.upper_soc == 90  # BMS, not number.upper = 100
+    assert battery.pv_input_configured is True
+    assert battery.pv_input_w == 275
+    runtime.controller.feed_in = True
+    assert runtime.controller.update((battery,), 0, 1)["number.inverter"] == 275
+
+
+def test_missing_or_stale_bms_hardware_limit_blocks_pv_bypass(monkeypatch):
+    hass, entry = configured(soc=90)
+    states, _ = _identified_bk_head(hass, entry, monkeypatch)
+    runtime = EMSRuntime(hass, entry)
+    states["sensor.bms_hw"] = sample(90, "%", seconds_old=90)
+    battery = runtime._batteries()[0]
+    assert battery.upper_soc is None
+    runtime.controller.feed_in = True
+    assert runtime.controller.update((battery,), 0, 1)["number.inverter"] == 0
+
+    # An aggregate 90% while the physical head's SoC is not current
+    # cannot certify that every connected BMS module reached full.
+    states["sensor.bms_hw"] = sample(90, "%")
+    states["sensor.head_real_soc"] = sample("unavailable", "%")
+    assert runtime._batteries()[0].upper_soc is None
+
+
+def test_bms_uses_attached_extension_and_fails_closed_on_missing_data(monkeypatch):
+    hass, entry = configured(soc=90)
+    states, _ = _identified_bk_head(hass, entry, monkeypatch)
+    entry.options["capacity_wh"] = {"battery-1": 4300}
+    states["sensor.extension_soc"] = sample(90, "%")
+    states["sensor.extension_hw"] = sample(90, "%")
+    runtime = EMSRuntime(hass, entry)
+    assert runtime._batteries()[0].upper_soc == 90
+    states["sensor.extension_hw"] = sample("unavailable", "%")
+    assert runtime._batteries()[0].upper_soc is None
+    states["sensor.extension_hw"] = sample(85, "%")
+    assert runtime._batteries()[0].upper_soc is None
+    states["sensor.extension_hw"] = sample(90, "%")
+    states["sensor.extension_soc"] = sample(89, "%")
+    battery = runtime._batteries()[0]
+    assert battery.upper_soc == 90
+    assert battery.bms_full_verified is False
+    runtime.controller.feed_in = True
+    assert runtime.controller.update((battery,), 0, 1)["number.inverter"] == 0
+
+
+def test_stale_per_tower_pv_power_does_not_authorize_full_export(monkeypatch):
+    hass, entry = configured(soc=90)
+    states, _ = _identified_bk_head(hass, entry, monkeypatch)
+    states["sensor.bk_pv"] = sample(275, "W", seconds_old=45)
+    runtime = EMSRuntime(hass, entry)
+    battery = runtime._batteries()[0]
+    assert battery.upper_soc == 90
+    assert battery.bms_full_verified is True
+    assert battery.pv_input_configured is True
+    assert battery.pv_input_w is None
+    runtime.controller.feed_in = True
+    assert runtime.controller.update((battery,), 0, 1)["number.inverter"] == 0
+
+
+def test_hardware_limit_unknown_despite_existing_optional_config_cannot_export(monkeypatch):
+    hass, entry = configured(soc=90)
+    states, entries = _identified_bk_head(hass, entry, monkeypatch)
+    # Historical EMS entries could have a manual upper source but the BK
+    # hardware reading must remain authoritative.
+    states["sensor.bms_hw"] = sample("unavailable", "%")
+    del entries["sensor.bms_hw"]
+    runtime = EMSRuntime(hass, entry)
+    assert runtime._batteries()[0].upper_soc is None
+    runtime.controller.feed_in = True
+    assert runtime.controller.update(runtime._batteries(), 0, 1)["number.inverter"] == 0
 
 
 @pytest.mark.asyncio

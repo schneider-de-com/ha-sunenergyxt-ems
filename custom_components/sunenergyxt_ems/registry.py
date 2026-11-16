@@ -174,6 +174,55 @@ def battery_suggestions(hass: HomeAssistant) -> dict[str, dict[str, str]]:
     return find_batteries(registry_candidates(hass))
 
 
+def registered_bk_hardware_sources(
+    hass: HomeAssistant, soc_entity_id: str | None
+) -> dict[str, str] | None:
+    """Resolve BK215 BMS hardware limits from upstream owned registry IDs.
+
+    None indicates a non-BK/manual SoC source. An empty or incomplete mapping
+    for a recognized BK head must *not* fall back to its configurable charge
+    target: the BMS hardware limit is authoritative even if missing.
+    """
+    if not isinstance(soc_entity_id, str):
+        return None
+    registry = er.async_get(hass)
+    head = registry.async_get(soc_entity_id)
+    if (
+        head is None
+        or head.platform.lower() not in BK_SOURCE_DOMAINS
+        or head.domain != "sensor"
+        or not head.config_entry_id
+        or not head.device_id
+        or head.unique_id != f"{head.config_entry_id}_wifi_soc"
+        or head.disabled_by is not None
+    ):
+        return None
+    roles = {
+        "head_limit": "wifi_mbms_hw_limited_chg_soc_max",
+        "head_soc": "wifi_b_actual_soc",
+        "pv_input": "wifi_inputpower_total",
+    }
+    for index in range(1, 8):
+        roles[f"extension_limit_{index}"] = f"wifi_sbms{index}_hw_limited_chg_soc_max"
+        roles[f"extension_soc_{index}"] = f"wifi_b{index}_actual_soc"
+
+    by_unique = {f"{head.config_entry_id}_{suffix}": role for role, suffix in roles.items()}
+    sources: dict[str, str] = {}
+    for item in getattr(registry, "entities", {}).values():
+        if (
+            item.platform.lower() != head.platform.lower()
+            or item.domain != "sensor"
+            or item.config_entry_id != head.config_entry_id
+            or item.device_id != head.device_id
+            or item.disabled_by is not None
+        ):
+            continue
+        role = by_unique.get(item.unique_id)
+        if role:
+            sources[role] = item.entity_id
+    return sources
+
+
 def registered_connection(hass: HomeAssistant, inverter_entity_id: str) -> str | None:
     """Find a Solarman connectivity binary sensor by stable device registry ID.
 
