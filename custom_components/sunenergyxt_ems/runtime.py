@@ -262,7 +262,7 @@ class EMSRuntime:
                 self.entry,
                 data={**self.entry.data, "_shutdown_journal_initialized": True},
             )
-        except (OSError, HomeAssistantError, ValueError) as exc:
+        except (OSError, HomeAssistantError, TypeError, ValueError) as exc:
             self.last_error = f"Cannot persist shutdown journal marker: {exc}"
             self.status = "write_error"
             _LOGGER.error("%s", self.last_error)
