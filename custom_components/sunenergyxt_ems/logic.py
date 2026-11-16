@@ -9,6 +9,7 @@ from datetime import datetime
 from math import ceil, isfinite
 from statistics import median
 
+from .const import DEFAULT_TOWER_OUTPUT_LIMIT_W
 from .pid import PIDGains, bounded_pid
 
 
@@ -54,7 +55,7 @@ class Battery:
     upper_soc: float | None
     inverters: tuple[Inverter, ...]
     charging_w: float = 0
-    output_limit_w: float = 1920
+    output_limit_w: float = DEFAULT_TOWER_OUTPUT_LIMIT_W
     dc_output_w: float | None = None
     pv_input_w: float | None = None
     pv_input_configured: bool = False
@@ -426,7 +427,6 @@ class Controller:
         )
         capacity_w = sum(
             min(
-                1920.0,
                 battery.output_limit_w,
                 sum(inv.rated_w for inv in battery.inverters if self._valid_inverter(inv)),
             )
@@ -482,9 +482,7 @@ class Controller:
                 self.state.full.discard(battery.key)
 
             eligible_inverters = [inv for inv in battery.inverters if self._valid_inverter(inv)]
-            maximum_w = min(
-                1920, battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters)
-            )
+            maximum_w = min(battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters))
             if battery.key in self.state.full and battery.pv_input_configured:
                 if battery.pv_input_w is None or not isfinite(battery.pv_input_w):
                     budget_w = min(total_w, maximum_w)

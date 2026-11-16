@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from math import isfinite
 from typing import Any
 
 import voluptuous as vol
@@ -14,7 +14,6 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_BATTERIES,
-    CONF_DC_TRIPPED,
     CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
@@ -24,6 +23,7 @@ from .const import (
     CONF_GRID_INVERT,
     CONF_INVERTERS,
     CONF_LOWER,
+    CONF_OUTPUT_LIMITS,
     CONF_RATED_W,
     CONF_SOC,
     CONF_UPPER,
@@ -483,16 +483,35 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     new_upper = old
                 if new_upper is not None:
                     new_batteries[index - 1][CONF_UPPER] = new_upper
-            reset_trip = bool(requested.pop("reset_dc_trip", False))
             pv_map = dict(self.config_entry.options.get("pv_input", {}))
             ev_map = dict(self.config_entry.options.get("ev3600", {}))
             ac_map = dict(self.config_entry.options.get("ac_power", {}))
             capacities = dict(self.config_entry.options.get("capacity_wh", {}))
+            output_limits = dict(self.config_entry.options.get(CONF_OUTPUT_LIMITS, {}))
             for index, battery in enumerate(existing, start=1):
                 device = battery[CONF_DEVICE]
                 capacity = requested.pop(f"capacity_wh_{index}", capacities.get(device))
                 if capacity is not None:
                     capacities[device] = capacity
+                # AC command budget per physical head; extensions do not add actuators.
+                # No device DC/BMS rating is inferred from nominal inverter power.
+                key = f"output_limit_{index}"
+                selected_limit = requested.pop(key, output_limits.get(device))
+                if selected_limit is not None:
+                    rating_sum = sum(
+                        float(inv[CONF_RATED_W])
+                        for inv in battery.get(CONF_INVERTERS, ())
+                        if isinstance(inv.get(CONF_RATED_W), (int, float))
+                        and not isinstance(inv[CONF_RATED_W], bool)
+                    )
+                    try:
+                        limit_w = float(selected_limit)
+                    except ValueError, TypeError:
+                        limit_w = float("nan")
+                    if not isfinite(limit_w) or not 0 < limit_w <= rating_sum:
+                        errors[key] = "invalid_output_limit"
+                    else:
+                        output_limits[device] = limit_w
                 pv = requested.pop(f"pv_input_{index}", pv_map.get(device))
                 if requested.pop(f"clear_pv_input_{index}", False):
                     pv = None
@@ -523,39 +542,6 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                         ac_map[key] = source
                     else:
                         ac_map.pop(key, None)
-            if reset_trip:
-                if requested.get(CONF_ENABLED, True):
-                    errors["base"] = "disable_before_trip_reset"
-                else:
-                    tripped = set(self.config_entry.options.get(CONF_DC_TRIPPED, ()))
-                    records = self.config_entry.data.get(CONF_BATTERIES, ())
-                    matching = [
-                        battery for battery in records if battery.get(CONF_DEVICE) in tripped
-                    ]
-                    safe_to_reset = bool(tripped) and len(matching) == len(tripped)
-                    for battery in matching:
-                        source = battery.get("dc_output") or battery_suggestions(self.hass).get(
-                            battery[CONF_DEVICE], {}
-                        ).get("dc_output")
-                        state = self.hass.states.get(source) if source else None
-                        report = getattr(state, "last_reported", None) or getattr(
-                            state, "last_updated", None
-                        )
-                        try:
-                            watts = float(state.state) if state else float("nan")
-                        except TypeError, ValueError:
-                            watts = float("nan")
-                        if (
-                            state is None
-                            or state.attributes.get("unit_of_measurement") != "W"
-                            or not isinstance(report, datetime)
-                            or report.tzinfo is None
-                            or not 0 <= (datetime.now(UTC) - report).total_seconds() <= 90
-                            or not 0 <= watts <= 100
-                        ):
-                            safe_to_reset = False
-                    if not safe_to_reset:
-                        errors["base"] = "trip_reset_unconfirmed"
             if (
                 requested.get(CONF_FEED_IN)
                 and requested.get(
@@ -603,13 +589,11 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 settings["ev3600"] = ev_map
                 settings["ac_power"] = ac_map
                 settings["capacity_wh"] = capacities
+                settings[CONF_OUTPUT_LIMITS] = output_limits
                 settings["pv_forecast"] = forecast_maps.pop("aggregate")
                 settings["pv_forecast_by_battery"] = {
                     device: sources for device, sources in forecast_maps.items() if sources
                 }
-                settings[CONF_DC_TRIPPED] = (
-                    [] if reset_trip else list(self.config_entry.options.get(CONF_DC_TRIPPED, ()))
-                )
                 return self.async_create_entry(title="", data=settings)
         fields: dict[Any, Any] = {
             vol.Required(
@@ -695,6 +679,20 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         for index, battery in enumerate(existing, start=1):
             device = battery[CONF_DEVICE]
             capacity = self.config_entry.options.get("capacity_wh", {}).get(device)
+            budget = self.config_entry.options.get(CONF_OUTPUT_LIMITS, {}).get(device)
+            max_rated = sum(
+                float(inv[CONF_RATED_W])
+                for inv in battery.get(CONF_INVERTERS, ())
+                if isinstance(inv.get(CONF_RATED_W), (int, float))
+                and not isinstance(inv[CONF_RATED_W], bool)
+            )
+            if max_rated > 0:
+                fields[
+                    vol.Optional(
+                        f"output_limit_{index}",
+                        **({"default": budget} if budget is not None else {}),
+                    )
+                ] = vol.All(vol.Coerce(float), vol.Range(min=1, max=max_rated))
             fields[
                 vol.Optional(f"capacity_wh_{index}", **({"default": capacity} if capacity else {}))
             ] = vol.All(vol.Coerce(float), vol.Range(min=1))
@@ -725,8 +723,6 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 fields[key] = selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 )
-        if self.config_entry.options.get(CONF_DC_TRIPPED):
-            fields[vol.Optional("reset_dc_trip", default=False)] = selector.BooleanSelector()
         # Existing entries may already have an upper SoC source; always let
         # the user inspect or correct it. Changing this EMS mapping never
         # changes the BK215 hardware charging ceiling.

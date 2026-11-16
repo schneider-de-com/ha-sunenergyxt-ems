@@ -202,7 +202,22 @@ def test_negative_missing_soc_during_grid_grace_is_not_held_at_old_power():
     assert engine.update((pack(soc=None),), None, 3)["a_inv"] == 0
 
 
-def test_positive_configured_limit_cannot_override_bk215_hardware_cap():
+def test_per_tower_budget_rejects_unbounded_combined_ac_setpoints():
+    """The configured head AC budget must still apply under high import."""
+    battery = Battery(
+        "a",
+        70,
+        10,
+        90,
+        (Inverter("inv1", 2000), Inverter("inv2", 2000)),
+        output_limit_w=2100,
+    )
+    engine = Controller(ControllerState(outputs={"inv1": 1900, "inv2": 200}))
+    outputs = engine.update((battery,), 5000, 1)
+    assert sum(outputs.values()) == 2100
+
+
+def test_positive_explicit_tower_limit_can_exceed_legacy_default():
     battery = Battery(
         "a",
         70,
@@ -213,4 +228,4 @@ def test_positive_configured_limit_cannot_override_bk215_hardware_cap():
     )
     engine = Controller(ControllerState(outputs={"inv1": 1400, "inv2": 500}))
     outputs = engine.update((battery,), 5000, 1)
-    assert sum(outputs.values()) == 1920
+    assert sum(outputs.values()) == 2420  # requested budget is not a universal BK215 cap
