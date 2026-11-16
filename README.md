@@ -9,7 +9,7 @@
 - Follows one **signed, whole-site grid power** sensor: positive = grid import; negative = export. No specific meter brand is required.
 - Coordinates multiple independent BK215/BK215 Plus **head units**, respecting each storage tower's own discharge reserve. B215/B215 Plus extensions belong to a head unit, not to a separate controlled tower.
 - Maps up to **four configurable power-limit entities per head** (W or %), subject to real hardware limits and independently validated actuator support.
-- Offers basic demand-following, optional adaptive PID and configurable no-export / after-full-charge feed-in settings. **PV feed-in can export stored battery energy.**
+- Offers demand-following, optional adaptive PID and mutually exclusive no-intentional-export / PV-only-after-verified-BMS-full settings. Intentional PV export requires verified BMS full and is limited to fresh, tower-attributed PV input and validated inverter limits; missing PV or BMS data revokes this override. **A Modbus limit acknowledgement is not independent proof of actual AC power or battery-free output.**
 - Shows status and diagnostics separately for requested limits, HA-reported limits, measured AC power (if available) and per-storage state. It attempts a safe minimum and records unresolved shutdown commands when disabled.
 
 Forecast planning, demand learning and economic comparison are **experimental**, not verified savings or stable control features.

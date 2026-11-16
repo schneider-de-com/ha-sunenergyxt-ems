@@ -27,3 +27,18 @@ def test_release_metadata_uses_changelog_not_per_tag_files() -> None:
     assert "--notes-file" in workflow
     assert "CHANGELOG.md" in workflow
     assert "RELEASE_NOTES_" not in workflow
+
+
+def test_current_documentation_never_claims_stored_battery_export_as_pv_only() -> None:
+    """Older beta notes are historical; current product promise must be accurate."""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "PV feed-in can export stored battery energy" not in readme
+    assert "verified BMS" in readme
+    assert "fresh" in readme and "PV" in readme
+
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split("## [1.0.0-beta.1]", 1)[0]
+    assert "PV-only" in unreleased
+    assert "BMS" in unreleased
+    assert "not installed" in unreleased
+    assert "hardware" in unreleased
