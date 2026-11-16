@@ -359,8 +359,14 @@ async def test_confirmed_export_does_not_override_intentional_feed_in(monkeypatc
     """The faster feedback path must not override explicit feed-in mode."""
     hass, entry = configured_runtime()
     entry.options["feed_in"] = True
+    entry.options["feed_in_mode"] = "pv"
+    entry.options["pv_input"] = {"bk215-1": "sensor.pv"}
+    states = hass.states.get.__self__
+    states["sensor.pv"] = sample(350, "W")
+    states["sensor.soc"].state = "100"
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
+    runtime.controller.state.full.add("bk215-1")
     clock = [1000.0]
     monkeypatch.setattr(module, "monotonic", lambda: clock[0])
     meter = hass.states.get("sensor.grid")
