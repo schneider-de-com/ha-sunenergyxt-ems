@@ -658,12 +658,7 @@ async def test_setup_registers_real_integration_devices_and_controls(
             "controller_correction",
             "controller_target",
         )
-    } | {
-        f"{entry.entry_id}_{key}"
-        for key in (
-            "start_hold_seconds",
-        )
-    }
+    } | {f"{entry.entry_id}_{key}" for key in ("start_hold_seconds",)}
     assert all(hass.states.get(entity.entity_id) is not None for entity in entities)
 
     registry = er.async_get(hass)
