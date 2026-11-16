@@ -10,6 +10,12 @@ from math import ceil, isfinite
 from statistics import median
 
 from .const import DEFAULT_TOWER_OUTPUT_LIMIT_W
+
+# The legacy no-export deadband was 0..30 W around the 20 W default
+# import target. Preserve its asymmetric -20/+10 W tolerance when users
+# choose a different target; never include negative signed grid export.
+GRID_DEADBAND_BELOW_TARGET_W = 20.0
+GRID_DEADBAND_ABOVE_TARGET_W = 10.0
 from .pid import PIDGains, bounded_pid
 
 
@@ -237,6 +243,15 @@ class Controller:
             return self.grid_target_w
         return max(self.grid_target_w, min(200.0, value))
 
+    def _within_grid_deadband(self, grid_w: float) -> bool:
+        """Use the same legacy tolerance around the *effective* import target."""
+        target = self._grid_target()
+        return (
+            max(0.0, target - GRID_DEADBAND_BELOW_TARGET_W)
+            <= grid_w
+            < target + GRID_DEADBAND_ABOVE_TARGET_W
+        )
+
     def _reset_pid(self) -> None:
         self.state.pid_p_w = 0.0
         self.state.pid_i_w = 0.0
@@ -258,7 +273,7 @@ class Controller:
             self.state.pid_last_at = now
             self.state.pid_last_sequence = sequence
             return 0.0
-        if 0 <= grid_w < 30:
+        if self._within_grid_deadband(grid_w):
             # Reaching the import deadband is a new equilibrium. A stale
             # positive integral would otherwise turn the next export sample
             # into an increase request instead of reducing inverter power.
@@ -532,7 +547,7 @@ class Controller:
         if self.adaptive_pid:
             correction = self._pid_correction(grid_w, now, sequence, capacity_w)
         else:
-            in_deadband = 0 <= grid_w < 30
+            in_deadband = self._within_grid_deadband(grid_w)
             if in_deadband:
                 correction = 0.0
             else:
