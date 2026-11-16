@@ -22,8 +22,6 @@ from homeassistant.util.dt import utcnow
 
 from .const import (
     CONF_BATTERIES,
-    CONF_OUTPUT_LIMITS,
-    DEFAULT_TOWER_OUTPUT_LIMIT_W,
     CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
@@ -33,10 +31,12 @@ from .const import (
     CONF_GRID_INVERT,
     CONF_INVERTERS,
     CONF_LOWER,
+    CONF_OUTPUT_LIMITS,
     CONF_RATED_W,
     CONF_SOC,
     CONF_UPPER,
     DEFAULT_GRID_TARGET_W,
+    DEFAULT_TOWER_OUTPUT_LIMIT_W,
     DOMAIN,
     FEED_IN_MODE_PV,
 )
