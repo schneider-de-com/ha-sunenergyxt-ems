@@ -1,7 +1,7 @@
 """Deterministic black-box invariants for the BK215 controller.
 
-Hardware constraints come from the BK215/B215 manufacturer's user manual:
-two DC outputs, 1,920 W COMBINED. These are not SunEnergyXT 500 limits.
+The controller enforces a configured tower AC setpoint budget, not a
+universal DC physical limit. Manufacturer/BMS protection remains external.
 
 The seeded inputs vary loads, inverter capacities and reserve settings.
 Safety constraints must hold for every sample, independently of controller
@@ -27,10 +27,10 @@ def test_bk215_invariants_across_400_reproducible_operating_points() -> None:
         rated_1 = rng.choice((600.0, 800.0, 1000.0, 1500.0, 2000.0))
         rated_2 = rng.choice((600.0, 800.0, 1000.0, 1500.0, 2000.0))
         configured = rng.uniform(250.0, 2500.0)
-        # A legitimate previously reported inverter limit: below each
-        # inverter's rating AND the shared 1,920 W BK215 output limit.
-        observed_1 = rng.uniform(0, min(rated_1, configured, 1920))
-        observed_2 = rng.uniform(0, min(rated_2, max(0, min(configured, 1920) - observed_1)))
+        # Previously requested limits must fit each rated inverter and
+        # the independently configured per-tower output budget.
+        observed_1 = rng.uniform(0, min(rated_1, configured))
+        observed_2 = rng.uniform(0, min(rated_2, max(0, configured - observed_1)))
         grid_w = rng.uniform(-2000, 5000)
         battery = Battery(
             key="bk",
@@ -46,8 +46,8 @@ def test_bk215_invariants_across_400_reproducible_operating_points() -> None:
         assert all(isfinite(watts) for watts in output.values())
         assert 0 <= output["first"] <= rated_1
         assert 0 <= output["second"] <= rated_2
-        assert sum(output.values()) <= min(1920.0, configured) + 1e-7, (
-            "BK215 combined DC output may never exceed its documented limit"
+        assert sum(output.values()) <= configured + 1e-7, (
+            "Commanded AC limits must stay within the configured tower budget"
         )
         assert sum(output.values()) - observed_1 - observed_2 <= 520.000001, (
             "A normal controller step must not jump more than 520 W"
