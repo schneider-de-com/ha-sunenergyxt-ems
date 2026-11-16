@@ -602,8 +602,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     # edits an unrelated settings page. Validate only a new
                     # selection; do not silently delete its saved mapping.
                     pv_edited = (
-                        f"pv_input_{index}" in user_input
-                        or f"clear_pv_input_{index}" in user_input
+                        f"pv_input_{index}" in user_input or f"clear_pv_input_{index}" in user_input
                     )
                     if pv_edited:
                         state = self.hass.states.get(pv)
