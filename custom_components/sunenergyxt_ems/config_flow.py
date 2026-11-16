@@ -732,9 +732,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         if self.config_entry.options.get("adaptive_pid") is True:
             # Migration is an explicit one-time action, not an alternate
             # algorithm selector available to new configurations.
-            fields[vol.Optional("migrate_legacy_pid", default=False)] = (
-                selector.BooleanSelector()
-            )
+            fields[vol.Optional("migrate_legacy_pid", default=False)] = selector.BooleanSelector()
         fields[
             vol.Optional(
                 "planning_enabled", default=self.config_entry.options.get("planning_enabled", False)
