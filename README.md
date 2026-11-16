@@ -7,6 +7,12 @@
 SunEnergyXT EMS controls existing inverter power-limit entities to follow household demand.
 It does **not** speak directly to batteries or inverters.
 
+## Release policy and architecture
+
+This integration is **not yet released as stable 1.0.0**. The first stable release is the verified two-inverter core; optional economic forecast planning follows in a later 1.x release after its separate seven-day acceptance. See the [release and commit policy](docs/releasing.md), the [human-readable changelog](CHANGELOG.md), the [arc42 architecture](docs/architecture/README.md) and the [architecture decisions](docs/architecture/README.md#09-architecture-decisions).
+
+**Continuing this work in another chat?** Start with the [verified 2026-11-16 handover](docs/HANDOVER-2026-11-16.md); it identifies the exact GitHub PRs, incident evidence, release gates and MCP Memory entry to retrieve.
+
 ## MVP features
 
 - Guided setup: **BK215 batteries → inverters → grid power meter**.

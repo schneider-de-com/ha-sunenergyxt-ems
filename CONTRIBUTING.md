@@ -62,3 +62,11 @@ test(control): cover invalid grid measurements (Refs #4)
 Every project commit must reference its related GitHub issue with `Refs #<number>`.
 Use `Fixes #<number>` only when the issue is fully complete.
 Keep infrastructure and test work inside the existing MVP feature issues; do not open separate engineering-only tickets.
+
+## Release governance and architecture
+
+- Follow [SemVer, Conventional Commits and curated Keep a Changelog](docs/releasing.md). The existing legacy beta scheme does not constitute a stable release.
+- Keep [CHANGELOG.md](CHANGELOG.md) human-readable: an Unreleased section and dated releases only after all acceptance gates pass.
+- Keep the [arc42 architecture](docs/architecture/README.md) current. Record significant architectural choices in small [ADRs](docs/architecture/README.md#09-architecture-decisions) with context, decision, status and consequences.
+- Avoid one large PR for unrelated changes. PR titles and individual commits use Conventional Commits and issue references; CI validates this for new PRs.
+- Keep experimental preview features distinct from the scope of the stable release. Approval of a requirements decision is not proof of working or tested hardware.
