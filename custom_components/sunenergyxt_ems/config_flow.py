@@ -391,7 +391,9 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         title="SunEnergyXT EMS",
                         data=data,
                         options={
-                            CONF_ENABLED: True,
+                            # New installations must explicitly opt in to physical control.
+                            # Reconfigure never changes the existing enabled intent.
+                            CONF_ENABLED: False,
                             CONF_FEED_IN: False,
                             CONF_FEED_IN_MODE: FEED_IN_MODE_HOUSEHOLD,
                             CONF_FEED_IN_HYSTERESIS: 2.0,
