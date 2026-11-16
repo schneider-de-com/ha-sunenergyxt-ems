@@ -26,6 +26,7 @@ Human-readable changes follow [Keep a Changelog 1.1.0](https://keepachangelog.co
 ### Fixed
 
 - PID integral carry-over after entering the grid-target deadband or reversing import/export direction, which could otherwise command an inappropriate increase.
+- A normal change of preferred storage head no longer forces the previous, still-eligible inverter to 0%; allocation remains bounded by its actual available reserve, confirmed limits and independent safety gates.
 - Recovery of pending inverter minimum commands across disconnect/reconnect, startup and Home Assistant restart; errors remain explicit if the hardware cannot be reached or acknowledged.
 - Device and source identity checks for the supported Deye AC-voltage guard, including owner-config-entry verification after registry changes. Missing or stale voltage inhibits new positive power requests for that profile.
 - Removed the unapproved automatic permanent software shutdown on a BK DC telemetry sample above 1,920 W. Manufacturer/BMS protection remains external; old stored DC-trip options no longer lock the controller.

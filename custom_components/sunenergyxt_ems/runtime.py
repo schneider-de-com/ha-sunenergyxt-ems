@@ -1333,7 +1333,6 @@ class EMSRuntime:
             # The policy uses the reported, acknowledged actuator limits,
             # never speculative commands from earlier, rate-limited ticks.
             self.controller.state.outputs = self._reported_outputs(batteries)
-            previous_main = self.controller.state.main
             # A held inverter must not silently accumulate PID integral
             # while normal actuator writes are intentionally postponed.
             self.controller.pid_hold = any(
@@ -1344,29 +1343,10 @@ class EMSRuntime:
             outputs = self.controller.update(batteries, grid, now, sequence=sequence)
             self._last_processed_grid = sequence
 
-            if previous_main and previous_main != self.controller.state.main:
-                old_system = next(
-                    (battery for battery in batteries if battery.key == previous_main),
-                    None,
-                )
-                if old_system is not None:
-                    old_limits = self._reported_outputs((old_system,))
-                    release = {
-                        inv.key: inv.minimum_w
-                        for inv in old_system.inverters
-                        if inv.online
-                        and (
-                            old_limits.get(inv.key, 0) > inv.minimum_w
-                            or self._last_sent.get(inv.key, 0) > inv.minimum_w
-                        )
-                    }
-                    if release:
-                        await self._apply(release, now, emergency=True)
-                        if self.last_error is None:
-                            self.status = "switching_main"
-                        self._publish()
-                        return
-
+            # Changing the preferred tower is an allocation decision, not an
+            # emergency shutdown. The normal controller target already retains
+            # each still-eligible inverter's bounded allocation; reserve loss
+            # and disconnected actuators are handled separately above.
             self.last_error = None
             self.status = "running"
             await self._apply(outputs, now)

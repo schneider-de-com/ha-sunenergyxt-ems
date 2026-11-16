@@ -519,3 +519,54 @@ async def test_startup_export_with_no_verified_command_baseline_fails_closed(
     meter.last_reported = datetime.now(UTC) - timedelta(seconds=1)
     await runtime.async_update()
     assert dispatched.await_args.args[0] == {"number.m200": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_role_change_does_not_force_healthy_previous_main_to_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A new preferred storage head must not cycle a still-eligible inverter.
+
+    Previously an explicit emergency 0% reset was issued on the old main
+    before allocating the shared output target. That creates avoidable
+    high-power 0%-to-positive Deye startup transitions.
+    """
+    hass, entry = configured_runtime()
+    entry.data["batteries"].append(
+        {
+            "device_id": "head-two",
+            "soc": "sensor.soc2",
+            "lower": 10,
+            "upper": 100,
+            "inverters": [{"entity_id": "number.m80", "rated_w": 800}],
+        }
+    )
+    old_get = hass.states.get
+    extra = {
+        "sensor.soc2": sample(90, "%"),
+        "number.m80": sample(10, "%", min=0, max=100, step=0.1),
+    }
+    hass.states.get = lambda key: extra.get(key) or old_get(key)
+    old_get("sensor.soc").state = "25"
+    old_get("number.m200").state = "70"
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    runtime.controller.state.main = "bk215-1"
+    runtime.controller.state.outputs = {"number.m200": 1400, "number.m80": 80}
+    runtime._last_sent = {"number.m200": 70, "number.m80": 10}
+    monkeypatch.setattr(runtime, "_feedback_ready", AsyncMock(return_value=True))
+    dispatched = AsyncMock()
+    monkeypatch.setattr(runtime, "_apply", dispatched)
+    meter = old_get("sensor.grid")
+    meter.state = "800"
+    meter.last_reported = datetime.now(UTC) - timedelta(seconds=1)
+
+    await runtime.async_update()
+
+    assert runtime.controller.state.main == "head-two"
+    dispatched.assert_awaited_once()
+    targets = dispatched.await_args.args[0]
+    assert targets["number.m200"] > 0
+    assert targets["number.m80"] > 0
+    assert not dispatched.await_args.kwargs.get("emergency", False)
+    assert runtime.status != "switching_main"
