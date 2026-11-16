@@ -641,3 +641,75 @@ async def test_reconnect_bypasses_backoff_after_service_timeout(monkeypatch):
     await runtime.async_update()
     assert hass.services.async_call.await_count == 2
     assert hass.services.async_call.await_args.args[2]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_new_installation_marks_shutdown_journal_without_false_corruption_alarm():
+    """The entry marker survives a missing Store file on later boots."""
+    hass, entry = configured_two_bk215()
+    entry.options["enabled"] = False
+
+    def update_entry(target, *, data):
+        target.data = data
+
+    hass.config_entries = SimpleNamespace(async_update_entry=update_entry)
+    runtime = EMSRuntime(hass, entry)
+    runtime._shutdown_store.data = None
+
+    await runtime._load_shutdown_obligations()
+
+    assert entry.data["_shutdown_journal_initialized"] is True
+    assert runtime._shutdown_obligations == {"number.m200", "number.m80"}
+    assert runtime.last_error is None
+
+
+@pytest.mark.parametrize(
+    "saved", [None, {}, {"pending": "corrupt", "inflight": []}]
+)
+@pytest.mark.asyncio
+async def test_prior_journal_loss_is_visible_and_blocks_positive_control(saved):
+    """Prior initialization distinguishes a lost/corrupt journal from first use."""
+    hass, entry = configured_two_bk215()
+    entry.data["_shutdown_journal_initialized"] = True
+    runtime = EMSRuntime(hass, entry)
+    runtime._shutdown_store.data = saved
+
+    await runtime._load_shutdown_obligations()
+    assert runtime.status == "write_error"
+    assert "journal" in (runtime.last_error or "").lower()
+    assert runtime._shutdown_obligations == {"number.m200", "number.m80"}
+
+    runtime._running = True
+    await runtime.async_update()
+    commands = [
+        call.args[2] for call in hass.services.async_call.await_args_list
+        if call.args[0:2] == ("number", "set_value")
+    ]
+    assert commands
+    assert all(command["value"] == 0 for command in commands)
+    assert runtime.status == "write_error"
+
+
+@pytest.mark.asyncio
+async def test_journal_loss_error_clears_only_after_both_minimums_ack():
+    hass, entry = configured_two_bk215()
+    entry.data["_shutdown_journal_initialized"] = True
+    entry.options["enabled"] = False
+    runtime = EMSRuntime(hass, entry)
+    runtime._shutdown_store.data = None
+
+    await runtime._load_shutdown_obligations()
+    runtime._running = True
+    await runtime.async_update()
+    assert runtime.last_error is not None
+    assert runtime._shutdown_obligations
+
+    for entity_id in ("number.m200", "number.m80"):
+        state = hass.states.get(entity_id)
+        state.state = "0"
+        state.last_reported += timedelta(seconds=1)
+    await runtime.async_update()
+
+    assert not runtime._shutdown_obligations
+    assert runtime.status == "disabled"
+    assert runtime.last_error is None
