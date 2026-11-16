@@ -29,7 +29,7 @@ The software has CI coverage on Home Assistant 2026.10.4 and 2026.11.1; that is 
 3. Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**. Select each independent BK head, its inverter limit entities and the signed site meter. Supply inverter rated watts if missing. Verify the actual permitted head/extension combination.
 4. In **Configure**, check each lower/upper SoC, total storage capacity **including extensions (Wh)**, the **combined inverter AC setpoint budget per head (W)**, inverter mappings, feed-in mode and optional AC/PV measurements. Existing configurations retain a conservative 1,920 W combined setpoint budget until explicitly changed; do not enter a higher limit without checking the manufacturer's rating. Use **Reconfigure** to change assigned heads, inverters or the meter.
 
-**Important:** The current setup wizard can enable regulation immediately after configuration if valid inputs are present. Finish setup only when other writers are disabled, device mappings are correct and a supervised activation is acceptable. Installing a package alone does not turn control on. Changing the package must not silently override an explicitly disabled entry.
+**Important:** A new EMS configuration starts **disabled**. Review the mapping and status before explicitly enabling its EMS switch for a supervised test. Disable other controllers first; installing or upgrading the integration never overrides an existing enabled/disabled choice.
 
 ## Operate and troubleshoot
 
