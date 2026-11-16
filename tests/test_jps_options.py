@@ -43,7 +43,7 @@ async def test_options_save_total_capacity_including_expansion(options):
 
 
 @pytest.mark.asyncio
-async def test_options_preserve_legacy_pid_and_save_tuning_pv_ev_ac(options):
+async def test_options_ignore_legacy_pid_and_save_pv_ev_ac(options):
     handler, entry = options
     entry.options["adaptive_pid"] = True
     result = await handler.async_step_init(
@@ -66,7 +66,8 @@ async def test_options_preserve_legacy_pid_and_save_tuning_pv_ev_ac(options):
     )
     assert result["type"] == "create_entry"
     saved = result["data"]
-    assert saved["adaptive_pid"] is True
+    assert "adaptive_pid" not in saved
+    assert "pid_ki" not in saved
     assert saved["start_hold_seconds"] == 30
     assert saved["pv_input"]["bk1"] == "sensor.pv"
     assert saved["ev3600"]["bk1"] == {
@@ -90,7 +91,7 @@ async def test_options_refuse_unpaired_ev3600_source(options):
 
 
 @pytest.mark.asyncio
-async def test_options_refuse_inverted_pid_gains(options):
+async def test_options_ignore_obsolete_pid_gains(options):
     handler, _entry = options
     result = await handler.async_step_init(
         {
@@ -100,7 +101,9 @@ async def test_options_refuse_inverted_pid_gains(options):
             "pid_kp_max": 0.5,
         }
     )
-    assert result["errors"]["base"] == "invalid_pid_gains"
+    assert result["type"] == "create_entry"
+    assert "pid_kp_min" not in result["data"]
+    assert "pid_kp_max" not in result["data"]
 
 
 @pytest.mark.asyncio
@@ -112,7 +115,7 @@ async def test_basic_save_preserves_existing_pv_mapping_when_sensor_is_offline(o
             "pv_input": {"bk1": "sensor.offline_pv"},
             "capacity_wh": {"bk1": 4300},
             "grid_target_w": 20,
-            "pid_ki": 0.03,
+            "start_hold_seconds": 40,
         }
     )
     handler.hass.states.get = lambda _entity: None
@@ -121,7 +124,7 @@ async def test_basic_save_preserves_existing_pv_mapping_when_sensor_is_offline(o
     assert result["data"]["grid_target_w"] == 35
     assert result["data"]["pv_input"] == {"bk1": "sensor.offline_pv"}
     assert result["data"]["capacity_wh"] == {"bk1": 4300}
-    assert result["data"]["pid_ki"] == 0.03
+    assert result["data"]["start_hold_seconds"] == 40
 
 
 @pytest.mark.asyncio
@@ -142,4 +145,4 @@ async def test_old_options_payload_cannot_reenable_pid_without_explicit_migratio
     result = await handler.async_step_init({"enabled": False, "adaptive_pid": True})
 
     assert result["type"] == "create_entry"
-    assert result["data"]["adaptive_pid"] is False
+    assert "adaptive_pid" not in result["data"]
