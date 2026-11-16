@@ -418,6 +418,10 @@ class EMSRuntime:
 
         head_soc_source = sources.get("head_soc")
         head_actual = self._fresh_bms_percentage(head_soc_source)
+        if head_soc_source and head_actual is None:
+            # A formerly known module whose SOC data vanished is not
+            # proven physically full. Do not retain an export override.
+            return None, False, sources
         full_verified = (
             head_actual is not None and head_actual >= head_limit
             if head_soc_source
