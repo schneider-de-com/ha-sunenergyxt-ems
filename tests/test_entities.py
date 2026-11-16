@@ -165,16 +165,15 @@ def test_weighted_level_uses_all_batteries_and_rejects_missing_data(objects):
 
 
 @pytest.mark.asyncio
-async def test_positive_switch_setup_creates_three_entities(objects):
+async def test_positive_switch_setup_exposes_single_control_and_export_switches(objects):
     entry, runtime, _ = objects
     hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     created = []
     await switches.async_setup_entry(hass, entry, created.extend)
-    assert len(created) == 3
+    assert len(created) == 2
     assert {entity.unique_id for entity in created} == {
         "ems-entry_enabled",
         "ems-entry_feed_in",
-        "ems-entry_adaptive_pid",
     }
 
 

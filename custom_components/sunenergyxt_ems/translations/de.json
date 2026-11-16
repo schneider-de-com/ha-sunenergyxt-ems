@@ -231,13 +231,13 @@
         "title": "Experteneinstellungen",
         "data": {
           "feed_in_hysteresis_pct": "PV-Modus: SoC-Hysterese (Prozentpunkte)",
-          "adaptive_pid": "Adaptiven PID-Regler aktivieren",
           "start_hold_seconds": "Anlaufhaltezeit (Sekunden)",
           "pid_kp_min": "PID Kp klein",
           "pid_kp_max": "PID Kp groß",
           "pid_kp_export": "PID Kp bei Einspeisung",
           "pid_ki": "PID Integralverstärkung",
-          "pid_kd": "PID Differentialverstärkung"
+          "pid_kd": "PID Differentialverstärkung",
+          "migrate_legacy_pid": "Bisherigen PID-Regler auf vereinheitlichte Regelung umstellen (einmalig; Einstellungen bleiben für Rollback gespeichert)"
         },
         "description": "Erweiterte Reglerparameter nur bei Bedarf ändern. Bestehende Werte bleiben erhalten und sind für frühere Installationen weiterhin verfügbar."
       }

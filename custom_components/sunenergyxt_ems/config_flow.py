@@ -476,6 +476,13 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             requested = dict(user_input)
+            # A user with an existing PID policy must explicitly opt in to
+            # the unified proportional controller. Keep saved PID options
+            # unchanged through every other Configure/Options operation.
+            migration_requested = requested.pop("migrate_legacy_pid", False) is True
+            requested.pop("adaptive_pid", None)
+            if migration_requested and self.config_entry.options.get("adaptive_pid") is True:
+                requested["adaptive_pid"] = False
             # One mutually exclusive selector replaces the old checkbox +
             # mode pair. API callers submitting the historical checkbox
             # remain accepted. Explicit selected mode always wins.
@@ -722,11 +729,10 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 default=self.config_entry.options.get("grid_target_w", DEFAULT_GRID_TARGET_W),
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=200)),
         }
-        fields[
-            vol.Optional(
-                "adaptive_pid", default=self.config_entry.options.get("adaptive_pid", False)
-            )
-        ] = selector.BooleanSelector()
+        if self.config_entry.options.get("adaptive_pid") is True:
+            # Migration is an explicit one-time action, not an alternate
+            # algorithm selector available to new configurations.
+            fields[vol.Optional("migrate_legacy_pid", default=False)] = selector.BooleanSelector()
         fields[
             vol.Optional(
                 "planning_enabled", default=self.config_entry.options.get("planning_enabled", False)
@@ -846,7 +852,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         expert = {
             CONF_FEED_IN_HYSTERESIS,
             "start_hold_seconds",
-            "adaptive_pid",
+            "migrate_legacy_pid",
             "pid_kp_min",
             "pid_kp_max",
             "pid_kp_export",

@@ -108,6 +108,10 @@ class EMSRuntime:
         self.hass = hass
         self.entry = entry
         self.controller = Controller()
+        # Preserve the existing user-selected PID policy on upgrades. The
+        # single-policy migration is an explicit Options-flow action, never
+        # a hidden algorithm swap while inverters are energized.
+        self.controller.adaptive_pid = bool(entry.options.get("adaptive_pid", False))
         self.controller.enabled = bool(entry.options.get(CONF_ENABLED, True))
         self.controller.feed_in = (
             bool(entry.options.get(CONF_FEED_IN, False))
