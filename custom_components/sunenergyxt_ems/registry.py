@@ -255,10 +255,11 @@ def _fresh_bk_percent(hass: HomeAssistant, source: str | None) -> float | None:
 def suggested_bk_capacity_wh(hass: HomeAssistant, soc_entity_id: str | None) -> int | None:
     """Offer 2,150 Wh per *positively observed* BK module, never by name.
 
-    One missing side of a module's SOC/hardware pair is ambiguous and
-    prevents autodetection. Both unavailable means not positively detected;
-    preserve a user's previously confirmed capacity rather than overwriting
-    it with this lower observed count during later configuration edits.
+    Registered expansion slots with missing telemetry are ambiguous, even
+    when *both* values are unavailable. Return no suggestion rather than
+    silently treating an offline B215 as physically absent. A genuinely
+    head-only registry has no expansion entries. Preserve an existing
+    confirmed capacity in the caller; never infer topology from entity names.
     """
     sources = registered_bk_hardware_sources(hass, soc_entity_id)
     if sources is None:
@@ -272,9 +273,12 @@ def suggested_bk_capacity_wh(hass: HomeAssistant, soc_entity_id: str | None) -> 
         return None
     modules = 1
     for index in range(1, 8):
-        measured = _fresh_bk_percent(hass, sources.get(f"extension_soc_{index}"))
-        hardware = _fresh_bk_percent(hass, sources.get(f"extension_limit_{index}"))
-        if (measured is None) != (hardware is None):
+        soc_source = sources.get(f"extension_soc_{index}")
+        limit_source = sources.get(f"extension_limit_{index}")
+        measured = _fresh_bk_percent(hass, soc_source)
+        hardware = _fresh_bk_percent(hass, limit_source)
+        if (measured is None or hardware is None) and (soc_source or limit_source):
+            # Both unavailable is still an unknown physical module, not zero modules.
             return None
         if hardware is not None:
             # A zero or corrupt module hardware ceiling is not a physically

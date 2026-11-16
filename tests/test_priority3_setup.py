@@ -122,6 +122,21 @@ def test_bk_2150_per_fresh_identified_head_and_extension(monkeypatch):
     assert module.suggested_bk_capacity_wh(hass, "sensor.bk") is None
 
 
+def test_registered_extension_with_both_sensors_unavailable_is_not_head_only(monkeypatch):
+    """An unavailable B215 is not proof that the extension was removed."""
+    hass, _, states = setup_fake(monkeypatch)
+    states["sensor.ext"].state = "unavailable"
+    states["sensor.ext_limit"].state = "unavailable"
+    assert module.suggested_bk_capacity_wh(hass, "sensor.bk") is None
+
+
+def test_registered_extension_with_both_sensors_stale_is_not_head_only(monkeypatch):
+    hass, _, states = setup_fake(monkeypatch)
+    for key in ("sensor.ext", "sensor.ext_limit"):
+        states[key].last_reported = datetime.now(UTC) - timedelta(seconds=200)
+    assert module.suggested_bk_capacity_wh(hass, "sensor.bk") is None
+
+
 def test_zero_hardware_ceiling_cannot_count_a_phantom_extension(monkeypatch):
     hass, _, states = setup_fake(monkeypatch)
     states["sensor.ext_limit"].state = "0"
