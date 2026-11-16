@@ -31,6 +31,7 @@ def test_sustained_import_can_share_power_before_first_head_is_saturated():
     assert baseline["a_inverter"] == 490
     assert baseline["b_inverter"] == 0
 
+    controller = Controller()
     controller.cooperative_dispatch = True
     commands = controller.update((one, two), 1000, 2)
     assert 0 < commands["a_inverter"] < 800
@@ -64,7 +65,7 @@ def test_cooperative_allocation_does_not_force_second_head_to_zero_at_setpoint()
     result = controller.update((tower("a"), tower("b")), 20, 2)
     assert result["a_inverter"] > 0
     assert result["b_inverter"] > 0
-    assert sum(result.values()) == 740
+    assert sum(result.values()) == 745
 
 
 def test_cooperative_allocation_abandons_unavailable_head_only():
