@@ -219,3 +219,40 @@ async def test_one_sensor_each_for_bypass_ev_and_per_inverter_diagnostics(monkey
     # A missing independent AC source is not displayed as a fabricated 0W output.
     assert by_id[f"{entry.entry_id}_inverter_number.deye_m200_measured_ac"].native_value is None
     assert not by_id[f"{entry.entry_id}_inverter_number.deye_m200_measured_ac"].available
+
+
+@pytest.mark.asyncio
+async def test_legacy_pid_migration_is_visible_in_expert_options_only(monkeypatch):
+    entry, runtime, _writes = entry_and_runtime()
+    entry.options["adaptive_pid"] = True
+    handler = config_flow.EMSEntryOptionsFlow()
+    monkeypatch.setattr(config_flow.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
+    handler.hass = runtime.hass
+
+    form = await handler.async_step_expert()
+    fields = {getattr(marker, "schema", str(marker)) for marker in form["data_schema"].schema}
+    assert "migrate_legacy_pid" in fields
+    assert "adaptive_pid" not in fields
+
+    result = await handler.async_step_expert({"migrate_legacy_pid": False})
+    assert result["type"] == "create_entry"
+    assert result["data"]["adaptive_pid"] is True
+
+
+@pytest.mark.asyncio
+async def test_explicit_migration_converts_legacy_pid_once(monkeypatch):
+    entry, runtime, _writes = entry_and_runtime()
+    entry.options["adaptive_pid"] = True
+    handler = config_flow.EMSEntryOptionsFlow()
+    monkeypatch.setattr(config_flow.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
+    handler.hass = runtime.hass
+
+    result = await handler.async_step_expert({"migrate_legacy_pid": True})
+    assert result["type"] == "create_entry"
+    assert result["data"]["adaptive_pid"] is False
+    assert "migrate_legacy_pid" not in result["data"]
+
+    entry.options = result["data"]
+    next_form = await handler.async_step_expert()
+    fields = {getattr(marker, "schema", str(marker)) for marker in next_form["data_schema"].schema}
+    assert "migrate_legacy_pid" not in fields
