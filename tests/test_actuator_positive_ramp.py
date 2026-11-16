@@ -88,14 +88,14 @@ async def test_no_additional_positive_write_while_prior_register_command_is_unac
     source = "number.m200"
     reported_before = hass.states.get(source).last_reported
     runtime._last_sent[source] = 1.0
-    runtime._sent_at[source] = 995.0
+    runtime._sent_at[source] = 900.0
     runtime._pending[source] = PendingCommand(
         target=1.0,
         entity_reported_before=reported_before,
-        sent_at=995.0,
+        sent_at=900.0,
         grid_reported_before=None,
     )
-    hass.states.get(source).state = "0"
+    hass.states.get(source).state = "1"
 
     await runtime._apply({source: 520}, now=1001)
     hass.services.async_call.assert_not_awaited()
