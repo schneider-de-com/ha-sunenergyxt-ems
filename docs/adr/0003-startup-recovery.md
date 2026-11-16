@@ -6,15 +6,19 @@
 
 ## Context
 
-At 16:35:22 CET on 2026-11-15, after an M80 limit change from zero to
-0.1%, the signed Shelly net grid measurement changed to approximately
--1363 W. On 16:35:36 the EMS reported:
+On 2026-11-15 the signed Shelly net grid measurement had already
+changed to approximately -1363 W at **16:35:20 CET**, **before** the
+M80 limit changed from zero to 0.1% at **16:35:22 CET**. The latter
+cannot explain the onset of the export. On 16:35:36 the EMS reported:
 "Excess grid export during startup; switch EMS off to reset".
 At 16:35:41 the meter reported about +351 W import again, but the EMS
 remained in write_error and stopped dispatching useful output.
 
-This is a confirmed software lockout and temporally associated startup
-transient; the actual physical AC output attribution needs more evidence.
+This is a confirmed software lockout following a significant signed-grid
+export. The cause of the initial export remains unknown, as does the
+M200 95.5% to 0% drop at 16:32:17 during high grid import. Do not
+attribute either event to the later M80 start without synchronized
+physical AC evidence.
 An isolated phase-localized change is not the signed aggregate net export.
 
 ## Decision
