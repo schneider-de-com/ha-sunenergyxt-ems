@@ -191,11 +191,13 @@ class EMSRuntime:
 
     async def _load_shutdown_obligations(self) -> None:
         """Recover unacknowledged shutdowns without assuming an old command succeeded."""
+        read_failed = False
         try:
             saved = await self._shutdown_store.async_load()
         except (OSError, HomeAssistantError) as exc:
             _LOGGER.warning("Cannot read inverter shutdown journal: %s", exc)
             saved = None
+            read_failed = True
         pending = saved.get("pending") if isinstance(saved, dict) else None
         inflight = saved.get("inflight", []) if isinstance(saved, dict) else None
         if (
@@ -206,12 +208,22 @@ class EMSRuntime:
         ):
             self._inflight_commands = set(inflight)
             self._shutdown_obligations = set(pending) | self._inflight_commands
+            self._mark_shutdown_journal_initialized()
         else:
-            # First use and a lost journal are indistinguishable. Establish a
-            # confirmed minimum once, even when the restored EMS switch is off.
+            # Keep the independent config-entry marker even when the Store file
+            # disappears: only a genuinely new entry may have no prior journal.
+            if (
+                self.entry.data.get("_shutdown_journal_initialized", False)
+                or read_failed
+                or saved is not None
+            ):
+                self.last_error = (
+                    "Shutdown journal missing or corrupt: safe minimum must be confirmed"
+                )
+                self.status = "write_error"
             self._shutdown_obligations = self._configured_inverters()
-            if self._shutdown_obligations:
-                await self._save_shutdown_obligations()
+            if self._shutdown_obligations and await self._save_shutdown_obligations():
+                self._mark_shutdown_journal_initialized()
         self._deferred_shutdown = set(self._shutdown_obligations)
 
     @callback
@@ -235,6 +247,25 @@ class EMSRuntime:
             for battery in self.entry.data[CONF_BATTERIES]
             for inverter in battery[CONF_INVERTERS]
         }
+
+    def _mark_shutdown_journal_initialized(self) -> None:
+        """Persist first-use evidence outside the more fragile shutdown journal."""
+        if self.entry.data.get("_shutdown_journal_initialized", False):
+            return
+        update_entry = getattr(
+            getattr(self.hass, "config_entries", None), "async_update_entry", None
+        )
+        if update_entry is None:
+            return
+        try:
+            update_entry(
+                self.entry,
+                data={**self.entry.data, "_shutdown_journal_initialized": True},
+            )
+        except (OSError, HomeAssistantError, TypeError, ValueError) as exc:
+            self.last_error = f"Cannot persist shutdown journal marker: {exc}"
+            self.status = "write_error"
+            _LOGGER.error("%s", self.last_error)
 
     async def _save_shutdown_obligations(self, pending: set[str] | None = None) -> bool:
         """Persist before sending, and remove only after fresh acknowledgement."""
@@ -1187,6 +1218,7 @@ class EMSRuntime:
                             "Shutdown not acknowledged:",
                             "Cannot persist inverter shutdown obligations:",
                             "Cannot stop unavailable inverters:",
+                            "Shutdown journal missing or corrupt:",
                         )
                     )
                     or any(
