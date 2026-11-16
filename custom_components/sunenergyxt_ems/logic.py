@@ -10,7 +10,6 @@ from math import ceil, isfinite
 from statistics import median
 
 from .const import DEFAULT_TOWER_OUTPUT_LIMIT_W
-from .pid import PIDGains, bounded_pid
 
 # The legacy no-export deadband was 0..30 W around the 20 W default
 # import target. Preserve its asymmetric -20/+10 W tolerance when users
@@ -87,13 +86,8 @@ class ControllerState:
     ev3600_unknown: set[str] = field(default_factory=set)
     raw_grid_w: float | None = None
     effective_grid_w: float | None = None
-    pid_error_w: float = 0.0
-    pid_p_w: float = 0.0
-    pid_i_w: float = 0.0
-    pid_d_w: float = 0.0
-    pid_last_error_w: float | None = None
-    pid_last_at: float | None = None
-    pid_last_sequence: object | None = None
+    regulation_error_w: float | None = None
+    regulation_correction_w: float | None = None
     target_w: float = 0.0
     # Keep the previous confirmed multi-head split stable near the net target.
     cooperative_active: bool = False
@@ -236,9 +230,6 @@ class Controller:
         self.grid_target_w = 20
         self.grid_grace_seconds = 8
         self.recovery_samples = 3
-        self.pid_gains = PIDGains()
-        self.adaptive_pid = False
-        self.pid_hold = False
         self.planning_order: tuple[str, ...] = ()
         self.planning_expires_at: float | None = None
         # Set by the runtime only after three distinct high-import meter reports.
@@ -260,71 +251,17 @@ class Controller:
             < target + GRID_DEADBAND_ABOVE_TARGET_W
         )
 
-    def _reset_pid(self) -> None:
-        self.state.pid_p_w = 0.0
-        self.state.pid_i_w = 0.0
-        self.state.pid_d_w = 0.0
-        self.state.pid_last_error_w = None
-        self.state.pid_last_at = None
-        self.state.pid_last_sequence = None
-
-    def _pid_correction(
-        self, grid_w: float, now: float, sequence: object | None, capacity_w: float
-    ) -> float:
-        error = grid_w - self._grid_target()
-        self.state.pid_error_w = error
-        self.state.effective_grid_w = grid_w
-        self.state.raw_grid_w = grid_w
-        if self.pid_hold:
-            self._reset_pid()
-            self.state.pid_error_w = error
-            self.state.pid_last_at = now
-            self.state.pid_last_sequence = sequence
-            return 0.0
-        if self._within_grid_deadband(grid_w):
-            # Reaching the import deadband is a new equilibrium. A stale
-            # positive integral would otherwise turn the next export sample
-            # into an increase request instead of reducing inverter power.
-            self._reset_pid()
-            self.state.pid_error_w = error
-            return 0.0
-        # A direct import/export sign reversal can bypass the deadband
-        # entirely. Discard the prior direction's integral so the next
-        # correction cannot increase power while the meter shows export,
-        # or decrease power after import returns.
-        if self.state.pid_last_error_w is not None and error * self.state.pid_last_error_w < 0:
-            self.state.pid_i_w = 0.0
-        new = sequence is None or sequence != self.state.pid_last_sequence
-        dt = (
-            max(0.0, min(15.0, now - self.state.pid_last_at))
-            if new and self.state.pid_last_at is not None
-            else 0.0
-        )
-        terms = bounded_pid(
-            error,
-            self.state.pid_last_error_w if new and not self.pid_hold else None,
-            0.0 if self.pid_hold else dt,
-            self.state.pid_i_w,
-            sum(self.state.outputs.values()),
-            capacity_w,
-            self.pid_gains,
-        )
-        self.state.pid_p_w = terms.proportional
-        self.state.pid_i_w = terms.integral
-        self.state.pid_d_w = terms.derivative
-        if new:
-            self.state.pid_last_at = now
-            self.state.pid_last_error_w = error
-            self.state.pid_last_sequence = sequence
-        step = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
-        return max(-step, min(step, float(terms.correction)))
+    def _reset_regulation(self) -> None:
+        """Invalidate previous correction data on disable, outage or recovery."""
+        self.state.regulation_error_w = None
+        self.state.regulation_correction_w = None
 
     def disable(self, batteries: tuple[Battery, ...]) -> dict[str, float]:
         self.enabled = False
         self.state.cooperative_active = False
         commands = self._safe_limits(batteries)
         self.state.outputs = commands.copy()
-        self._reset_pid()
+        self._reset_regulation()
         return commands
 
     @staticmethod
@@ -493,7 +430,7 @@ class Controller:
         ):
             self.planning_order = ()
         if not self.enabled:
-            self._reset_pid()
+            self._reset_regulation()
             return safe
 
         eligible = self._eligible(batteries)
@@ -524,7 +461,7 @@ class Controller:
             self.state.recovery_count = 0
             self.state.last_sequence = None
             self.state.outputs = safe.copy()
-            self._reset_pid()
+            self._reset_regulation()
             return safe
 
         if self.state.grid_outage:
@@ -535,7 +472,7 @@ class Controller:
                 return safe
             self.state.grid_outage = False
             self.state.recovery_count = 0
-            self._reset_pid()
+            self._reset_regulation()
         self.state.last_grid_ok = now
 
         ranked = self._rank(eligible)
@@ -545,29 +482,22 @@ class Controller:
             for inv in battery.inverters
             if self._valid_inverter(inv)
         )
-        capacity_w = sum(
-            min(
-                battery.output_limit_w,
-                sum(inv.rated_w for inv in battery.inverters if self._valid_inverter(inv)),
-            )
-            for battery in ranked
-        )
-        if self.adaptive_pid:
-            correction = self._pid_correction(grid_w, now, sequence, capacity_w)
+        # Single feedback policy for every installation: asymmetric signed
+        # grid response, effective target deadband and bounded corrections.
+        # Adaptive metering, inverter startup hold and ACK barriers stay in
+        # the runtime and cannot be bypassed by a legacy PID option.
+        error_w = grid_w - self._grid_target()
+        if self._within_grid_deadband(grid_w):
+            correction = 0.0
         else:
-            in_deadband = self._within_grid_deadband(grid_w)
-            if in_deadband:
-                correction = 0.0
-            else:
-                gain = 1.0 if grid_w < 0 else 0.5
-                step_cap = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
-                correction = max(-step_cap, min(step_cap, (grid_w - self._grid_target()) * gain))
-            self.state.pid_error_w = grid_w - self._grid_target()
-            self.state.pid_p_w = correction
-            self.state.pid_i_w = 0.0
-            self.state.pid_d_w = 0.0
-            self.state.raw_grid_w = grid_w
-            self.state.effective_grid_w = grid_w
+            gain = 1.0 if grid_w < 0 else 0.5
+            # Cap the response to avoid large 0→positive Deye steps.
+            step_cap = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
+            correction = max(-step_cap, min(step_cap, error_w * gain))
+        self.state.regulation_error_w = error_w
+        self.state.regulation_correction_w = correction
+        self.state.raw_grid_w = grid_w
+        self.state.effective_grid_w = grid_w
         # Leaving a full-charge export override must not continue intentional
         # export merely to respect the ordinary rate limit.
         exiting_full = any(
@@ -647,8 +577,6 @@ class Controller:
                 total_w = max(0, total_w - power_w)
         self.state.outputs = commands.copy()
         self.state.target_w = sum(commands.values())
-        if self.state.full or self.state.ev3600_active or self.state.ev3600_unknown:
-            self.state.pid_i_w = 0.0
         return commands
 
 
