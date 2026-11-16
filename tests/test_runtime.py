@@ -563,6 +563,7 @@ def test_hardware_limit_unknown_despite_existing_optional_config_cannot_export(m
     runtime.controller.feed_in = True
     assert runtime.controller.update(runtime._batteries(), 0, 1)["number.inverter"] == 0
 
+
 @pytest.mark.asyncio
 async def test_high_bk_dc_report_is_not_a_persistent_software_trip() -> None:
     """A high DC telemetry value is not a certified overload or rated AC limit."""
