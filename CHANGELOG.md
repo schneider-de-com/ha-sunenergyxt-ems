@@ -4,7 +4,26 @@ Human-readable changes follow [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ## [Unreleased]
 
-Changes for the next release are collected here.
+Changes merged into the repository **after the published `v1.0.0-beta.1` tag**. They are **not installed automatically** into running Home Assistant systems, nor accepted as stable hardware behavior.
+
+### Added
+
+- Automatically suggest the only complete Forecast.Solar configuration without guessing PV-to-storage allocation when multiple independent sources exist ([#11](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/11), PR #141).
+- Detect BK215/B215 Plus nominal capacity from `2,150 Wh × positively verified physical modules`, and suggest supported Deye-rated inverter watts from provider-owned device evidence. Preserve older manual mappings and the exclusive export mode ([#140](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/140), PR #144).
+
+### Changed
+
+- Coordinate two eligible storage heads earlier under sustained independently measured grid import; derive a bounded adaptive import buffer from recent signed-meter behavior. Inverter first-start steps remain conservative pending hardware proof (PR #143).
+- For recognized BK modules, treat the **actual BMS hardware charge ceiling** as full (for example 90% even if a configurable charge target is 100%), and do not use redundant manual upper-SoC values for this decision. PV-only export requires fresh, credible **tower-attributed PV input watts** and drops back to normal household matching when evidence is lost (PR #142).
+
+### Fixed
+
+- Preserve the normal signed-grid startup/export protections when a user selects PV mode but BMS full and measured PV availability have not been established (PR #142).
+- Do not silently reduce a tower to 2,150 Wh nominal when registered B215 expansion telemetry becomes entirely unavailable or stale (PR #149).
+- Clear resolved inverter write/transport error status only when all required safe-stop acknowledgements have independently completed (PR #150).
+- Never stack an additional positive actuator write while its preceding command still lacks independent hardware acknowledgement; allow emergency reductions (PR #151).
+
+**Field-validation outstanding:** Physical Deye 0→positive AC output spikes (#53), genuine safe-off on every inverter including reconnection (#32/#49), meaningful 24-hour two-device closed-loop operation, actual HACS installation/update/rollback (#8), and the release gate (#140). Full controlled economic forecasting and dynamic tariffs are **not stable 1.0.0 functionality**.
 
 ## [1.0.0-beta.1] - 2026-11-16
 
