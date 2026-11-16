@@ -4,7 +4,12 @@ Human-readable changes follow [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ## [Unreleased]
 
-No additional changes have been accepted since `v1.0.0-beta.2`. Continue to document verified changes here before the next prerelease.
+### Changed
+
+- Use one bounded, adaptive proportional grid regulator across all supported configurations; eliminate the alternative PID algorithm, its migration toggle, PID tuning controls and integral/derivative diagnostics. Keep signed-net deadband, adaptive meter noise protection, coordinated allocation, startup limits, ACK and safe shutdown unchanged in principle ([#145](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/145)).
+- Display the effective controller as `adaptive_proportional` with direct regulation error and correction diagnostics. Pre-stable beta installations ignore obsolete PID options; no user selection or conversion step is required. This change is **not yet field-accepted** on both Deye inverters.
+
+**Hardware evidence still required:** supervised start-up 0→positive AC behavior (#53), loaded OFF/reconnect (#32), and meaningful 24-hour two-inverter control (#140).
 
 ## [1.0.0-beta.2] - 2026-11-16
 
