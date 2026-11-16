@@ -53,9 +53,10 @@ def test_after_full_charge_pv_input_limits_bypass_when_configured() -> None:
     controller.feed_in = True
     capped = pack("a", soc=90, pv_input_w=135, pv_input_configured=True)
     assert controller.update((capped,), 0, 1)["a_inverter"] == 135
-    # Legacy setups without an input sensor keep their documented full-power semantics.
-    assert controller.update((pack("a", soc=90),), 0, 2)["a_inverter"] == 800
-    assert controller.update((pack("a", soc=87, pv_input_w=135),), -500, 3)["a_inverter"] == 280
+    # A legacy source with no usable PV reading must revoke the old export
+    # allowance, not grant the inverter its full rated capacity.
+    assert controller.update((pack("a", soc=90),), 0, 2)["a_inverter"] == 0
+    assert controller.update((pack("a", soc=87, pv_input_w=135),), -500, 3)["a_inverter"] == 0
 
 
 def test_ev3600_charging_blocks_only_its_bk215_and_recovers() -> None:
@@ -104,7 +105,9 @@ def test_pid_does_not_integrate_while_an_inverter_is_starting() -> None:
 def test_ev3600_charging_clears_stale_full_charge_bypass_state() -> None:
     controller = logic.Controller()
     controller.feed_in = True
-    controller.update((pack("a", soc=90),), 0, 1)
+    controller.update(
+        (pack("a", soc=90, pv_input_w=200, pv_input_configured=True),), 0, 1
+    )
     assert "a" in controller.state.full
     controller.update((pack("a", soc=90, ev3600_charging=True),), 200, 2)
     assert "a" not in controller.state.full
