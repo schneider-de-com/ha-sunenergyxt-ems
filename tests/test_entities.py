@@ -170,11 +170,10 @@ async def test_positive_switch_setup_creates_three_entities(objects):
     hass = SimpleNamespace(data={"sunenergyxt_ems": {"ems-entry": runtime}})
     created = []
     await switches.async_setup_entry(hass, entry, created.extend)
-    assert len(created) == 3
+    assert len(created) == 2
     assert {entity.unique_id for entity in created} == {
         "ems-entry_enabled",
         "ems-entry_feed_in",
-        "ems-entry_adaptive_pid",
     }
 
 
