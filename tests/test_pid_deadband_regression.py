@@ -103,3 +103,25 @@ def test_direct_export_to_import_transition_discards_old_negative_integral() -> 
     assert limits["m200"] > 200.0, (
         "PID must not keep lowering inverter output when fresh grid import has returned"
     )
+
+
+def test_pid_nondefault_target_does_not_freeze_at_20_w_import() -> None:
+    """The fixed 0..30 W deadband must not defeat an 80 W target."""
+    b = Battery("bk", 70, 10, 90, (Inverter("m200", 2000),))
+    controller = Controller(ControllerState(outputs={"m200": 200.0}))
+    controller.adaptive_pid = True
+    controller.grid_target_w = 80
+
+    command = controller.update((b,), 20.0, 10.0, sequence="fresh")
+    assert command["m200"] < 200.0
+
+
+def test_pid_custom_target_clears_integral_inside_shifted_deadband() -> None:
+    b = Battery("bk", 70, 10, 90, (Inverter("m200", 2000),))
+    controller = Controller(ControllerState(outputs={"m200": 200.0}, pid_i_w=120.0))
+    controller.adaptive_pid = True
+    controller.grid_target_w = 80
+
+    command = controller.update((b,), 75.0, 10.0, sequence="fresh")
+    assert command["m200"] == 200.0
+    assert controller.state.pid_i_w == 0.0

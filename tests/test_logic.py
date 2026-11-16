@@ -155,3 +155,33 @@ def test_pv_feed_in_hysteresis_is_user_configurable():
     assert engine.update((solar,), 0, 1)["a_inv"] == 800
     assert engine.update((replace(solar, soc=88),), 0, 2)["a_inv"] == 800
     assert engine.update((replace(solar, soc=85),), -800, 3)["a_inv"] == 0
+
+
+def test_nondefault_grid_target_does_not_suppress_needed_reduction():
+    """20 W import is NOT on target when the user requested an 80 W reserve."""
+    engine = Controller(ControllerState(outputs={"a_inv": 400}))
+    engine.grid_target_w = 80
+    commands = engine.update((battery(),), 20, 1)
+    assert commands["a_inv"] < 400
+
+
+def test_nondefault_grid_target_holds_within_its_own_deadband():
+    """The original -20/+10 W deadband must follow the chosen import target."""
+    engine = Controller(ControllerState(outputs={"a_inv": 400}))
+    engine.grid_target_w = 80
+    commands = engine.update((battery(),), 75, 1)
+    assert commands["a_inv"] == 400
+
+
+def test_dynamic_target_repositions_deadband_without_ignoring_real_export():
+    engine = Controller(ControllerState(outputs={"a_inv": 400}))
+    engine.grid_target_w = 20
+    engine.effective_grid_target_w = 80
+    assert engine.update((battery(),), 75, 1)["a_inv"] == 400
+    assert engine.update((battery(),), -5, 2)["a_inv"] < 400
+
+
+def test_zero_import_target_still_corrects_negative_signed_grid():
+    engine = Controller(ControllerState(outputs={"a_inv": 400}))
+    engine.grid_target_w = 0
+    assert engine.update((battery(),), -5, 1)["a_inv"] < 400

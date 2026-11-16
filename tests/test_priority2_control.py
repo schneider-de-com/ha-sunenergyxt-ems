@@ -110,3 +110,16 @@ def test_strongly_falling_confirmed_import_slowdown_guards_positive_ramp():
     for sequence, watts in enumerate((1500, 1480, 1470)):
         filt.observe(watts, sequence)
     assert not filt.rapid_import_decline()
+
+
+def test_single_export_and_import_outliers_do_not_inflate_grid_reserve():
+    """One transient export and load jump must not move a settled 20 W target.
+
+    Replays the observed M200 trace used by test_m200_grid_transients:
+    20, 22, 19, -700, +420 W. Only the first three samples are near target.
+    """
+    filt = GridMedianFilter()
+    for index, watts in enumerate((20.0, 22.0, 19.0, -700.0, 420.0)):
+        filt.observe(watts, index)
+
+    assert filt.dynamic_target(20.0) == 20.0
