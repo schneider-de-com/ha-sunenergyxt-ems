@@ -102,3 +102,73 @@ def test_invalid_dc_unit_is_not_treated_as_watts():
         Candidate("sensor.output", "sensor", "bk", "sunEnergyXT", "wifi_outputpower_total", "kWh"),
     ]
     assert "dc_output" not in find_batteries(entries)["bk"]
+
+
+
+def test_plus_and_first_generation_head_roles_are_independent():
+    """Extension modules add capacity to their head; they are not EMS towers.
+
+    Both head generations use the manufacturer's stable SunEnergyXT-BK
+    registry roles. Device display names are deliberately not examined.
+    """
+    entries = [
+        Candidate("sensor.legacy_level", "sensor", "head_old", "sunenergyxt_bk", "wifi_soc", "%"),
+        Candidate(
+            "number.legacy_reserve",
+            "number",
+            "head_old",
+            "sunenergyxt_bk",
+            "wifi_cnfg_disc_soc_min",
+            "%",
+        ),
+        Candidate("sensor.plus_level", "sensor", "head_plus", "sunenergyxt_bk", "wifi_soc", "%"),
+        Candidate(
+            "number.plus_reserve",
+            "number",
+            "head_plus",
+            "sunenergyxt_bk",
+            "wifi_cnfg_disc_soc_min",
+            "%",
+        ),
+        Candidate(
+            "sensor.plus_dc",
+            "sensor",
+            "head_plus",
+            "sunenergyxt_bk",
+            "wifi_outputpower_total",
+            "W",
+        ),
+        Candidate(
+            "sensor.expansion_input",
+            "sensor",
+            "extension_module",
+            "sunenergyxt_bk",
+            "wifi_inputpower_total",
+            "W",
+        ),
+    ]
+    assert find_batteries(entries) == {
+        "head_old": {
+            "soc": "sensor.legacy_level",
+            "lower": "number.legacy_reserve",
+        },
+        "head_plus": {
+            "soc": "sensor.plus_level",
+            "lower": "number.plus_reserve",
+            "dc_output": "sensor.plus_dc",
+        },
+    }
+
+
+def test_other_inverter_vendor_power_limit_is_a_candidate_not_a_verified_ack():
+    """Discovery offers candidate entities; hardware acknowledgement is separate."""
+    for source in ("hoymiles", "apsystems", "tsun"):
+        item = Candidate(
+            f"number.{source}_watts",
+            "number",
+            f"{source}_device",
+            source,
+            "output_limit",
+            "W",
+        )
+        assert suggest_inverter_limit([item], f"{source}_device") == item.entity_id
