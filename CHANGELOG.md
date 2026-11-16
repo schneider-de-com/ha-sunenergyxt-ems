@@ -22,6 +22,9 @@ Changes merged into the repository **after the published `v1.0.0-beta.1` tag**. 
 - Do not silently reduce a tower to 2,150 Wh nominal when registered B215 expansion telemetry becomes entirely unavailable or stale (PR #149).
 - Clear resolved inverter write/transport error status only when all required safe-stop acknowledgements have independently completed (PR #150).
 - Never stack an additional positive actuator write while its preceding command still lacks independent hardware acknowledgement; allow emergency reductions (PR #151).
+- Detect lost or corrupt persisted shutdown journals after initial setup, rearm minimum-output obligations and keep errors visible until independent confirmation (PR #155).
+- Reject the first positive Solarman command for an unverified control/readback profile, while retaining emergency minimum attempts without false acknowledgement (PR #156).
+- Keep the controller deadband relative to the chosen/effective grid import target, and exclude isolated export/load outliers from the adaptive import-reserve estimate (PR #157).
 
 **Field-validation outstanding:** Physical Deye 0→positive AC output spikes (#53), genuine safe-off on every inverter including reconnection (#32/#49), meaningful 24-hour two-device closed-loop operation, actual HACS installation/update/rollback (#8), and the release gate (#140). Full controlled economic forecasting and dynamic tariffs are **not stable 1.0.0 functionality**.
 
