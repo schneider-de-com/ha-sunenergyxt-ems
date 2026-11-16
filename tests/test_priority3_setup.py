@@ -122,6 +122,15 @@ def test_bk_2150_per_fresh_identified_head_and_extension(monkeypatch):
     assert module.suggested_bk_capacity_wh(hass, "sensor.bk") is None
 
 
+def test_zero_hardware_ceiling_cannot_count_a_phantom_extension(monkeypatch):
+    hass, _, states = setup_fake(monkeypatch)
+    states["sensor.ext_limit"].state = "0"
+    assert module.suggested_bk_capacity_wh(hass, "sensor.bk") is None
+    states["sensor.ext_limit"].state = "90"
+    states["sensor.head_limit"].state = "0"
+    assert module.suggested_bk_capacity_wh(hass, "sensor.bk") is None
+
+
 def test_head_only_bk_has_2150_while_other_vendors_remain_manual(monkeypatch):
     hass, _, _ = setup_fake(monkeypatch, expansion=False)
     assert module.suggested_bk_capacity_wh(hass, "sensor.bk") == 2150
