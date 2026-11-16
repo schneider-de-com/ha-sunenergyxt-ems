@@ -691,11 +691,6 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
         }
         fields[
             vol.Optional(
-                "adaptive_pid", default=self.config_entry.options.get("adaptive_pid", False)
-            )
-        ] = selector.BooleanSelector()
-        fields[
-            vol.Optional(
                 "planning_enabled", default=self.config_entry.options.get("planning_enabled", False)
             )
         ] = selector.BooleanSelector()
