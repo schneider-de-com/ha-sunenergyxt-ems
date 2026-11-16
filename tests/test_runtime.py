@@ -681,3 +681,37 @@ async def test_missing_dc_on_one_head_allows_other_after_confirmed_minimum() -> 
         c.args[2]["entity_id"] == "number.inverter2" and c.args[2]["value"] > 0
         for c in hass.services.async_call.await_args_list
     ), "A healthy independent battery must resume after the unsafe head is stopped"
+
+
+@pytest.mark.asyncio
+async def test_existing_pid_mode_is_retained_during_upgrade_and_options_reload():
+    """A hidden legacy toggle must never silently swap the active controller."""
+    hass, entry = configured()
+    entry.options["enabled"] = False
+    entry.options["adaptive_pid"] = True
+    runtime = EMSRuntime(hass, entry)
+    assert runtime.controller.adaptive_pid is True
+
+    entry.options["grid_target_w"] = 80
+    await runtime.async_change_options()
+
+    assert runtime.controller.adaptive_pid is True
+    assert entry.options["adaptive_pid"] is True
+    hass.services.async_call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_explicit_pid_migration_resets_integral_and_uses_unified_path():
+    """Only an explicitly persisted migration switches a legacy PID controller."""
+    hass, entry = configured()
+    entry.options["enabled"] = False
+    entry.options["adaptive_pid"] = True
+    runtime = EMSRuntime(hass, entry)
+    runtime.controller.state.pid_i_w = 120.0
+
+    entry.options["adaptive_pid"] = False
+    await runtime.async_change_options()
+
+    assert runtime.controller.adaptive_pid is False
+    assert runtime.controller.state.pid_i_w == 0.0
+    hass.services.async_call.assert_not_awaited()
