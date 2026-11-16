@@ -73,10 +73,17 @@ async def test_positive_feed_in_switch_updates_only_its_setting(objects, monkeyp
     monkeypatch.setattr(entity, "async_write_ha_state", lambda: None)
     await entity.async_turn_on()
     assert entity.is_on
-    assert changes == [{"enabled": True, "feed_in": True}]
+    assert changes == [{"enabled": True, "feed_in": True, "feed_in_mode": "pv"}]
     await entity.async_turn_off()
     assert not entity.is_on
+    assert entry.options["feed_in_mode"] == "household"
     assert entry.options["enabled"] is True
+
+
+def test_feed_in_switch_never_claims_pv_active_for_legacy_household_mode(objects):
+    entry, runtime, _ = objects
+    entry.options.update({"feed_in": True, "feed_in_mode": "household"})
+    assert not switches.EMSToggle(entry, runtime, "feed_in", "Feed-in").is_on
 
 
 @pytest.mark.asyncio
