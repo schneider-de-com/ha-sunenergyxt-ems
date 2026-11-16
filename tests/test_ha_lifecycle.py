@@ -632,7 +632,6 @@ async def test_setup_registers_real_integration_devices_and_controls(
         f"{entry.entry_id}_battery_bk215-1_dc_output",
         f"{entry.entry_id}_enabled",
         f"{entry.entry_id}_feed_in",
-        f"{entry.entry_id}_adaptive_pid",
         f"{entry.entry_id}_startup_hold_remaining",
         f"{entry.entry_id}_battery_bk215-1_ev3600_state",
         f"{entry.entry_id}_battery_bk215-1_bypass_state",
