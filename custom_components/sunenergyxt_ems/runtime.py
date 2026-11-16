@@ -495,6 +495,26 @@ class EMSRuntime:
             )
         return tuple(batteries)
 
+    def _intentional_export_active(self, batteries: tuple[Battery, ...] | None = None) -> bool:
+        """Distinguish an enabled mode from a *verified active* PV bypass.
+
+        A user selecting PV-after-full must not disable normal zero-export
+        startup and grid guards while every battery is still below BMS full,
+        or while the PV evidence has gone stale.
+        """
+        if not self.controller.enabled or not self.controller.feed_in or not self.controller.state.full:
+            return False
+        checked = self._batteries() if batteries is None else batteries
+        return any(
+            battery.key in self.controller.state.full
+            and battery.upper_soc is not None
+            and battery.soc is not None
+            and battery.soc >= battery.upper_soc - self.controller.full_hysteresis_pct
+            and battery.bms_full_verified is not False
+            and self.controller._fresh_pv_budget(battery)
+            for battery in checked
+        )
+
     def _grid(self) -> tuple[float | None, object | None]:
         state = self.hass.states.get(self.entry.data[CONF_GRID])
         if state is None:
@@ -825,12 +845,13 @@ class EMSRuntime:
     async def _apply(
         self, targets: dict[str, float], now: float, *, emergency: bool = False, force: bool = False
     ) -> None:
+        intentional_export = self._intentional_export_active()
         # One shared positive budget per dispatch, not one 200 W jump per
         # inverter. The minimum of three distinct samples avoids reacting
         # to an isolated appliance start or a falling household load.
         confirmed_import = (
             self._grid_filter.confirmed_import_w()
-            if self._grid_raw_w is not None and not self.controller.feed_in
+            if self._grid_raw_w is not None and not intentional_export
             else None
         )
         # Before confirmation, preserve the existing 20 W *per-inverter*
@@ -847,7 +868,7 @@ class EMSRuntime:
             high_import = (
                 self._grid_raw_w is not None
                 and self._grid_filter.sustained_import()
-                and not self.controller.feed_in
+                and not intentional_export
                 and not self._start_hold.active(entity_id, now)
             )
             interval = self._minimum_interval(entity_id)
@@ -1234,7 +1255,7 @@ class EMSRuntime:
             # The median delays sustained export after a sharp load drop.
             # Require two distinct significant export samples and retain the
             # less extreme one; isolated transients still use the median.
-            if grid is not None and not self.controller.feed_in:
+            if grid is not None and not self._intentional_export_active():
                 confirmed_export = self._grid_filter.confirmed_export()
                 if confirmed_export is not None:
                     grid = min(grid, confirmed_export)
@@ -1255,7 +1276,7 @@ class EMSRuntime:
                 # However the emergency reduction must not become a permanent
                 # latch after the grid has genuinely recovered (issue #50).
                 startup_export = (
-                    not self.controller.feed_in
+                    not self._intentional_export_active(batteries)
                     and self._grid_raw_w < STARTUP_EXPORT_TRIP_W
                     and any(
                         self._start_hold.active(inv.key, now)
