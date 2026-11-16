@@ -544,6 +544,9 @@ async def test_missing_grid_does_not_hide_unacknowledged_command_timeout(
 async def test_missing_grid_does_not_hide_second_actuator_timeout() -> None:
     runtime, hass = runtime_pair()
     runtime._hardware_feedback_matches = AsyncMock(return_value=True)
+    # The second head was already running; serialized first-start guards
+    # must not hide an independent *ongoing* actuator timeout.
+    hass.states.get("number.m80").state = "10"
     await runtime._apply({"number.m200": 520, "number.m80": 500}, now=1000)
     assert len(runtime._pending) == 2
     inverter = hass.states.get("number.m200")
