@@ -42,4 +42,3 @@ def test_current_documentation_never_claims_stored_battery_export_as_pv_only() -
     assert "BMS" in unreleased
     assert "not installed" in unreleased
     assert "hardware" in unreleased
-
