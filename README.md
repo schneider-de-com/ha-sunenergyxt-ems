@@ -9,7 +9,7 @@ It does **not** speak directly to batteries or inverters. Manufacturer-compatibl
 
 ## Release policy and architecture
 
-This integration is **not yet released as stable 1.0.0**. The first stable release is the verified two-inverter core; optional economic forecast planning follows in a later 1.x release after its separate seven-day acceptance. See the [release and commit policy](docs/releasing.md), the [human-readable changelog](CHANGELOG.md), the [vendor-neutral arc42 architecture](docs/architecture/README.md), the [hardware/EMS compatibility matrix](docs/device-compatibility.md) and the [architecture decisions](docs/architecture/README.md#09-architecture-decisions).
+This integration is **not yet released as stable 1.0.0**. The first stable release is the validated load-following core (initially verified against a two-inverter reference system, not limited to those models); optional economic forecast planning follows in a later 1.x release after its separate seven-day acceptance. See the [release and commit policy](docs/releasing.md), the [human-readable changelog](CHANGELOG.md), the [vendor-neutral arc42 architecture](docs/architecture/README.md), the [hardware/EMS compatibility matrix](docs/device-compatibility.md) and the [architecture decisions](docs/architecture/README.md#09-architecture-decisions).
 
 **Continuing this work in another chat?** Start with the [verified 2026-11-16 handover](docs/HANDOVER-2026-11-16.md); it identifies the exact GitHub PRs, incident evidence, release gates and MCP Memory entry to retrieve.
 
