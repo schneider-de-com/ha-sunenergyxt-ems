@@ -470,6 +470,7 @@ class Controller:
                 not self.feed_in
                 or not self._fresh_pv_budget(battery)
                 or not self._valid_soc(battery.upper_soc)
+                or battery.bms_full_verified is False
                 or (
                     battery.soc is not None
                     and battery.upper_soc is not None
