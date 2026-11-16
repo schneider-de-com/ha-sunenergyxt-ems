@@ -532,7 +532,11 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                             complete = all(selected.get(role) for role in ("today", "tomorrow"))
                     except ForecastError:
                         complete = False
-                if any(selected.values()) and not complete:
+                forecast_edited = any(
+                    f"pv_forecast_{role}{suffix}" in user_input
+                    for role in ("today", "tomorrow", "updated")
+                )
+                if forecast_edited and any(selected.values()) and not complete:
                     errors["base"] = "incomplete_forecast_mapping"
                 forecast_maps[device] = {
                     role: source for role, source in selected.items() if source
@@ -594,12 +598,22 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 mode = requested.pop(f"ev_mode_{index}", ev_map.get(device, {}).get("mode"))
                 power = requested.pop(f"ev_power_{index}", ev_map.get(device, {}).get("power"))
                 if pv:
-                    state = self.hass.states.get(pv)
-                    if state is None or state.attributes.get("unit_of_measurement") not in (
-                        "W",
-                        "kW",
-                    ):
-                        errors[f"pv_input_{index}"] = "invalid_pv_power_source"
+                    # The optional upstream sensor can be offline when a user
+                    # edits an unrelated settings page. Validate only a new
+                    # selection; do not silently delete its saved mapping.
+                    pv_edited = (
+                        f"pv_input_{index}" in user_input
+                        or f"clear_pv_input_{index}" in user_input
+                    )
+                    if pv_edited:
+                        state = self.hass.states.get(pv)
+                        if state is None or state.attributes.get("unit_of_measurement") not in (
+                            "W",
+                            "kW",
+                        ):
+                            errors[f"pv_input_{index}"] = "invalid_pv_power_source"
+                        else:
+                            pv_map[device] = pv
                     else:
                         pv_map[device] = pv
                 else:
