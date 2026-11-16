@@ -480,7 +480,6 @@ async def test_translated_enum_statuses_in_real_ha(hass: HomeAssistant) -> None:
         "disabled",
         "shutdown_pending",
         "write_error",
-        "hardware_limit",
         "dc_unavailable",
         "reserve_safety",
         "grid_unavailable",
