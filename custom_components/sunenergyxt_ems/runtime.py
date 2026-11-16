@@ -75,6 +75,11 @@ SHUTDOWN_RETRY_BACKOFF_SECONDS = 300.0
 # -100 W is an operational fail-closed threshold, NOT a device rating
 # or a claim about the actual AC power output of the inverter.
 STARTUP_EXPORT_TRIP_W = -100.0
+# After emergency reduction, retry ordinary regulation only after device feedback,
+# three *distinct* import reports, and a brief cooling-off period. An isolated
+# high-import reading must never unlock a hazardous repeated inverter startup.
+STARTUP_EXPORT_RECOVERY_SAMPLES = 3
+STARTUP_EXPORT_RECOVERY_SECONDS = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +138,9 @@ class EMSRuntime:
         self._grid_filtered_w: float | None = None
         self._last_raw_grid_sequence: datetime | None = None
         self._startup_export_trip = False
+        self._startup_export_started_at: float | None = None
+        self._startup_export_recovery_count = 0
+        self._startup_export_last_reduction_seq: datetime | None = None
         self._start_hold = StartHold(seconds=30.0)
         self._running = False
         self._seen_valid = False
@@ -642,6 +650,53 @@ class EMSRuntime:
                     reductions[inverter.key] = inverter.minimum_w
         return reductions
 
+    def _startup_export_reduction_targets(
+        self, batteries: tuple[Battery, ...], signed_grid_w: float
+    ) -> dict[str, float]:
+        """Reduce *dispatched limits* by the signed net deviation, not all to zero.
+
+        These limits are NOT measured AC power. Missing, stale or contradictory
+        command baselines are deliberately treated as zero, never as permission
+        to increase an inverter during an export correction. Each fresh meter
+        sample can request a further downward correction.
+        """
+        commanded: dict[str, float] = {}
+        minimums: dict[str, float] = {}
+        for battery in batteries:
+            for inverter in battery.inverters:
+                if not inverter.online:
+                    continue
+                minimums[inverter.key] = inverter.minimum_w
+                dispatched = self._last_dispatched_w.get(inverter.key)
+                state = self.hass.states.get(inverter.key)
+                reported = self._float(state.state) if state else None
+                unit = state.attributes.get("unit_of_measurement") if state else None
+                if reported is not None and unit == "%":
+                    reported = reported * inverter.rated_w / 100
+                if unit not in ("%", "W"):
+                    reported = None
+                if (
+                    dispatched is None
+                    or reported is None
+                    or not isfinite(dispatched)
+                    or not isfinite(reported)
+                ):
+                    commanded[inverter.key] = inverter.minimum_w
+                else:
+                    commanded[inverter.key] = max(
+                        inverter.minimum_w,
+                        min(inverter.rated_w, dispatched, reported),
+                    )
+        headroom = {key: max(0.0, value - minimums[key]) for key, value in commanded.items()}
+        total = sum(headroom.values())
+        correction = max(0.0, self.controller.grid_target_w - signed_grid_w)
+        if total <= 0:
+            return minimums
+        return {
+            key: max(minimums[key], commanded[key] - correction * available / total)
+            for key, available in headroom.items()
+        }
+
     def _reconnected_inverters(self, batteries: tuple[Battery, ...]) -> set[str]:
         """Detect actual HA availability recovery without policing manual limits.
 
@@ -1101,11 +1156,11 @@ class EMSRuntime:
                 for battery in self._batteries()
             )
             if self._grid_raw_w is not None and sequence != self._last_raw_grid_sequence:
-                # The 2026-11-04 hardware trace jumped directly from +153 W
-                # to -696 W: do not require an earlier negative meter sample.
-                # A single severe export during startup is an emergency,
-                # bypassing the filter and the normal startup settling hold.
-                self._startup_export_trip |= (
+                # A first severe *fresh* signed-grid export during a startup
+                # bypasses the filtered feedback and normal actuator wait.
+                # However the emergency reduction must not become a permanent
+                # latch after the grid has genuinely recovered (issue #50).
+                startup_export = (
                     not self.controller.feed_in
                     and self._grid_raw_w < STARTUP_EXPORT_TRIP_W
                     and any(
@@ -1114,6 +1169,24 @@ class EMSRuntime:
                         for inv in battery.inverters
                     )
                 )
+                if startup_export:
+                    if not self._startup_export_trip:
+                        _LOGGER.warning(
+                            "Startup net export %.1f W: reducing reachable inverters",
+                            self._grid_raw_w,
+                        )
+                    self._startup_export_trip = True
+                    self._startup_export_started_at = now
+                    self._startup_export_recovery_count = 0
+                elif self._startup_export_trip:
+                    # Count new *meter reports*, never five-second scheduler ticks.
+                    # A new negative, invalid, or too-small reading re-arms the
+                    # recovery gate without requiring an operator reset.
+                    self._startup_export_recovery_count = (
+                        self._startup_export_recovery_count + 1
+                        if self._grid_raw_w > max(0.0, self.controller.grid_target_w)
+                        else 0
+                    )
                 self._last_raw_grid_sequence = sequence
             detected_trips = {
                 battery.key
@@ -1148,17 +1221,60 @@ class EMSRuntime:
                 self._publish()
                 return
             if self._startup_export_trip:
-                safe = {
-                    inv.key: inv.minimum_w
-                    for battery in batteries
-                    for inv in battery.inverters
-                    if inv.online
-                }
+                # One proportional downward correction per *fresh* grid report.
+                # If the meter disappears, fail closed to the safe minimum.
+                if self._grid_raw_w is None:
+                    reduction = {
+                        inv.key: inv.minimum_w
+                        for battery in batteries
+                        for inv in battery.inverters
+                        if inv.online
+                    }
+                elif (
+                    isinstance(sequence, datetime)
+                    and sequence != self._startup_export_last_reduction_seq
+                    and self._grid_raw_w < self.controller.grid_target_w
+                ):
+                    reduction = self._startup_export_reduction_targets(batteries, self._grid_raw_w)
+                    self._startup_export_last_reduction_seq = sequence
+                else:
+                    reduction = {}
                 self.last_error = None
-                await self._apply(safe, now, emergency=True)
-                if self.last_error is None:
-                    self.status = "write_error"
-                    self.last_error = "Excess grid export during startup; switch EMS off to reset"
+                if reduction:
+                    await self._apply(reduction, now, emergency=True)
+                if self.last_error is not None:
+                    # A real failed minimum command remains a write error and
+                    # must never be treated as a successful recovery.
+                    self._publish()
+                    return
+                confirmed = await self._feedback_ready(now, sequence)
+                if self.status == "write_error":
+                    self._publish()
+                    return
+                if (
+                    confirmed
+                    and not self._pending
+                    and not self._shutdown_obligations
+                    and self._startup_export_recovery_count >= STARTUP_EXPORT_RECOVERY_SAMPLES
+                    and self._startup_export_started_at is not None
+                    and now - self._startup_export_started_at >= STARTUP_EXPORT_RECOVERY_SECONDS
+                ):
+                    self._startup_export_trip = False
+                    self._startup_export_started_at = None
+                    self._startup_export_recovery_count = 0
+                    self._startup_export_last_reduction_seq = None
+                    self._grid_filter.reset()
+                    self._last_processed_grid = None
+                    self.controller._reset_pid()
+                    self.status = "waiting"
+                    self.last_error = None
+                    _LOGGER.info("Startup export corrected; controlled regulation may resume")
+                else:
+                    self.status = "waiting_feedback" if not confirmed else "waiting_meter"
+                    self.last_error = (
+                        "Excess grid export during startup; waiting for confirmed "
+                        "safe reduction and fresh stable grid import"
+                    )
                 self._publish()
                 return
             missing_dc = sorted(
@@ -1299,6 +1415,9 @@ class EMSRuntime:
             self._grid_filter.reset()
             self._start_hold.reset()
             self._startup_export_trip = False
+            self._startup_export_started_at = None
+            self._startup_export_recovery_count = 0
+            self._startup_export_last_reduction_seq = None
             self._last_raw_grid_sequence = None
             self.controller.pid_hold = False
             self.last_error = None

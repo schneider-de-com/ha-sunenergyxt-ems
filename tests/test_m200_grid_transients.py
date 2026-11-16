@@ -343,3 +343,179 @@ async def test_confirmed_export_does_not_override_intentional_feed_in(monkeypatc
         meter.last_reported = base + timedelta(milliseconds=100 * (i + 1))
         await runtime.async_update()
     assert runtime._grid_filtered_w == 539.0
+
+
+@pytest.mark.asyncio
+async def test_startup_export_trip_self_recovers_after_confirmed_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2026-11-15 16:35:36: emergency zero must not require a manual OFF/ON reset.
+
+    Three distinct fresh positive Shelly reports and completed inverter feedback
+    permit automatic re-entry; emergency zero is still sent at the first severe
+    startup export. Replays a real failure that persisted until 21:20.
+    """
+    hass, entry = configured_runtime()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    runtime._start_hold.record("number.m200", before_w=0, after_w=20, now=1000)
+    dispatched = AsyncMock()
+    monkeypatch.setattr(runtime, "_apply", dispatched)
+    monkeypatch.setattr(runtime, "_feedback_ready", AsyncMock(return_value=True))
+    meter = hass.states.get("sensor.grid")
+    stamp = datetime.now(UTC) - timedelta(seconds=1)
+
+    for watts, sequence, elapsed in [
+        (-1362.715, 1, 1005.0),
+        (350.903, 2, 1010.0),
+        (351.172, 3, 1020.0),
+        (357.379, 4, 1040.0),
+    ]:
+        clock[0] = elapsed
+        meter.state = str(watts)
+        meter.last_reported = stamp + timedelta(milliseconds=sequence)
+        await runtime.async_update()
+        if sequence == 1:
+            assert runtime._startup_export_trip is True
+
+    assert any(call.args[0] == {"number.m200": 0.0} for call in dispatched.await_args_list), (
+        "The first severe export must still request the safe minimum"
+    )
+    assert runtime._startup_export_trip is False, (
+        "Stable fresh import after the confirmed reduction must clear the temporary trip"
+    )
+    assert runtime.status != "write_error"
+    assert "switch EMS off" not in (runtime.last_error or "")
+
+
+@pytest.mark.asyncio
+async def test_startup_export_recovery_requires_distinct_meter_reports_and_readback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not auto-restart on a repeated Shelly timestamp or an unconfirmed zero."""
+    hass, entry = configured_runtime()
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    runtime._start_hold.record("number.m200", before_w=0, after_w=20, now=1000)
+    monkeypatch.setattr(runtime, "_apply", AsyncMock())
+    monkeypatch.setattr(runtime, "_feedback_ready", AsyncMock(return_value=False))
+    meter = hass.states.get("sensor.grid")
+    stamp = datetime.now(UTC) - timedelta(seconds=1)
+
+    clock[0] = 1005
+    meter.state = "-188.632"
+    meter.last_reported = stamp + timedelta(milliseconds=1)
+    await runtime.async_update()
+    assert runtime._startup_export_trip
+
+    clock[0] = 1010
+    meter.state = "300"
+    meter.last_reported = stamp + timedelta(milliseconds=2)
+    await runtime.async_update()
+
+    # Advance scheduler without fresh meter updates; never count those as recovery.
+    for now in (1020, 1030, 1040, 1050):
+        clock[0] = now
+        await runtime.async_update()
+    assert runtime._startup_export_trip is True
+
+    # Fresh positive reports exist, but verified device ACK is still outstanding.
+    runtime._pending["number.m200"] = module.PendingCommand(
+        target=0,
+        entity_reported_before=stamp,
+        sent_at=1005,
+        grid_reported_before=stamp,
+    )
+    for idx, now in enumerate((1060, 1065, 1070), start=3):
+        clock[0] = now
+        meter.last_reported = stamp + timedelta(milliseconds=idx)
+        await runtime.async_update()
+    assert runtime._startup_export_trip is True, (
+        "Fresh grid import alone cannot replace confirmed inverter shutdown"
+    )
+
+
+@pytest.mark.asyncio
+async def test_startup_export_reduces_two_live_inverters_proportionally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Q4: one fresh severe export reduces BOTH commanded limits before a second sample.
+
+    A 1.36 kW net export is not a reason to force an already high 1.8 kW
+    setpoint directly through Deye's risky 0%-to-positive startup transition.
+    Dispatch limits are nominal, not a claim about actual AC generation.
+    """
+    hass, entry = configured_runtime()
+    entry.data["batteries"][0]["inverters"].append({"entity_id": "number.m80", "rated_w": 800})
+    old_get = hass.states.get
+    m80 = sample(5, "%", min=0, max=100, step=0.1)
+    hass.states.get = lambda key: m80 if key == "number.m80" else old_get(key)
+    m200 = hass.states.get("number.m200")
+    m200.state = "90"
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    runtime._last_dispatched_w.update({"number.m200": 1800.0, "number.m80": 40.0})
+    runtime._start_hold.record("number.m200", before_w=0, after_w=1800, now=1000)
+    clock = [1000.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    dispatched = AsyncMock()
+    monkeypatch.setattr(runtime, "_apply", dispatched)
+    monkeypatch.setattr(runtime, "_feedback_ready", AsyncMock(return_value=False))
+    meter = hass.states.get("sensor.grid")
+    base = datetime.now(UTC) - timedelta(seconds=1)
+
+    meter.state = "-1362.715"
+    meter.last_reported = base + timedelta(milliseconds=100)
+    clock[0] = 1005.0
+    await runtime.async_update()
+    first = dispatched.await_args.args[0]
+    assert 0 < first["number.m200"] < 1800
+    assert 0 < first["number.m80"] < 40
+    assert sum(first.values()) == pytest.approx(1840 - (1362.715 + 20))
+    assert runtime._startup_export_trip is True
+
+    # Replay the first dispatch as the newly reported command baseline; the
+    # next distinct negative report must request another DOWNWARD adjustment.
+    runtime._last_dispatched_w.update(first)
+    m200.state = str(first["number.m200"] / 20)
+    m80.state = str(first["number.m80"] / 8)
+    meter.state = "-150"
+    meter.last_reported = base + timedelta(milliseconds=200)
+    clock[0] = 1010.0
+    await runtime.async_update()
+    second = dispatched.await_args.args[0]
+    assert 0 <= second["number.m200"] < first["number.m200"]
+    assert 0 <= second["number.m80"] < first["number.m80"]
+    assert sum(second.values()) == pytest.approx(sum(first.values()) - 170)
+    assert dispatched.await_count == 2
+
+    # A five-second scheduler cycle reusing the SAME meter timestamp cannot
+    # spend the correction budget twice.
+    clock[0] = 1015.0
+    await runtime.async_update()
+    assert dispatched.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_startup_export_with_no_verified_command_baseline_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On restart, an optimistic HA number is not proof of an EMS-issued limit."""
+    hass, entry = configured_runtime()
+    hass.states.get("number.m200").state = "90"
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    runtime._start_hold.record("number.m200", before_w=0, after_w=1800, now=1000)
+    monkeypatch.setattr(module, "monotonic", lambda: 1005.0)
+    dispatched = AsyncMock()
+    monkeypatch.setattr(runtime, "_apply", dispatched)
+    monkeypatch.setattr(runtime, "_feedback_ready", AsyncMock(return_value=False))
+    meter = hass.states.get("sensor.grid")
+    meter.state = "-700"
+    meter.last_reported = datetime.now(UTC) - timedelta(seconds=1)
+    await runtime.async_update()
+    assert dispatched.await_args.args[0] == {"number.m200": 0.0}
