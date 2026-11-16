@@ -89,6 +89,8 @@ class ControllerState:
     pid_last_at: float | None = None
     pid_last_sequence: object | None = None
     target_w: float = 0.0
+    # Keep the previous confirmed multi-head split stable near the net target.
+    cooperative_active: bool = False
 
 
 class StartHold:
@@ -168,6 +170,30 @@ class GridMedianFilter:
             return None
         return min(recent)
 
+    def dynamic_target(self, requested_w: float) -> float:
+        """Raise a user-chosen import reserve only for measured near-goal noise.
+
+        Five distinct recent meter samples are required. Remote high-import
+        load changes are not evidence for a larger steady-state buffer.
+        The existing 200 W setup bound also applies to the effective reserve.
+        """
+        if not isfinite(requested_w) or len(self._samples) < 5:
+            return requested_w
+        recent = list(self._samples)
+        if sum(abs(watts - requested_w) <= 150 for watts in recent) < 3:
+            return requested_w
+        noise = median(abs(current - prior) for prior, current in zip(recent, recent[1:]))
+        margin = max(0.0, (noise - 30.0) * 0.25)
+        return min(200.0, requested_w + margin)
+
+    def rapid_import_decline(self) -> bool:
+        """Two fresh, sizable downward steps mean the load is disappearing."""
+        if not self.sustained_import():
+            return False
+        first, middle, last = list(self._samples)[-3:]
+        # The existing 120 W control-step threshold is reused, not a device cap.
+        return first - middle > 120 and middle - last > 120
+
     def confirmed_export(self) -> float | None:
         """Return the less severe of two consecutive significant export samples."""
         if len(self._samples) < 2:
@@ -199,6 +225,15 @@ class Controller:
         self.pid_hold = False
         self.planning_order: tuple[str, ...] = ()
         self.planning_expires_at: float | None = None
+        # Set by the runtime only after three distinct high-import meter reports.
+        self.cooperative_dispatch = False
+        self.effective_grid_target_w: float | None = None
+
+    def _grid_target(self) -> float:
+        value = self.effective_grid_target_w
+        if value is None or not isfinite(value):
+            return self.grid_target_w
+        return max(self.grid_target_w, min(200.0, value))
 
     def _reset_pid(self) -> None:
         self.state.pid_p_w = 0.0
@@ -211,7 +246,7 @@ class Controller:
     def _pid_correction(
         self, grid_w: float, now: float, sequence: object | None, capacity_w: float
     ) -> float:
-        error = grid_w - self.grid_target_w
+        error = grid_w - self._grid_target()
         self.state.pid_error_w = error
         self.state.effective_grid_w = grid_w
         self.state.raw_grid_w = grid_w
@@ -372,6 +407,51 @@ class Controller:
         self.state.support = ranked[1].key if len(ranked) > 1 else None
         return ranked
 
+    @staticmethod
+    def _cooperative_allocation(batteries: list[Battery], requested_w: float) -> dict[str, float]:
+        """Weighted water-filling; never spend another head\'s reserve/budget."""
+        budgets = {
+            b.key: min(b.output_limit_w, sum(i.rated_w for i in b.inverters if i.online))
+            for b in batteries
+        }
+        allocations = {b.key: 0.0 for b in batteries}
+        weights = {
+            b.key: max(0.0, (b.soc or 0.0) - (b.lower_soc or 0.0) - 5.0)
+            * budgets[b.key]
+            for b in batteries
+        }
+        remaining = min(max(0.0, requested_w), sum(budgets.values()))
+        while remaining > 0.001:
+            candidates = [
+                b.key
+                for b in batteries
+                if weights[b.key] > 0 and budgets[b.key] - allocations[b.key] > 0.001
+            ]
+            total_weight = sum(weights[key] for key in candidates)
+            if total_weight <= 0:
+                # Any tiny margin near reserve belongs to the conventional
+                # ranked allocation; do not force a new 0->positive restart.
+                break
+            step = remaining
+            supplied = 0.0
+            for key in candidates:
+                portion = min(budgets[key] - allocations[key], step * weights[key] / total_weight)
+                allocations[key] += portion
+                supplied += portion
+            remaining -= supplied
+            if supplied <= 0.001:
+                break
+        if remaining > 0.001:
+            # Explicitly ranked, reserve-respecting fallback for excess demand.
+            for b in batteries:
+                spare = max(0.0, budgets[b.key] - allocations[b.key])
+                addition = min(remaining, spare)
+                allocations[b.key] += addition
+                remaining -= addition
+                if remaining <= 0.001:
+                    break
+        return allocations
+
     def update(
         self,
         batteries: tuple[Battery, ...],
@@ -455,8 +535,8 @@ class Controller:
             else:
                 gain = 1.0 if grid_w < 0 else 0.5
                 step_cap = 20.0 if abs(grid_w) < 30 else 120.0 if abs(grid_w) <= 150 else 520.0
-                correction = max(-step_cap, min(step_cap, (grid_w - self.grid_target_w) * gain))
-            self.state.pid_error_w = grid_w - self.grid_target_w
+                correction = max(-step_cap, min(step_cap, (grid_w - self._grid_target()) * gain))
+            self.state.pid_error_w = grid_w - self._grid_target()
             self.state.pid_p_w = correction
             self.state.pid_i_w = 0.0
             self.state.pid_d_w = 0.0
@@ -486,6 +566,18 @@ class Controller:
             correction = -current
         total_w = max(0, current + correction)
         commands = safe.copy()
+        # A verified high-import period starts cooperative dispatch. Once both
+        # towers are contributing, preserve that allocation through ordinary
+        # near-target adjustments instead of forcing another 0% start.
+        can_share = len(ranked) > 1 and not self.state.full
+        self.state.cooperative_active = can_share and (
+            self.cooperative_dispatch or self.state.cooperative_active
+        )
+        shared_budgets = (
+            self._cooperative_allocation(ranked, total_w)
+            if self.state.cooperative_active
+            else {}
+        )
         for battery in ranked:
             if battery.soc is None:
                 continue
@@ -523,7 +615,7 @@ class Controller:
             else:
                 # Missing PV evidence resumes ordinary household load-following,
                 # never unbounded full-charge battery discharge.
-                budget_w = min(total_w, maximum_w)
+                budget_w = min(shared_budgets.get(battery.key, total_w), maximum_w)
             for inverter in eligible_inverters:
                 power_w = min(inverter.rated_w, max(inverter.minimum_w, budget_w))
                 commands[inverter.key] = power_w
