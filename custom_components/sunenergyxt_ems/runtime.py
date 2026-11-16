@@ -396,17 +396,14 @@ class EMSRuntime:
         for index in range(1, 8):
             if (
                 self._fresh_bms_percentage(sources.get(f"extension_soc_{index}")) is not None
-                or self._fresh_bms_percentage(sources.get(f"extension_limit_{index}"))
-                is not None
+                or self._fresh_bms_percentage(sources.get(f"extension_limit_{index}")) is not None
             ):
                 seen.add(index)
 
         # Previous, explicitly configured physical capacity is evidence that
         # an expansion exists even when its sensors are currently unavailable.
         capacities = self.entry.options.get("capacity_wh", {})
-        configured_wh = (
-            self._float(capacities.get(key)) if isinstance(capacities, dict) else None
-        )
+        configured_wh = self._float(capacities.get(key)) if isinstance(capacities, dict) else None
         if configured_wh is not None and configured_wh >= 2150:
             module_count = round(configured_wh / 2150)
             if (
@@ -460,9 +457,7 @@ class EMSRuntime:
             upper_soc, full_verified, bms_sources = self._bms_hardware_upper(record)
             configured_pv = self.entry.options.get("pv_input", {})
             selected_pv = (
-                configured_pv.get(record[CONF_DEVICE])
-                if isinstance(configured_pv, dict)
-                else None
+                configured_pv.get(record[CONF_DEVICE]) if isinstance(configured_pv, dict) else None
             )
             pv_source = selected_pv or (
                 bms_sources.get("pv_input") if bms_sources is not None else None
@@ -490,9 +485,7 @@ class EMSRuntime:
                     or 0.0,
                     charging_w=charging,
                     dc_output_w=self._fresh_dc_output(dc_source),
-                    pv_input_w=fresh_power(
-                        self.hass, pv_source, max_age=MAX_PV_BYPASS_AGE
-                    ),
+                    pv_input_w=fresh_power(self.hass, pv_source, max_age=MAX_PV_BYPASS_AGE),
                     pv_input_configured=bool(pv_source),
                     ev3600_charging=ev3600_charging(
                         self.hass, self.entry.options.get("ev3600", {}).get(record[CONF_DEVICE])
