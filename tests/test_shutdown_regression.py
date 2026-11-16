@@ -114,6 +114,49 @@ async def test_disable_waits_for_ack_instead_of_announcing_success() -> None:
 
 
 @pytest.mark.asyncio
+async def test_prior_write_error_clears_after_all_safe_minimum_commands_ack() -> None:
+    """A recovered inverter shutdown must not leave the UI stuck in write_error."""
+    hass, entry = configured_two_bk215()
+    runtime = EMSRuntime(hass, entry)
+    await runtime.async_disable()
+    runtime.status = "write_error"
+    runtime.last_error = "number.m80: transient Solarman write timeout"
+
+    entry.options["enabled"] = False
+    runtime._running = True
+    for entity_id in ("number.m200", "number.m80"):
+        state = hass.states.get(entity_id)
+        state.state = "0"
+        state.last_reported += timedelta(seconds=1)
+    await runtime.async_update()
+
+    assert runtime._shutdown_obligations == set()
+    assert not runtime._shutdown_pending
+    assert runtime.last_error is None
+    assert runtime.status == "disabled"
+
+
+@pytest.mark.asyncio
+async def test_recovery_does_not_clear_error_with_another_unconfirmed_shutdown() -> None:
+    hass, entry = configured_two_bk215()
+    runtime = EMSRuntime(hass, entry)
+    await runtime.async_disable()
+    runtime.status = "write_error"
+    runtime.last_error = "number.m80: transient Solarman write timeout"
+
+    entry.options["enabled"] = False
+    runtime._running = True
+    m200 = hass.states.get("number.m200")
+    m200.state = "0"
+    m200.last_reported += timedelta(seconds=1)
+    await runtime.async_update()
+
+    assert "number.m80" in runtime._shutdown_obligations
+    assert runtime.status in {"shutdown_pending", "write_error"}
+    assert runtime.status != "disabled"
+
+
+@pytest.mark.asyncio
 async def test_unconfirmed_shutdown_timeout_remains_visible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
