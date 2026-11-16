@@ -68,6 +68,7 @@ Treat any future integration as a separate, validated capability.
   matching is based on upstream unique-ID roles and HA device identity, not
   the text `BK215` in an entity name. This allows candidate discovery when
   Plus exposes those roles. Plus runtime/hardware acceptance is **pending**.
+- **Current tower AC budget:** an existing entry retains a conservative 1,920 W combined inverter setpoint budget until a user configures an evidenced head-specific limit in Configure. This is **not** an inverter AC measurement or a BMS/DC trip threshold.
 - **Current inverter constraint:** a recognised writable `number` can be
   selected manually, even if the upstream vendor is not Deye. **This does
   not certify support.** The current generic branch confirms HA state only;
