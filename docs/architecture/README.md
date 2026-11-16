@@ -1,159 +1,265 @@
-# SunEnergyXT EMS architecture (arc42)
+# SunEnergyXT EMS — software architecture (arc42)
 
-A compact [arc42](https://arc42.org/documentation/) reference, versioned
-alongside the code. **Current** means observed in experimental b18;
-**target** means user-approved for a not-yet-validated stable v1.0.0.
-This document is not a hardware-certification claim.
+> **Architecture of a reusable Home Assistant integration, not an inventory of one household.**
+> Current release line: experimental `0.1.1b18`. Target: a hardware-validated
+> `1.0.0` core. A *designed extension point* is not an implemented or
+> hardware-verified feature. Site-specific incidents and examples belong in
+> issues, tests and [the handover](../HANDOVER-2026-11-16.md), **not** in the
+> product architecture.
 
-## 01. Introduction and goals
+The twelve sections follow [arc42](https://arc42.org/). See
+[hardware and software compatibility](../device-compatibility.md) and
+[ADR-0004](../adr/0004-device-neutral-battery-and-inverter-boundaries.md).
 
-Coordinate the existing BK215/B215 stacks and their Deye microinverter
-power-limit entities so measured household **net** grid import is low, while
-avoiding unintended aggregate export and preserving each battery reserve.
+## 01 — Introduction and goals
 
-Quality priorities: physical-command truthfulness, recoverable faults,
-safe explicit OFF, controlled actuator pacing, understandable diagnostics,
-simple user settings and independently verified upgrades.
+The EMS coordinates **independent storage towers** in the SunEnergyXT
+**BK215/BK215 Plus** family and one or more compatible, separately controllable
+microinverters per tower. It follows **signed, aggregate grid power**, honours
+each tower's discharge reserve and makes safety and actual device feedback
+observable. An extension battery (**B215 or B215 Plus**) increases the capacity
+of its head unit; it is **not a standalone dispatchable tower**.
 
-## 02. Constraints
+Supported system configurations must be data-driven: the topology, number of
+towers, expansion capacity, inverter brands, rated output and meter are **not**
+coded for a particular house.
 
-- Home Assistant custom integration on HA OS/Proxmox; UI-first config.
-- Two separate BK215 storage stacks currently drive M200 and M80.
-- The integration issues HA number.set_value calls; it does **not**
-  itself speak the battery vendor's transport or directly charge batteries.
-- A single fresh signed aggregate Shelly grid-power sensor is the control
-  observation: positive import, negative export. Individual phases are
-  not required control inputs.
-- Device names/entities and firmware behavior must be discovered and
-  validated; never infer AC production from a percentage or BK215 DC alone.
-- Existing installation/backups and current configuration must survive updates.
+Quality goals, in priority order:
 
-## 03. System context and scope
+1. Never claim a physical write, zero output or safe shutdown from an
+   optimistic Home Assistant state.
+2. Predictable OFF, per-tower reserve, independent error isolation and
+   recoverable ordinary control deviations.
+3. Stable bounded regulation with observable input freshness and command
+   timing, no competing actuator writers.
+4. UI-first mapping, diagnosability, testability and reversible upgrades.
 
-**Input systems:** Home Assistant Shelly Pro 3EM aggregate power,
-SunEnergyXT BK SoC / lower and upper limits, independent inverter
-health, Solarman number limits, physical Deye AC readings where fresh.
-Optional forecast sources are experimental.
+## 02 — Constraints
 
-**Output systems:** one configured Home Assistant writable number entity
-per Deye inverter plus read-only HA status/diagnostic entities.
+- This is a **Home Assistant custom integration**, not a standalone EMS
+  daemon. Home Assistant OS, Container and other supported HA installations
+  are deployment options; Proxmox, Shelly and Solarman are **not prerequisites**.
+- The EMS consumes existing HA entities and services. The upstream battery
+  and inverter integrations own authentication, local protocols, firmware
+  support and device-specific commands.
+- Use **one signed whole-site meter** in W/kW: positive = net import,
+  negative = net export. Its brand and entity ID are configurable. No
+  mandatory per-phase sensors or phase-specific control.
+- Storage is modelled as **one head unit plus zero or more extensions**,
+  constrained by the actual manufacturer's topology. Preserve each tower's
+  independent reserve and configured total capacity.
+- Only one EMS owns the selected limit entities. Other controllers must
+  not write those actuators at the same time.
+- No generic Modbus address, percentage scaling, minimum setpoint, AC
+  rating, response time or ACK semantics may be assumed for every
+  manufacturer/model/firmware.
+- Do not rewrite existing user configuration during migration. Hardware
+  acceptance and installed-version compatibility must be explicit.
 
-**Boundary:** externally configured SolarMan/Modbus and BK integration
-own the physical protocol. This EMS cannot assert an ACK from the optimistic
-HA number state or from a modeled energy prediction.
+## 03 — Context and scope
 
-## 04. Solution strategy
+```text
+[SunEnergyXT BK head(s) + optional B215/B215 Plus extensions]
+          | local/provided battery integration; SoC, reserve, DC/PV
+          v
+[Home Assistant entity/state registry] <--- [whole-site signed meter]
+          ^                                  (Shelly/other)
+          |
+[Vendor inverter integration(s)] <----> [microinverter(s)]
+  Deye/Solarman, Hoymiles, APsystems, TSUN   (physical AC)
+          ^
+          | writable power-limit + trusted feedback contract
+          v
+[SunEnergyXT EMS]
+  config -> validate -> allocate -> dispatch -> confirm -> observe
+          |
+          v
+[HA status, user controls, diagnostics, history]
+```
 
-Maintain **one EMS controller and one serialized actuator writer**.
-Plan desired aggregate power from fresh signed grid feedback, then
-distribute it across independently eligible batteries with per-device
-limits and reserves. Check actual register readback before treating writes
-as accepted. Differentiate requested, acknowledged and physically measured
-power; unknown is never zero. Read [ADR-0001](../adr/0001-controller-and-feedback.md).
+**Inside:** controller policy, tower eligibility, actuator orchestration,
+state/error publication, configuration, optional forecasts. **Outside:**
+battery firmware/BMS, inverter protocol implementations, meter hardware,
+automatic hardware discovery guarantees and physical installation.
 
-Allow either user-selected no-export or measured-PV-after-full export,
-without an implicit tariff or phase policy. Temporary export correction
-must be recoverable; do not rely on a permanent software start-trip.
-Read [ADR-0003](../adr/0003-startup-recovery.md).
+A manufacturer declaring an inverter **electrically compatible with a BK
+battery** says nothing by itself about a writable HA power limit or a
+trustworthy EMS acknowledgement. Both contracts must be checked separately.
 
-## 05. Building-block view
+## 04 — Solution strategy
 
-| Component | Responsibility |
-| --- | --- |
-| config_flow | Guided setup, stored mappings and Options Flow (currently one long form). |
-| runtime | HA subscription, critical-input freshness, output dispatch, pending ACKs and shutdown journal. |
-| logic / pid | Pure controller, measured signed-grid regulation, battery eligibility and target allocation. |
-| registry / discovery | Map HA devices, battery stacks and supported inverter entities. |
-| sensor / switch / number | Operational state, read-only diagnostics and user controls. |
-| observer / demand_history | Experimental measured-demand evidence; reject missing AC samples. |
-| forecast / horizon / planning | Optional forecast priority hint; not stable v1.0 economic optimization. |
+Use a **vendor-neutral core** with two distinct boundary contracts:
 
-Keep pure decision logic independent from HA side effects.
+1. **Storage-tower input:** stable HA device identity, fresh SoC, per-tower
+   lower/upper SoC and optional PV/DC/charging observations; total capacity
+   is configured from actual head plus extensions, not guessed from a model.
+2. **Inverter actuator:** HA writable limit, known unit/range/step/rated AC
+   watts, verified online state and model-specific method to confirm
+   accepted limits. Actual AC production is a separate observation.
 
-## 06. Runtime view
+The pure controller allocates *watts* among eligible towers/inverters; a
+device adapter converts to supported vendor units, enforces granularity,
+settling/cooldown and confirms a real readback. The controller must never
+know `number.my_m200`, a firmware register address or a Shelly entity ID.
 
-**Normal:** sample signed net grid + device/SoC evidence -> validate
-freshness -> calculate target -> dispatch only needed bounded limit updates
--> read real device register ACK -> resume closed-loop correction.
+The **current runtime** already has independent tower records, generic
+`number` limits and Solarman-specific register-53 verification.
+**It does not yet implement general-purpose vendor adapters** or validated
+ACKs for Hoymiles/APsystems/TSUN. See [ADR-0004](../adr/0004-device-neutral-battery-and-inverter-boundaries.md)
+and the compatibility matrix. This distinction is a release gate, not a
+documentation footnote.
 
-**Meter/device outage:** hold briefly if previously justified, then
-reduce the affected output; unaffected batteries may continue.
-Require fresh, plausible recovery evidence.
+## 05 — Building-block view
 
-**Manual OFF/restart:** preserve desired ON/OFF state, issue safe minimum
-once, retain unconfirmed hardware-stop obligations, and distinguish
-an acknowledged stop from a merely queued HA service call.
+| Building block | Responsibility | Device-specific? |
+| --- | --- | --- |
+| `discovery.py` / `registry.py` | Stable source-owned role discovery; tolerate user renames; expose candidates without claiming support | Registry roles vary by upstream provider |
+| `config_flow.py` | UI-first tower-to-inverter mapping, manual correction, ratings, mode and source selections | Device selection via HA entities, not model strings |
+| `logic.py` / `pid.py` | Pure signed-grid feedback, eligibility, reserve and fair allocation in watts | **No** |
+| `runtime.py` | Serialized control ticks, freshness, emergency reductions, dispatch, pending ACK and persisted shutdown duties | **Currently mixes generic runtime with Deye-specific verification; extraction pending** |
+| **Actuator capability boundary (target)** | Normalize limits, min/max/step, connectivity, readback, startup semantics and truthful status | **Yes; distinct profile per validated model/firmware/provider** |
+| `sensor.py` / `switch.py` / `number.py` | User controls and independently labelled requested / acknowledged / measured diagnostics | **No**, except entity source selection |
+| `observer.py`, `operating_history.py` | Passive observations with missing/stale values preserved | **No** |
+| `forecast.py` / `horizon.py` / `planning.py` | Experimental external forecast hint, optional and isolated | Provider-specific source contract |
 
-**Startup export:** a severe transient should reduce output promptly.
-A permanent manual-reset latch after a transient contradicts the agreed
-recoverable behavior; see [ADR-0003](../adr/0003-startup-recovery.md)
-and open #53.
+**Invariant:** a `number.set_value` service returning successfully, an HA
+`number` state changing, a true register ACK and measured AC watts are four
+different facts. They must have distinct status fields.
 
-## 07. Deployment view
+## 06 — Runtime view
 
-HA OS VM on Proxmox -> HACS/custom integration -> Home Assistant services
--> Solarman/Modbus -> Deye M200 and M80 -> BK215 storage hardware.
-Shelly feeds grid power independently.
+**Setup:** discover BK215/BK215 Plus head-unit entities through the official
+SunEnergyXT-BK integration (legacy and current domains); associate each head
+with its **own** inverter limit entities. Extensions contribute to the head's
+capacity but must never appear as independently dispatched batteries.
+Validate a unique signed site meter, source units and single-write ownership.
 
-No new server, cloud account, external database or second actuator
-controller is required. Use existing Proxmox backups and the release
-rollback procedure.
+**Normal operation:** fresh net-power sample -> independently eligible towers
+-> per-inverter watt targets -> supported unit/rate conversion -> serialized
+write -> trustworthy device acknowledgement -> settling and a later fresh
+meter sample -> next correction. Early second/third inverter participation
+is policy, not hardcoded M200/M80 ordering.
 
-## 08. Cross-cutting concepts
+**Loss of one tower:** isolate the affected tower and keep an independently
+safe tower eligible. **Loss of common meter:** stop positive increases and
+apply bounded safe fallback. **Lost ACK:** do not advance an unverified
+actuator; retain unresolved safe-stop obligations.
 
-- Separate command, confirmed register value and measured AC/DC.
-- Reject stale/invalid telemetry, preserve recorder gaps and times.
-- Keep explicit user OFF and per-battery SoC floors authoritative.
-- Keep diagnostics human-readable with event-level logging, not a
-  line per 5-second tick. No built-in complex notification engine.
-- Keep everyday config separate from expert/device mappings in v1.0.
-- Maintain small tests/PRs; replay historical negative cases.
+**Startup and net-export correction:** reduce unwanted signed export
+immediately without an export-only permanent latch; verify supported
+hardware response and resume only after fresh stable evidence.
 
-## 09. Architecture decisions
+**Manual OFF/restart:** preserve desired ON/OFF separately from actual
+running state; request each reachable actuator's supported minimum and
+verify actual readback, persisting failures across restart.
 
-- [ADR-0001 — Single writer and hardware feedback](../adr/0001-controller-and-feedback.md)
-- [ADR-0002 — Stable v1.0 scope and evidence](../adr/0002-core-release-scope.md)
-- [ADR-0003 — Recoverable startup export response](../adr/0003-startup-recovery.md)
+**Unsupported actuator:** do not infer device safety from a guessed
+percentage or HA optimistic feedback. Do not claim unattended support.
 
-ADRs record *context, decision, consequences* and can be superseded
-only with an explicit successor ADR.
+## 07 — Deployment view
 
-## 10. Quality requirements
+```text
+Home Assistant Core (OS | Container | supported other installation)
+  |-- SunEnergyXT EMS custom integration (Marketplace/HACS repository)
+  |-- SunEnergyXT-BK upstream integration --> BK215 or BK215 Plus
+  |                                           (+ compatible extension modules)
+  |-- selected inverter integration(s) ----> inverter controls & telemetry
+  |-- selected signed whole-site meter ----> one grid-power observation
+  '-- Recorder / diagnostics --------------> traceable evidence
+```
 
-Important observable acceptance:
+No second VM, dedicated cloud account, Proxmox node or Shelly device is a
+required part of the software architecture. The installation's existing
+backup facility covers rollback; validate clean installation, upgrades,
+migration and rollback per supported HA version.
 
-- No unjustified continued net export; intentional PV-after-full export
-  is assessed separately from unwanted export.
-- A valid true register ACK is distinguishable from an optimistic HA write.
-- Explicit OFF and lost-device cases never claim an unconfirmed shutdown.
-- Stable controller converges without repeated limit hunting and without
-  suppressing other eligible batteries when one goes offline.
-- At least 24 hours of meaningful real two-inverter operation before
-  stable 1.0.0; native HA tests and verified HACS update/rollback.
+## 08 — Cross-cutting concepts
 
-## 11. Risks and technical debt
+**Topology:** `Tower[head, capacity_wh, SoC, lower/upper, inverters[]]`
+with stable device identifiers. Upstream extensions are part of the tower,
+not separate EMS output devices. A tower may have multiple inverter
+actuators when the upstream battery's physical ports permit them.
 
-The b18 M80 0%-to-positive transition can coincide with large signed
-net export and a sticky software trip (incident 2026-11-15 16:35).
-The instantaneous physical cause is **not** yet isolated. Investigate
-#53 and #27 before unattended stable control.
+**Capability instead of brand detection:** for every inverter, distinguish
+`detected`, `manually selectable`, `actuator implemented`,
+`true ACK available`, `hardware-validated`. An unsupported profile does
+not become validated because a writable number has a plausible name.
 
-Old b18 also contains a DC-sensor >1920 W software latch contrary to the
-current user-approved policy. It must be removed without disabling real
-manufacturer/BMS protections.
+**Safety and freshness:** one normalized sign/unit convention; separate
+timestamps for meter, SoC, command, ACK and measured AC/DC. Do not map
+stale/unknown to 0 W. Limit dispatch by each tower's **validated**
+electrical/firmware capability; no universal BK215 1,920 W rating for
+all Plus/head/extension combinations.
 
-Economic forecast planning lacks seven days of sufficient real accepted
-evidence and belongs to a separate later 1.x release. HACS/Marketplace
-install/update/rollback acceptance is open.
+**Configuration:** explicit safe defaults; user can amend battery/inverter
+entities and ratings, not firmware register addresses. Preserve options
+on reconfigure. Normal UI shows meaningful reasons instead of raw errors.
 
-## 12. Glossary
+**Software delivery:** small Conventional Commit PRs, SemVer tags,
+human-readable Keep a Changelog and measured compatibility evidence.
+
+## 09 — Architecture decisions
+
+- [ADR-0001 — One writer / independently verified feedback](../adr/0001-controller-and-feedback.md)
+- [ADR-0002 — Ship validated core before economic planning](../adr/0002-core-release-scope.md)
+- [ADR-0003 — Recoverable startup export](../adr/0003-startup-recovery.md)
+- [ADR-0004 — Device-neutral towers and inverter capability adapters](../adr/0004-device-neutral-battery-and-inverter-boundaries.md)
+
+Architectural decisions record context, alternatives, consequences and
+status. Existing decisions are retained as history; ADR-0004 clarifies
+their product-wide application instead of rewriting a site's test trace.
+
+## 10 — Quality requirements and test strategy
+
+- **Core tests:** zero/one/many towers, mixed BK215/BK215 Plus, B215
+  Plus extension capacity and incompatible extension topology, 1..4
+  distinct writable inverter mappings, multiple vendors and ratings,
+  renamed IDs, missing source data, independent reserve and partial failure.
+- **Adapter contract tests:** unit/step/min/max, a real fresh readback after
+  write, timeout and loss of link, inverter restart (0%-to-positive), safe
+  minimum and rejected unknown firmware/profile.
+- **Negative tests:** no physical ACK must never be reported as success;
+  no DC/AC data is not zero; one tower's error does not wrongly isolate
+  another; stale net sample cannot authorize new positive output.
+- **Hardware evidence:** validate separately **each claimed combination**
+  of head/extension, inverter model, firmware, upstream HA integration
+  and control profile. Test true grid/AC output, minimum/shutdown,
+  settled ramp and restoration. Passing M200/M80 field tests alone is
+  **not proof** for a Hoymiles/APsystems/TSUN combination.
+- **Release evidence:** CI, reproducible site-independent fixtures,
+  ≥24h meaningful field operation for the reference supported
+  combination(s), and tested HACS/Marketplace upgrade/rollback.
+  Mark all other combinations explicitly *unvalidated*.
+
+## 11 — Risks and technical debt
+
+1. The runtime currently implements direct register-53 ACK only for the
+   specifically validated Solarman `deye_micro_53.yaml` profile; other
+   selected `number` platforms can produce **HA-state-only feedback**.
+   A vendor adapter with an independently trustworthy ACK mechanism is
+   required before claiming unattended support.
+2. Experimental `b18` still contains device-family-specific defaults
+   such as a 1,920 W output ceiling and a DC latch; these must be
+   replaced by **validated per-tower capabilities**, not a guessed higher
+   Plus rating. See [#53](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/53).
+3. There are no completed live tests across every vendor or Plus topology.
+   Automatic discovery of the official BK Plus head is plausible through
+   matching integration-owned unique-ID roles, but not itself hardware
+   acceptance.
+4. Forecast economics, physical transient attribution and installation
+   rollback remain distinct unaccepted tasks. Avoid making them a hidden
+   dependency for generic architectural documentation.
+
+## 12 — Glossary
 
 | Term | Meaning |
 | --- | --- |
-| Net grid power | Signed whole-home import (+) or export (-), not a single phase. |
-| Commanded | EMS target, not proof a device received or implemented it. |
-| ACK | Fresh actual inverter register-53 readback after a command. |
-| AC / DC | Inverter physical grid-side output / storage or PV input power; do not mix. |
-| SoC reserve | User-configured individual battery discharge lower bound. |
-| Safe OFF | Lowest supported inverter limit with confirmed feedback, or explicit unresolved stop duty. |
-| Stable release | Tested controller with observed hardware acceptance and rollback, not just a tag. |
+| **Head** | One BK215 or BK215 Plus with its own SoC, reserve and communication identity |
+| **Extension** | B215 / B215 Plus module attached to a head; contributes storage, not an independent power actuator |
+| **Tower** | One head and its compatible extensions, with configured total Wh |
+| **Inverter actuator** | Configured independently writable HA power-limit entity, in W or % |
+| **Hardware-compatible** | Manufacturer permits an electrical BK-to-inverter pairing; **not** proof of HA controllability |
+| **EMS-validated** | Specific firmware/provider/write/readback/physical response and recovery accepted in tests |
+| **ACK** | Fresh independent hardware confirmation that the actuator accepted a specific limit; not the HA number state |
+| **Net import/export** | Signed whole-site meter (+ import, − export), summed across phases |
+| **Safe OFF** | Lowest supported request plus verified ACK, or explicitly unresolved shutdown duty |

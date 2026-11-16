@@ -4,20 +4,20 @@
 >
 > Independent community integration. Not affiliated with SunEnergyXT or Home Assistant.
 
-SunEnergyXT EMS controls existing inverter power-limit entities to follow household demand.
-It does **not** speak directly to batteries or inverters.
+SunEnergyXT EMS coordinates SunEnergyXT **BK215/BK215 Plus storage towers** and configured inverter power-limit entities to follow whole-home demand. **B215/B215 Plus expansions belong to their head unit**; they are not separately dispatched.
+It does **not** speak directly to batteries or inverters. Manufacturer-compatible Deye, Hoymiles, APsystems and TSUN hardware does **not** automatically imply safe EMS readback/control. See the [device compatibility and validation matrix](docs/device-compatibility.md).
 
 ## Release policy and architecture
 
-This integration is **not yet released as stable 1.0.0**. The first stable release is the verified two-inverter core; optional economic forecast planning follows in a later 1.x release after its separate seven-day acceptance. See the [release and commit policy](docs/releasing.md), the [human-readable changelog](CHANGELOG.md), the [arc42 architecture](docs/architecture/README.md) and the [architecture decisions](docs/architecture/README.md#09-architecture-decisions).
+This integration is **not yet released as stable 1.0.0**. The first stable release is the validated load-following core (initially verified against a two-inverter reference system, not limited to those models); optional economic forecast planning follows in a later 1.x release after its separate seven-day acceptance. See the [release and commit policy](docs/releasing.md), the [human-readable changelog](CHANGELOG.md), the [vendor-neutral arc42 architecture](docs/architecture/README.md), the [hardware/EMS compatibility matrix](docs/device-compatibility.md) and the [architecture decisions](docs/architecture/README.md#09-architecture-decisions).
 
 **Continuing this work in another chat?** Start with the [verified 2026-11-16 handover](docs/HANDOVER-2026-11-16.md); it identifies the exact GitHub PRs, incident evidence, release gates and MCP Memory entry to retrieve.
 
 ## MVP features
 
-- Guided setup: **BK215 batteries → inverters → grid power meter**.
+- Guided setup: **BK215/BK215 Plus head units → their independently writable inverter limits → signed site grid-power meter**. B215/B215 Plus expansions increase a head's manually configured total capacity (Wh).
 - Auto-detect the existing [SunEnergyXT BK integration](https://github.com/SunEnergyXT/SunEnergyXT-BK) and suggest its SoC and charge/discharge limits. Manual corrections are possible.
-- One or two independently controllable microinverters per BK215, in watts or percent.
+- Up to **four configured inverter-limit entities per storage head** in watts or percent, subject to actual physical ports, a verified provider-specific control contract, and the tower's safe total output limit. Mapping an entity does not certify hardware control.
 - One grid meter for all batteries and SoC-based main/support coordination.
 - Battery reserve protection, grid-meter failure fallback, and manual disable with per-inverter shutdown readbacks and visible failures.
 - Optional household-load or upper-SoC-triggered PV-generation feed-in modes; **feed-in is off by default**. The PV mode can export stored energy.
@@ -33,10 +33,10 @@ Internal [operating evidence](docs/operating-evidence.md) retains individual sou
 ## Requirements
 
 - A current Home Assistant version using Python 3.14.
-- At least one configured SunEnergyXT BK215 battery and a readable SoC sensor.
-- A *writable* Home Assistant `number` power limit for every inverter.
+- At least one configured SunEnergyXT **BK215 or BK215 Plus head** through the official SunEnergyXT-BK integration (or a verified manual HA source), with readable SoC and individual reserve. Attached B215/B215 Plus modules do not count as separate heads.
+- A *writable* Home Assistant `number` power limit for every inverter **and a validated hardware acceptance/readback path before unattended use**. The current beta has direct Modbus readback only for the checked Deye/Solarman profile; other HA number entities do not by themselves provide a true hardware ACK.
 - A **signed, real-time grid-power sensor** in W or kW. Positive must mean import; negative means export. Reverse the sign in setup if needed.
-- Only one controller may write a given inverter power-limit entity.
+- Only one controller may write a given inverter power-limit entity. Check [manufacturer compatibility versus actually tested EMS support](docs/device-compatibility.md).
 
 ## Install with Home Assistant Marketplace or HACS (experimental)
 
@@ -48,7 +48,7 @@ Internal [operating evidence](docs/operating-evidence.md) retains individual sou
 3. Install **SunEnergyXT EMS** from the Marketplace or HACS. Restart Home Assistant if requested. Adding files does not start inverter control.
 4. Ensure your inverter controls and grid meter are ready before setup.
 5. For a live setup: **turn off all existing automations writing to the selected inverter power-limit entities before completing the EMS config flow.** Go to **Settings → Devices & services → Add integration → SunEnergyXT EMS**.
-6. Choose your BK215 devices, detected inverter controls and signed grid power meter. If nominal inverter watts cannot be read reliably, enter them once.
+6. Choose your **BK215/BK215 Plus head** devices, compatible inverter limit entities and signed grid power meter. Check the correct tower/extension topology and total Wh; if rated AC inverter watts cannot be read reliably, enter them once. Do not infer independent inverter ACK from a generic HA number.
 
 **Important:** Completing the config flow starts the EMS automatically when current, valid measurements exist. There is no read-only simulation mode in the MVP. **Do not complete the flow while another controller is active.** Only one controller may write any inverter's power limit.
 
@@ -61,7 +61,7 @@ In **Settings → Devices & services → Integrations → SunEnergyXT EMS**, ope
 - **Sensors:** live signed grid raw/filtered power, error, PID P/I/D, requested total, and **startup hold remaining**. When EMS is off, past signed grid readings are not displayed as live values.
 - **Capacity-weighted battery level:** enter each system's total capacity in Wh under **Configure**, including any expansion modules. The central sensor is unavailable until every configured battery has a current level and a valid capacity.
 
-Each detected **BK215 (EMS)** child device has its own **EV3600 auto-charge** and **full-charge bypass** state sensors. The per-inverter requested limit, reported HA power limit and actual measured AC power are *separate* sensors. AC is unknown until a fresh AC-power entity is selected: a reported Deye limit is **never** measured power.
+Each detected **BK head (EMS)** child device has its own **EV3600 auto-charge** and **full-charge bypass** state sensors. The per-inverter requested limit, reported HA power limit and actual measured AC power are *separate* sensors. AC is unknown until a fresh AC-power entity is selected: a reported Deye limit is **never** measured power.
 
 Use **Configure** to select the EV3600 mode switch + charging-power sensor **as a pair** for the relevant battery, an optional fresh PV input and an independently measured AC source. Optional PV input must be a power sensor in W or kW, not an energy counter in kWh. To remove an existing mapping, select **Battery N: remove optional PV power source**; this also removes an invalid old mapping without selecting a replacement. Missing or stale live power remains unavailable to the controller. An unconfigured EV3600 state shows **Not configured**, not a false 'not charging' confirmation. Existing charge SoC mappings can now be corrected using **Battery N: upper SoC source** or an explicit **Battery N: upper SoC (%)**. An explicit numeric override takes precedence over an unchanged existing source; choosing a different source takes precedence over the previous numeric default. **Changing the EMS upper mapping does not change the BK215 hardware charging ceiling.** Do not configure a threshold the battery cannot reach. Feed-in remains OFF by default and may export stored energy.
 

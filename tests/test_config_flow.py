@@ -562,3 +562,49 @@ async def test_legacy_entry_can_reset_dc_trip_with_registered_sensor(monkeypatch
     )
     assert result["type"] == "create_entry"
     assert result["data"]["dc_tripped_batteries"] == []
+
+
+@pytest.mark.asyncio
+async def test_plus_head_accepts_four_distinct_inverter_control_entities(flow, monkeypatch):
+    """A BK215 Plus can offer up to four physical DC outputs.
+
+    This only validates HA entity mapping, not that the inverters have
+    vendor-specific hardware acknowledgements or are electrically safe.
+    """
+    flow._batteries = [{"device_id": "bk215-plus-head", "inverters": []}]
+    names = [f"number.inverter_{n}" for n in range(4)]
+    monkeypatch.setattr(flow_module, "device_rated_w", lambda hass, entity: 800.0)
+    result = await flow.async_step_inverters({"inverters_1": names})
+    assert result["step_id"] == "grid"
+    assert [item["entity_id"] for item in flow._batteries[0]["inverters"]] == names
+    assert [item["rated_w"] for item in flow._batteries[0]["inverters"]] == [800.0] * 4
+
+
+@pytest.mark.asyncio
+async def test_plus_head_rejects_fifth_inverter_control_entity(flow):
+    """Reject a topology beyond the four offered BK215 Plus DC outputs."""
+    flow._batteries = [{"device_id": "bk215-plus-head", "inverters": []}]
+    result = await flow.async_step_inverters(
+        {"inverters_1": [f"number.inverter_{n}" for n in range(5)]}
+    )
+    assert result["errors"]["base"] == "invalid_inverter"
+
+
+@pytest.mark.asyncio
+async def test_mixed_head_models_keep_inverter_mappings_independent(flow, monkeypatch):
+    """Separate BK215 and BK215 Plus towers remain separately addressable."""
+    flow._batteries = [
+        {"device_id": "first-gen-head", "inverters": []},
+        {"device_id": "plus-head", "inverters": []},
+    ]
+    monkeypatch.setattr(flow_module, "device_rated_w", lambda hass, entity: 800.0)
+    result = await flow.async_step_inverters(
+        {
+            "inverters_1": ["number.deye"],
+            "inverters_2": ["number.hoymiles"],
+        }
+    )
+    assert result["step_id"] == "grid"
+    first, second = flow._batteries
+    assert first["inverters"] == [{"entity_id": "number.deye", "rated_w": 800.0}]
+    assert second["inverters"] == [{"entity_id": "number.hoymiles", "rated_w": 800.0}]

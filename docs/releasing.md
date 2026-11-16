@@ -62,10 +62,13 @@ restrictions plainly.
 3. Run deterministic negative/positive regressions, native HA config/options
    and lifecycle tests, type/format/security checks, and all required CI
    jobs. Document initial failing reproduction and final verified behavior.
-4. Observe at least **24 hours of meaningful live control with BOTH** M200
-   and M80, including actual power feedback, fresh meter observations,
-   offline/recovery and shutdown behavior. Report gaps and inactivity;
-   elapsed time alone does not count as success.
+4. Observe at least **24 hours of meaningful live two-inverter control**
+   in the initial reference combination, including actual power feedback,
+   fresh meter observations, offline/recovery and shutdown behavior.
+   This is a release reference test, **not** a Deye-only product requirement.
+   Do not claim support for any additional head/inverter/firmware combination
+   before its own compatibility and physical ACK/settling validation.
+   Report gaps and inactivity; elapsed time alone does not count as success.
 5. Verify supported HACS/Marketplace clean install, upgrade, configuration
    preservation and a real rollback to the last verified build. A manual
    documented rollback is acceptable when it is tested; do not claim an
