@@ -529,6 +529,12 @@ def test_missing_or_stale_bms_hardware_limit_blocks_pv_bypass(monkeypatch):
     runtime.controller.feed_in = True
     assert runtime.controller.update((battery,), 0, 1)["number.inverter"] == 0
 
+    # An aggregate 90% while the physical head's SoC is not current
+    # cannot certify that every connected BMS module reached full.
+    states["sensor.bms_hw"] = sample(90, "%")
+    states["sensor.head_real_soc"] = sample("unavailable", "%")
+    assert runtime._batteries()[0].upper_soc is None
+
 
 def test_bms_uses_attached_extension_and_fails_closed_on_missing_data(monkeypatch):
     hass, entry = configured(soc=90)
@@ -547,6 +553,20 @@ def test_bms_uses_attached_extension_and_fails_closed_on_missing_data(monkeypatc
     battery = runtime._batteries()[0]
     assert battery.upper_soc == 90
     assert battery.bms_full_verified is False
+    runtime.controller.feed_in = True
+    assert runtime.controller.update((battery,), 0, 1)["number.inverter"] == 0
+
+
+def test_stale_per_tower_pv_power_does_not_authorize_full_export(monkeypatch):
+    hass, entry = configured(soc=90)
+    states, _ = _identified_bk_head(hass, entry, monkeypatch)
+    states["sensor.bk_pv"] = sample(275, "W", seconds_old=45)
+    runtime = EMSRuntime(hass, entry)
+    battery = runtime._batteries()[0]
+    assert battery.upper_soc == 90
+    assert battery.bms_full_verified is True
+    assert battery.pv_input_configured is True
+    assert battery.pv_input_w is None
     runtime.controller.feed_in = True
     assert runtime.controller.update((battery,), 0, 1)["number.inverter"] == 0
 
