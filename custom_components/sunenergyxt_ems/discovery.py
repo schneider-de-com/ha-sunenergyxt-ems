@@ -28,7 +28,7 @@ BK_SOURCE_DOMAINS = frozenset(("sunenergyxt", "sunenergyxt_bk"))
 
 
 def find_batteries(entities: Iterable[Candidate]) -> dict[str, dict[str, str]]:
-    """Match BK215 sensor/limit entities from the official SunEnergyXT integration."""
+    """Match BK215 and BK215 Plus head entities from the official BK integration."""
     devices: dict[str, dict[str, str]] = {}
     for item in entities:
         if item.source_domain.lower() not in BK_SOURCE_DOMAINS or not item.device_id:

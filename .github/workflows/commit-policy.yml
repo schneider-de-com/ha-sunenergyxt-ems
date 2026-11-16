@@ -1,0 +1,81 @@
+name: Conventional Commits and issue traceability
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  conventional:
+    name: Validate PR and commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate title, issue reference and individual commits
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          import urllib.request
+
+          convention = re.compile(
+              r"^(feat|fix|docs|test|refactor|perf|build|ci|chore|style|revert)"
+              r"(\([a-z0-9][a-z0-9._-]*\))?!?: .{5,100}$"
+          )
+          reference = re.compile(r"\b(?:Refs|Fixes) #\d+\b")
+          errors = []
+
+          def check(message, subject):
+              lines = message.splitlines()
+              first = lines[0] if lines else ""
+              if not convention.fullmatch(first):
+                  errors.append(f"{subject}: not a Conventional Commit: {first!r}")
+              if not reference.search(message):
+                  errors.append(f"{subject}: missing Refs #N / Fixes #N")
+              if first.rstrip() != first:
+                  errors.append(f"{subject}: trailing whitespace")
+
+          title = os.environ["PR_TITLE"]
+          body = os.environ.get("PR_BODY", "")
+          if not convention.fullmatch(title):
+              errors.append(f"PR title is not conventional: {title!r}")
+          if not reference.search(title + "\n" + body):
+              errors.append("PR title/body must reference an existing issue (Refs #N)")
+
+          repo, pr = os.environ["GH_REPOSITORY"], os.environ["GH_PR"]
+          token = os.environ["GH_TOKEN"]
+          page = 1
+          while True:
+              url = f"https://api.github.com/repos/{repo}/pulls/{pr}/commits?per_page=100&page={page}"
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  commits = json.load(response)
+              for entry in commits:
+                  check(entry["commit"]["message"], entry["sha"][:12])
+              if len(commits) < 100:
+                  break
+              page += 1
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+          print("Conventional Commits and issue references verified.")
+          PY

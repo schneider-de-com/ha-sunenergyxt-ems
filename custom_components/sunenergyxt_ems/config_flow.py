@@ -1,4 +1,4 @@
-"""Short setup wizard for existing BK215 batteries and inverter integrations."""
+"""Setup wizard for BK215/BK215 Plus towers and supported inverter integrations."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_user(user_input)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Choose registered BK215 devices rather than individual entities."""
+        """Choose registered SunEnergyXT BK head devices rather than entity names."""
         if not self._reconfigure and self._async_current_entries():
             return self.async_abort(reason="already_configured")
         suggestions = battery_suggestions(self.hass)
@@ -184,7 +184,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_battery_manual(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Allow setup when the upstream BK215 device is not registered."""
+        """Allow a manual head mapping when SunEnergyXT-BK discovery is unavailable."""
         if user_input is not None:
             self._batteries = [
                 {
@@ -223,7 +223,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_inverters(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Select one or two independently writable inverter limits per BK215."""
+        """Select up to four distinct inverter limits for a configured storage head."""
         suggestions = inverter_device_suggestions(self.hass)
         if not suggestions and not self._manual_inverters:
             return await self.async_step_inverters_manual()
@@ -236,7 +236,7 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             pending: list[list[str]] = []
             for index, _ in enumerate(self._batteries, start=1):
                 entities = user_input.get(f"{CONF_INVERTER_PREFIX}{index}", [])
-                if not isinstance(entities, list) or not 1 <= len(entities) <= 2:
+                if not isinstance(entities, list) or not 1 <= len(entities) <= 4:
                     errors["base"] = "invalid_inverter"
                     break
                 if any(entity in seen for entity in entities):

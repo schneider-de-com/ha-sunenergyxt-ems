@@ -1,8 +1,8 @@
 # Contributing
 
-## MVP scope
+## Core beta scope (1.0.0-beta.1)
 
-The six MVP issues describe user-facing features. Forecasting, tariffs, and seasonal automation are out of scope.
+The initial user-facing MVP requirements now target a **SemVer 1.0.0 beta**, not an unvalidated stable release. Economic forecasting, active tariffs, and seasonal modes are outside this beta's core. See [ADR-0005](docs/adr/0005-beta-first-core-scope.md) and [release gates](docs/releasing.md).
 
 ## Definition of Done
 
@@ -62,3 +62,11 @@ test(control): cover invalid grid measurements (Refs #4)
 Every project commit must reference its related GitHub issue with `Refs #<number>`.
 Use `Fixes #<number>` only when the issue is fully complete.
 Keep infrastructure and test work inside the existing MVP feature issues; do not open separate engineering-only tickets.
+
+## Release governance and architecture
+
+- Follow [SemVer, Conventional Commits and curated Keep a Changelog](docs/releasing.md). The existing legacy beta scheme does not constitute a stable release.
+- Keep [CHANGELOG.md](CHANGELOG.md) human-readable: an Unreleased section and dated releases only after all acceptance gates pass.
+- Keep the [arc42 architecture](docs/architecture/README.md) current. Record significant architectural choices in small [ADRs](docs/architecture/README.md#09-architecture-decisions) with context, decision, status and consequences.
+- Avoid one large PR for unrelated changes. PR titles and individual commits use Conventional Commits and issue references; CI validates this for new PRs.
+- Keep the **1.0.0-beta.1 feature scope** distinct from **stable 1.0.0 hardware acceptance**. Approval of a requirements decision is not proof of working or tested hardware.
