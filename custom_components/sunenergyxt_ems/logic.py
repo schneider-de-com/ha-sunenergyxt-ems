@@ -296,6 +296,7 @@ class Controller:
 
     def disable(self, batteries: tuple[Battery, ...]) -> dict[str, float]:
         self.enabled = False
+        self.state.cooperative_active = False
         commands = self._safe_limits(batteries)
         self.state.outputs = commands.copy()
         self._reset_pid()
@@ -495,6 +496,7 @@ class Controller:
                 self.state.outputs = held.copy()
                 return held
             self.state.grid_outage = True
+            self.state.cooperative_active = False
             self.state.recovery_count = 0
             self.state.last_sequence = None
             self.state.outputs = safe.copy()
