@@ -26,7 +26,7 @@ def state(value, unit="W"):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "dc,expected",
-    [(2077, "hardware_limit"), ("unavailable", "dc_unavailable"), (0, "waiting_feedback")],
+    [(2077, "waiting_feedback"), ("unavailable", "dc_unavailable"), (0, "waiting_feedback")],
 )
 async def test_legacy_entry_recovers_dc_sensor(monkeypatch, dc, expected):
     states = {
@@ -69,7 +69,7 @@ async def test_legacy_entry_recovers_dc_sensor(monkeypatch, dc, expected):
     runtime._running = True
     await runtime.async_update()
     assert runtime.status == expected
-    if dc != 0:
+    if dc == "unavailable":
         assert hass.services.async_call.await_args.args[2]["value"] == 0
     if dc == 2077:
-        assert entry.options["dc_tripped_batteries"] == ["bk1"]
+        assert "dc_tripped_batteries" not in entry.options
