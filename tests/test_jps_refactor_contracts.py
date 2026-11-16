@@ -105,9 +105,7 @@ def test_pid_does_not_integrate_while_an_inverter_is_starting() -> None:
 def test_ev3600_charging_clears_stale_full_charge_bypass_state() -> None:
     controller = logic.Controller()
     controller.feed_in = True
-    controller.update(
-        (pack("a", soc=90, pv_input_w=200, pv_input_configured=True),), 0, 1
-    )
+    controller.update((pack("a", soc=90, pv_input_w=200, pv_input_configured=True),), 0, 1)
     assert "a" in controller.state.full
     controller.update((pack("a", soc=90, ev3600_charging=True),), 200, 2)
     assert "a" not in controller.state.full
