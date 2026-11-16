@@ -146,7 +146,6 @@ class EMSStatus(SensorEntity):
         "disabled",
         "shutdown_pending",
         "write_error",
-        "hardware_limit",
         "dc_unavailable",
         "reserve_safety",
         "grid_unavailable",
