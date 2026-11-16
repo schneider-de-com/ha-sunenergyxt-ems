@@ -1,5 +1,7 @@
 """Regression tests for the EMS controller, written before the policy."""
 
+from dataclasses import replace
+
 from custom_components.sunenergyxt_ems.logic import (
     Battery,
     Controller,
@@ -88,11 +90,12 @@ def test_main_battery_is_selected_by_usable_soc():
 
 def test_feed_in_requires_explicit_activation():
     engine = Controller()
-    b = (battery(soc=90),)
+    solar = replace(battery(soc=90), pv_input_w=800, pv_input_configured=True)
+    b = (solar,)
     assert engine.update(b, 0, 1)["a_inv"] == 0
     engine.feed_in = True
     assert engine.update(b, 0, 2)["a_inv"] > 0
-    assert engine.update((battery(soc=87),), -800, 3)["a_inv"] == 0
+    assert engine.update((replace(solar, soc=87),), -800, 3)["a_inv"] == 0
 
 
 def test_equal_area_scores_preserve_setup_order():
@@ -148,6 +151,7 @@ def test_pv_feed_in_hysteresis_is_user_configurable():
     engine = Controller()
     engine.feed_in = True
     engine.full_hysteresis_pct = 5
-    assert engine.update((battery(soc=90),), 0, 1)["a_inv"] == 800
-    assert engine.update((battery(soc=88),), 0, 2)["a_inv"] == 800
-    assert engine.update((battery(soc=85),), -800, 3)["a_inv"] == 0
+    solar = replace(battery(soc=90), pv_input_w=800, pv_input_configured=True)
+    assert engine.update((solar,), 0, 1)["a_inv"] == 800
+    assert engine.update((replace(solar, soc=88),), 0, 2)["a_inv"] == 800
+    assert engine.update((replace(solar, soc=85),), -800, 3)["a_inv"] == 0
