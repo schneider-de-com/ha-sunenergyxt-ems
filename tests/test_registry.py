@@ -44,6 +44,119 @@ def test_forecast_suggestion_uses_complete_single_provider_entry(registry):
     assert module.suggested_forecasts(hass) == {}
 
 
+def test_single_forecast_solar_entry_is_suggested_with_renamed_sensors(registry):
+    """Only integration-owned energy forecast roles, never sensor names."""
+    hass, entries = registry
+    for role in ("today", "tomorrow"):
+        entity_id = f"sensor.user_renamed_forecast_{role}"
+        entries[entity_id] = item(
+            entity_id,
+            f"forecast_a_energy_production_{role}",
+            "solar",
+            "forecast_solar",
+            config="forecast_a",
+        )
+    original = hass.states.get
+    hass.states.get = lambda entity: (
+        SimpleNamespace(attributes={"unit_of_measurement": "kWh"})
+        if entity.startswith("sensor.user_renamed_forecast_")
+        else original(entity)
+    )
+    assert module.suggested_forecasts(hass) == {
+        "today": "sensor.user_renamed_forecast_today",
+        "tomorrow": "sensor.user_renamed_forecast_tomorrow",
+    }
+
+
+@pytest.mark.parametrize("invalid", ["missing", "disabled", "wrong_unit", "wrong_owner"])
+def test_forecast_solar_incomplete_or_untrusted_entry_is_not_suggested(registry, invalid):
+    hass, entries = registry
+    for role in ("today", "tomorrow"):
+        entity_id = f"sensor.source_{role}"
+        entries[entity_id] = item(
+            entity_id,
+            f"forecast_a_energy_production_{role}",
+            "solar",
+            "forecast_solar",
+            config="forecast_a",
+        )
+    if invalid == "missing":
+        del entries["sensor.source_tomorrow"]
+    elif invalid == "disabled":
+        entries["sensor.source_tomorrow"].disabled_by = "user"
+    elif invalid == "wrong_owner":
+        entries["sensor.source_tomorrow"].unique_id = "different_owner_energy_production_tomorrow"
+    original = hass.states.get
+    hass.states.get = lambda entity: (
+        SimpleNamespace(
+            attributes={"unit_of_measurement": "W" if invalid == "wrong_unit" else "Wh"}
+        )
+        if entity.startswith("sensor.source_")
+        else original(entity)
+    )
+    assert module.suggested_forecasts(hass) == {}
+
+
+def test_multiple_forecast_solar_entries_require_manual_selection(registry):
+    hass, entries = registry
+    for owner in ("forecast_a", "forecast_b"):
+        for role in ("today", "tomorrow"):
+            entity_id = f"sensor.{owner}_{role}"
+            entries[entity_id] = item(
+                entity_id,
+                f"{owner}_energy_production_{role}",
+                "solar",
+                "forecast_solar",
+                config=owner,
+            )
+    hass.states.get = lambda entity: SimpleNamespace(attributes={"unit_of_measurement": "kWh"})
+    assert module.suggested_forecasts(hass) == {}
+
+
+def test_mixed_solcast_and_forecast_solar_require_manual_selection(registry):
+    hass, entries = registry
+    for role in ("today", "tomorrow"):
+        entity_id = f"sensor.forecast_{role}"
+        entries[entity_id] = item(
+            entity_id,
+            f"forecast_a_energy_production_{role}",
+            "solar",
+            "forecast_solar",
+            config="forecast_a",
+        )
+    for role in ("total_kwh_forecast_today", "total_kwh_forecast_tomorrow", "lastupdated"):
+        entity_id = f"sensor.solcast_{role}"
+        entries[entity_id] = item(entity_id, role, "solar", "solcast_solar", config="solcast_a")
+    hass.states.get = lambda entity: SimpleNamespace(attributes={"unit_of_measurement": "kWh"})
+    assert module.suggested_forecasts(hass) == {}
+
+
+def test_another_incomplete_configured_source_prevents_silent_autoselection(registry):
+    """Even a source with disabled or unavailable sensors requires user choice."""
+    hass, entries = registry
+    for role in ("today", "tomorrow"):
+        entity_id = f"sensor.source_{role}"
+        entries[entity_id] = item(
+            entity_id,
+            f"forecast_a_energy_production_{role}",
+            "solar",
+            "forecast_solar",
+            config="forecast_a",
+        )
+    hass.states.get = lambda entity: SimpleNamespace(attributes={"unit_of_measurement": "Wh"})
+    hass.config_entries = SimpleNamespace(
+        async_entries=lambda domain: (
+            [
+                SimpleNamespace(entry_id="forecast_a", disabled_by=None),
+                SimpleNamespace(entry_id="forecast_b", disabled_by=None),
+            ]
+            if domain == "forecast_solar"
+            else []
+        )
+    )
+    assert module.suggested_forecasts(hass) == {}
+
+
 @pytest.fixture
 def registry(monkeypatch):
     entries = [

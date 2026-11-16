@@ -60,25 +60,64 @@ def forecast_solar_entry(hass: HomeAssistant, mapping: Mapping[str, str]) -> str
 
 
 def suggested_forecasts(hass: HomeAssistant) -> dict[str, str]:
-    """Suggest only one complete Solcast entry using provider-owned identities."""
-    roles = {
+    """Auto-select one complete provider; ambiguous configured sources need user choice."""
+    solcast_roles = {
         "total_kwh_forecast_today": "today",
         "total_kwh_forecast_tomorrow": "tomorrow",
         "lastupdated": "updated",
     }
-    groups: dict[str, dict[str, str]] = {}
+    solar_roles = {
+        "energy_production_today": "today",
+        "energy_production_tomorrow": "tomorrow",
+    }
+    groups: dict[tuple[str, str], dict[str, str]] = {}
+
+    # Count configured providers even when their sensors are currently missing,
+    # disabled or unavailable. A second independent forecast must never let the
+    # first become an implicit user selection.
+    entries = getattr(getattr(hass, "config_entries", None), "async_entries", None)
+    if callable(entries):
+        for provider in ("forecast_solar", "solcast_solar"):
+            for entry in entries(provider):
+                if getattr(entry, "disabled_by", None) is None:
+                    groups.setdefault((provider, entry.entry_id), {})
+
     for entity in getattr(er.async_get(hass), "entities", {}).values():
-        role = roles.get(entity.unique_id)
+        provider = entity.platform
+        owner = entity.config_entry_id
         if (
-            role
-            and entity.platform == "solcast_solar"
-            and entity.domain == "sensor"
-            and entity.config_entry_id
-            and entity.disabled_by is None
+            provider not in ("forecast_solar", "solcast_solar")
+            or entity.domain != "sensor"
+            or not owner
+            or entity.disabled_by is not None
         ):
-            groups.setdefault(entity.config_entry_id, {})[role] = entity.entity_id
-    complete = [group for group in groups.values() if len(group) == 3]
-    return complete[0] if len(complete) == 1 else {}
+            continue
+        group = groups.setdefault((provider, owner), {})
+        unique_id = entity.unique_id or ""
+        if provider == "solcast_solar":
+            role = solcast_roles.get(unique_id)
+        else:
+            prefix = f"{owner}_"
+            role = (
+                solar_roles.get(unique_id[len(prefix) :]) if unique_id.startswith(prefix) else None
+            )
+            if role is not None:
+                state = hass.states.get(entity.entity_id)
+                if state is None or state.attributes.get("unit_of_measurement") not in (
+                    "Wh",
+                    "kWh",
+                ):
+                    continue
+        if role is not None:
+            group[role] = entity.entity_id
+
+    if len(groups) != 1:
+        return {}
+    (provider, _), selected = next(iter(groups.items()))
+    required = (
+        {"today", "tomorrow"} if provider == "forecast_solar" else {"today", "tomorrow", "updated"}
+    )
+    return selected if set(selected) == required else {}
 
 
 def _source_key(entry: er.RegistryEntry) -> str | None:
