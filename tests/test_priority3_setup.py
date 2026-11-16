@@ -8,9 +8,9 @@ import pytest
 pytest.importorskip("homeassistant")
 from custom_components.sunenergyxt_ems import registry as module  # noqa: E402
 from custom_components.sunenergyxt_ems.const import (  # noqa: E402
-    configured_export_mode,
     FEED_IN_MODE_HOUSEHOLD,
     FEED_IN_MODE_PV,
+    configured_export_mode,
 )
 
 
