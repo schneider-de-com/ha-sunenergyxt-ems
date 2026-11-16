@@ -482,9 +482,7 @@ class Controller:
                 self.state.full.discard(battery.key)
 
             eligible_inverters = [inv for inv in battery.inverters if self._valid_inverter(inv)]
-            maximum_w = min(
-                battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters)
-            )
+            maximum_w = min(battery.output_limit_w, sum(inv.rated_w for inv in eligible_inverters))
             if battery.key in self.state.full and battery.pv_input_configured:
                 if battery.pv_input_w is None or not isfinite(battery.pv_input_w):
                     budget_w = min(total_w, maximum_w)
