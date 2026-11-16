@@ -1,6 +1,6 @@
-from collections.abc import Mapping
-
 """Shared configuration keys for SunEnergyXT EMS."""
+
+from collections.abc import Mapping
 
 DOMAIN = "sunenergyxt_ems"
 CONF_BATTERIES = "batteries"
