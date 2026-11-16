@@ -206,9 +206,7 @@ def registered_bk_hardware_sources(
         roles[f"extension_limit_{index}"] = f"wifi_sbms{index}_hw_limited_chg_soc_max"
         roles[f"extension_soc_{index}"] = f"wifi_b{index}_actual_soc"
 
-    by_unique = {
-        f"{head.config_entry_id}_{suffix}": role for role, suffix in roles.items()
-    }
+    by_unique = {f"{head.config_entry_id}_{suffix}": role for role, suffix in roles.items()}
     sources: dict[str, str] = {}
     for item in getattr(registry, "entities", {}).values():
         if (
