@@ -394,9 +394,8 @@ class BatteryStatus(SensorEntity):
             "lower_limit_pct": battery.lower_soc,
             "upper_limit_pct": battery.upper_soc,
             "dc_output_w": getattr(battery, "dc_output_w", None),
-            "dc_source_unavailable": self._device_id in getattr(
-                self._runtime, "_dc_unavailable_keys", set()
-            ),
+            "dc_source_unavailable": self._device_id
+            in getattr(self._runtime, "_dc_unavailable_keys", set()),
             "dc_sensor": getattr(self._runtime, "_dc_monitored", {}).get(self._device_id),
             "inverters_online": sum(inv.online for inv in battery.inverters),
             "inverters_total": len(battery.inverters),
