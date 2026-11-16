@@ -156,3 +156,24 @@ async def test_optimistic_positive_command_cannot_open_feedback_gate(solarman_pa
     hardware["device_m200"] = 100
     assert await runtime._feedback_ready(now=1010, grid_seq=grid_time)
     assert not runtime._pending
+
+
+@pytest.mark.asyncio
+async def test_unsupported_solarman_profile_cannot_receive_first_positive_write(
+    solarman_pair,
+) -> None:
+    """Feedback failure after the first write is too late to protect hardware."""
+    runtime, _hardware, lookup_file, states = solarman_pair
+    lookup_file[0] = "unknown_profile.yaml"
+    states["number.m200"].state = "0"
+
+    await runtime._apply({"number.m200": 20}, now=1000)
+
+    writes = [
+        call
+        for call in runtime.hass.services.async_call.await_args_list
+        if call.args[:2] == ("number", "set_value")
+    ]
+    assert not writes
+    assert runtime.status == "write_error"
+    assert "profile" in (runtime.last_error or "").lower()

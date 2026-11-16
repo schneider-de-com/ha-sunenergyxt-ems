@@ -654,6 +654,16 @@ class EMSRuntime:
                     observed[inverter.key] = power_w
         return observed
 
+    def _validated_solarman_register_profile(self, registered: Any) -> bool:
+        """Only the tested register-53 Solarman profile has a known ACK mapping."""
+        if not registered.config_entry_id or not registered.device_id:
+            return False
+        source_entry = self.hass.config_entries.async_get_entry(registered.config_entry_id)
+        return (
+            source_entry is not None
+            and source_entry.options.get("lookup_file") == "deye_micro_53.yaml"
+        )
+
     async def _hardware_feedback_matches(self, entity_id: str, target: float) -> bool:
         """Verify a Solarman limit by a fresh device register read, not an optimistic HA state.
 
@@ -665,10 +675,7 @@ class EMSRuntime:
         registered = er.async_get(self.hass).async_get(entity_id)
         if registered is None or registered.platform != "solarman":
             return True
-        if not registered.config_entry_id or not registered.device_id:
-            return False
-        source_entry = self.hass.config_entries.async_get_entry(registered.config_entry_id)
-        if source_entry is None or source_entry.options.get("lookup_file") != "deye_micro_53.yaml":
+        if not self._validated_solarman_register_profile(registered):
             return False
         state = self.hass.states.get(entity_id)
         if state is None or state.attributes.get("unit_of_measurement") != "%":
@@ -910,6 +917,21 @@ class EMSRuntime:
             interval = self._minimum_interval(entity_id)
             state = self.hass.states.get(entity_id)
             if state is None or state.state in ("unknown", "unavailable"):
+                continue
+            # A missing feedback profile must stop the *first* positive write,
+            # not just further writes after an unacknowledged power command.
+            # Reachable emergency minimum commands remain possible.
+            registered = er.async_get(self.hass).async_get(entity_id)
+            if (
+                target > 0
+                and not emergency
+                and registered is not None
+                and registered.platform == "solarman"
+                and not self._validated_solarman_register_profile(registered)
+            ):
+                self.last_error = f"{entity_id}: unverified Solarman control profile"
+                self.status = "write_error"
+                _LOGGER.error("%s", self.last_error)
                 continue
             unit = state.attributes.get("unit_of_measurement")
             rating = next(
