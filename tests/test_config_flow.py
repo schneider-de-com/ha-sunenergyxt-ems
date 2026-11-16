@@ -489,13 +489,14 @@ async def test_options_display_household_and_pv_modes(flow, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_planning_options_preserve_controller_tuning_and_source_maps(monkeypatch):
+async def test_planning_options_preserve_startup_hold_and_source_maps(monkeypatch):
     entry = SimpleNamespace(
         data={"batteries": []},
         options={
             "enabled": False,
             "feed_in": False,
-            "pid_ki": 0.07,
+            "pid_ki": 0.07,  # Obsolete experimental option is discarded on save.
+            "start_hold_seconds": 35,
             "pv_forecast": {
                 "today": "sensor.today",
                 "tomorrow": "sensor.tomorrow",
@@ -507,7 +508,8 @@ async def test_planning_options_preserve_controller_tuning_and_source_maps(monke
     monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
     saved = await options.async_step_init({"planning_enabled": True})
     assert saved["data"]["planning_enabled"] is True
-    assert saved["data"]["pid_ki"] == 0.07
+    assert "pid_ki" not in saved["data"]
+    assert saved["data"]["start_hold_seconds"] == 35
     assert saved["data"]["enabled"] is False
     assert saved["data"]["pv_forecast"] == entry.options["pv_forecast"]
 
