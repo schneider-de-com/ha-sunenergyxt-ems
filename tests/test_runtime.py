@@ -617,8 +617,8 @@ async def test_legacy_dc_trip_option_does_not_lock_new_runtime() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pid_switch_options_update_is_visible_without_energizing_inverters():
-    """A switched-off EMS must reflect the selected controller mode immediately."""
+async def test_legacy_pid_option_cannot_toggle_the_single_regulator_after_reconfigure():
+    """Preserve a prior option for rollback, not as a second live algorithm."""
     hass, entry = configured()
     entry.options["enabled"] = False
     runtime = EMSRuntime(hass, entry)
@@ -626,7 +626,8 @@ async def test_pid_switch_options_update_is_visible_without_energizing_inverters
     entry.options["adaptive_pid"] = True
     entry.options["start_hold_seconds"] = 40
     await runtime.async_change_options()
-    assert runtime.controller.adaptive_pid is True
+    assert runtime.controller.adaptive_pid is False
+    assert entry.options["adaptive_pid"] is True
     assert runtime._start_hold.seconds == 40
     hass.services.async_call.assert_not_awaited()
 
