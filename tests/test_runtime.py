@@ -509,7 +509,6 @@ async def test_pid_switch_options_update_is_visible_without_energizing_inverters
     hass.services.async_call.assert_not_awaited()
 
 
-
 @pytest.mark.asyncio
 async def test_missing_dc_on_one_head_allows_other_after_confirmed_minimum() -> None:
     """One stale BK telemetry source must not indefinitely stop a healthy head.
