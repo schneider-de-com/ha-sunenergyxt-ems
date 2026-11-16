@@ -992,6 +992,17 @@ class EMSRuntime:
             reported_value = self._float(state.state)
             pending = self._pending.get(entity_id)
             if (
+                not emergency
+                and not force
+                and pending is not None
+                and value > pending.target + max(step / 2, 0.01)
+            ):
+                # An optimistic HA number update is not hardware ACK. Never
+                # stack positive writes while the previous register readback
+                # is unresolved, even when a direct dispatch path is invoked.
+                # Explicit safety reductions may still bypass this gate.
+                continue
+            if (
                 started_positive
                 and not emergency
                 and not force
