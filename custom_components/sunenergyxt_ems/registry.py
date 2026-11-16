@@ -263,9 +263,11 @@ def suggested_bk_capacity_wh(hass: HomeAssistant, soc_entity_id: str | None) -> 
     sources = registered_bk_hardware_sources(hass, soc_entity_id)
     if sources is None:
         return None
+    head_limit = _fresh_bk_percent(hass, sources.get("head_limit"))
     if (
         _fresh_bk_percent(hass, sources.get("head_soc")) is None
-        or _fresh_bk_percent(hass, sources.get("head_limit")) is None
+        or head_limit is None
+        or not 70 <= head_limit <= 100
     ):
         return None
     modules = 1
@@ -274,7 +276,11 @@ def suggested_bk_capacity_wh(hass: HomeAssistant, soc_entity_id: str | None) -> 
         hardware = _fresh_bk_percent(hass, sources.get(f"extension_limit_{index}"))
         if (measured is None) != (hardware is None):
             return None
-        if measured is not None:
+        if hardware is not None:
+            # A zero or corrupt module hardware ceiling is not a physically
+            # validated attached B215; do not quietly count or drop it.
+            if not 70 <= hardware <= 100:
+                return None
             modules += 1
     return modules * BK_MODULE_CAPACITY_WH
 
