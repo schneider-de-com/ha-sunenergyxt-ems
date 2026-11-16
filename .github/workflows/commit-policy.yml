@@ -29,7 +29,7 @@ jobs:
           import urllib.request
 
           convention = re.compile(
-              r"^(feat|fix|docs|test|refactor|perf|build|ci|chore|revert)"
+              r"^(feat|fix|docs|test|refactor|perf|build|ci|chore|style|revert)"
               r"(\([a-z0-9][a-z0-9._-]*\))?!?: .{5,100}$"
           )
           reference = re.compile(r"\b(?:Refs|Fixes) #\d+\b")

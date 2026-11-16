@@ -30,7 +30,7 @@ with an imperative subject and a reference to the existing focused issue.
 - docs(architecture): record the single-writer decision (Refs #8)
 - ci(release): verify commit message conventions (Refs #8)
 
-Allowed types: feat, fix, docs, test, refactor, perf, build, ci, chore, revert.
+Allowed types: feat, fix, docs, test, refactor, perf, build, ci, chore, style, revert.
 Breaking changes use an exclamation mark after the type/scope or a
 BREAKING CHANGE: footer, with migration notes and a MAJOR bump after v1.0.0.
 A feat normally implies MINOR and a fix normally implies PATCH **after 1.0.0**,
