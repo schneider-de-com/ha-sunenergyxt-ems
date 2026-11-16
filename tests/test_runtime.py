@@ -507,3 +507,56 @@ async def test_pid_switch_options_update_is_visible_without_energizing_inverters
     assert runtime.controller.adaptive_pid is True
     assert runtime._start_hold.seconds == 40
     hass.services.async_call.assert_not_awaited()
+
+
+
+@pytest.mark.asyncio
+async def test_missing_dc_on_one_head_allows_other_after_confirmed_minimum() -> None:
+    """One stale BK telemetry source must not indefinitely stop a healthy head.
+
+    First lower only the affected inverter, then (after the caller has seen
+    the minimum acknowledgement) allow independent healthy-head regulation.
+    """
+    hass, entry = configured(grid=650, soc=80)
+    states = hass.states.get.__self__
+    entry.data["batteries"][0]["dc_output"] = "sensor.missing_dc"
+    states["number.inverter"].state = "400"
+    states["sensor.soc2"] = sample(85, "%")
+    states["number.inverter2"] = sample(0, "W", min=0, max=800, step=1)
+    entry.data["batteries"].append(
+        {
+            "device_id": "battery-2",
+            "soc": "sensor.soc2",
+            "lower": 10,
+            "upper": 100,
+            "inverters": [{"entity_id": "number.inverter2", "rated_w": 800}],
+        }
+    )
+    runtime = EMSRuntime(hass, entry)
+    runtime._running = True
+    runtime._last_sent["number.inverter"] = 400
+
+    await runtime.async_update()
+    assert runtime._dc_unavailable_keys == {"battery-1"}
+    assert any(
+        c.args[2]["entity_id"] == "number.inverter" and c.args[2]["value"] == 0
+        for c in hass.services.async_call.await_args_list
+    )
+    assert not any(
+        c.args[2]["entity_id"] == "number.inverter2"
+        for c in hass.services.async_call.await_args_list
+    )
+
+    # Represent a confirmed minimum report; do not bypass the real production
+    # ACK checks, which are covered separately against the Solarman read service.
+    runtime._pending.clear()
+    states["number.inverter"].state = "0"
+    states["sensor.grid"].last_reported = datetime.now(UTC)
+    hass.services.async_call.reset_mock()
+    await runtime.async_update()
+
+    assert runtime._dc_unavailable_keys == {"battery-1"}
+    assert any(
+        c.args[2]["entity_id"] == "number.inverter2" and c.args[2]["value"] > 0
+        for c in hass.services.async_call.await_args_list
+    ), "A healthy independent battery must resume after the unsafe head is stopped"
