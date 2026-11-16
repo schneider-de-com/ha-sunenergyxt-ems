@@ -479,8 +479,13 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
             # Pre-stable beta migration: previous PID mode and tuning are
             # obsolete. Ignore any old fields, never let them change dispatch.
             for obsolete in (
-                "adaptive_pid", "migrate_legacy_pid", "pid_kp_min",
-                "pid_kp_max", "pid_kp_export", "pid_ki", "pid_kd",
+                "adaptive_pid",
+                "migrate_legacy_pid",
+                "pid_kp_min",
+                "pid_kp_max",
+                "pid_kp_export",
+                "pid_ki",
+                "pid_kd",
             ):
                 requested.pop(obsolete, None)
             # One mutually exclusive selector replaces the old checkbox +
@@ -751,9 +756,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                 fields[key] = selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 )
-        for key, default, minimum, maximum in (
-            ("start_hold_seconds", 30, 5, 60),
-        ):
+        for key, default, minimum, maximum in (("start_hold_seconds", 30, 5, 60),):
             fields[vol.Optional(key, default=self.config_entry.options.get(key, default))] = (
                 vol.All(vol.Coerce(float), vol.Range(min=minimum, max=maximum))
             )
