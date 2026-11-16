@@ -19,13 +19,11 @@ from .inputs import observed_ac_power
 from .logic import weighted_battery_level
 from .runtime import EMSRuntime
 
-PID_VALUES = (
+CONTROL_VALUES = (
     ("grid_raw", "raw_grid_w"),
     ("grid_effective", "effective_grid_w"),
-    ("grid_error", "pid_error_w"),
-    ("pid_proportional", "pid_p_w"),
-    ("pid_integral", "pid_i_w"),
-    ("pid_derivative", "pid_d_w"),
+    ("grid_error", "regulation_error_w"),
+    ("controller_correction", "regulation_correction_w"),
     ("controller_target", "target_w"),
 )
 
@@ -55,7 +53,7 @@ async def async_setup_entry(
         model="Energy management",
     )
     entities: list[SensorEntity] = [EMSStatus(entry, runtime)]
-    entities.extend(EMSControlValue(entry, runtime, key, field) for key, field in PID_VALUES)
+    entities.extend(EMSControlValue(entry, runtime, key, field) for key, field in CONTROL_VALUES)
     entities.append(EMSWeightedBatteryLevel(entry, runtime))
     entities.append(EMSPlanningStatus(entry, runtime))
     entities.extend(
@@ -173,7 +171,7 @@ class EMSStatus(SensorEntity):
         runtime = self._runtime
         return {
             "last_error": runtime.last_error,
-            "control_mode": "adaptive_pid" if runtime.controller.adaptive_pid else "proportional",
+            "control_mode": "adaptive_proportional",
             "grid_target_configured_w": runtime.controller.grid_target_w,
             "grid_target_effective_w": runtime.controller._grid_target(),
             "cooperative_dispatch_active": runtime.controller.state.cooperative_active,
@@ -282,7 +280,7 @@ class EMSControlValue(SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        if self._field in ("pid_error_w", "pid_p_w", "pid_i_w", "pid_d_w") and (
+        if self._field in ("regulation_error_w", "regulation_correction_w") and (
             not self._runtime.controller.enabled
             or self._runtime._grid_filtered_w is None
             or self._runtime.controller.state.grid_outage
@@ -293,7 +291,7 @@ class EMSControlValue(SensorEntity):
         if not self._runtime.controller.enabled and self._field in (
             "raw_grid_w",
             "effective_grid_w",
-            "pid_error_w",
+            "regulation_error_w",
         ):
             # A previous signed meter sample is not a live observation.
             return None
@@ -307,7 +305,7 @@ class EMSControlValue(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
-        if self._field in ("pid_error_w", "pid_p_w", "pid_i_w", "pid_d_w"):
+        if self._field in ("regulation_error_w", "regulation_correction_w"):
             return {
                 "value_semantics": "last_completed_controller_calculation",
                 "controller_phase": self._runtime.status,
