@@ -178,6 +178,7 @@ class EMSStatus(SensorEntity):
             "requested_total_semantics": "last_successful_ha_dispatch_per_inverter",
             "pending_actuator_reads": sorted(runtime._pending),
             "pending_shutdown_reads": sorted(runtime._shutdown_pending),
+            "dc_unavailable_towers": sorted(getattr(runtime, "_dc_unavailable_keys", set())),
             "deferred_shutdown": sorted(runtime._deferred_shutdown),
             "startup_hold_remaining_s": {
                 key: runtime._start_hold.remaining(key, monotonic())
@@ -372,6 +373,8 @@ class BatteryStatus(SensorEntity):
             return "ev3600_charging"
         if self._device_id in state.ev3600_unknown:
             return "ev3600_unavailable"
+        if self._device_id in getattr(self._runtime, "_dc_unavailable_keys", set()):
+            return "unavailable"
         battery = self._battery()
         if battery is None or not any(inverter.online for inverter in battery.inverters):
             return "unavailable"
@@ -391,6 +394,9 @@ class BatteryStatus(SensorEntity):
             "lower_limit_pct": battery.lower_soc,
             "upper_limit_pct": battery.upper_soc,
             "dc_output_w": getattr(battery, "dc_output_w", None),
+            "dc_source_unavailable": self._device_id in getattr(
+                self._runtime, "_dc_unavailable_keys", set()
+            ),
             "dc_sensor": getattr(self._runtime, "_dc_monitored", {}).get(self._device_id),
             "inverters_online": sum(inv.online for inv in battery.inverters),
             "inverters_total": len(battery.inverters),
