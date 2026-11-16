@@ -15,6 +15,7 @@ Changes merged into the repository **after the published `v1.0.0-beta.1` tag**. 
 
 - Coordinate two eligible storage heads earlier under sustained independently measured grid import; derive a bounded adaptive import buffer from recent signed-meter behavior. Inverter first-start steps remain conservative pending hardware proof (PR #143).
 - For recognized BK modules, treat the **actual BMS hardware charge ceiling** as full (for example 90% even if a configurable charge target is 100%), and do not use redundant manual upper-SoC values for this decision. PV-only export requires fresh, credible **tower-attributed PV input watts** and drops back to normal household matching when evidence is lost (PR #142).
+- Retain previously selected PID regulation on upgrades rather than silently changing a live controller. Offer an explicit, one-time Expert migration to the unified regulator; hide the competing algorithm switch while retaining legacy settings for rollback (PR #158).
 
 ### Fixed
 
