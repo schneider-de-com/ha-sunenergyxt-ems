@@ -1,8 +1,8 @@
 # SunEnergyXT EMS — software architecture (arc42)
 
 > **Architecture of a reusable Home Assistant integration, not an inventory of one household.**
-> Current release line: experimental `0.1.1b18`. Target: a hardware-validated
-> `1.0.0` core. A *designed extension point* is not an implemented or
+> Current release line: experimental `0.1.1b18`. Next core milestone:
+> `1.0.0-beta.1`; stable `1.0.0` is a separate hardware acceptance gate. A *designed extension point* is not an implemented or
 > hardware-verified feature. Site-specific incidents and examples belong in
 > issues, tests and [the handover](../HANDOVER-2026-11-16.md), **not** in the
 > product architecture.
@@ -204,6 +204,7 @@ human-readable Keep a Changelog and measured compatibility evidence.
 - [ADR-0002 — Ship validated core before economic planning](../adr/0002-core-release-scope.md)
 - [ADR-0003 — Recoverable startup export](../adr/0003-startup-recovery.md)
 - [ADR-0004 — Device-neutral towers and inverter capability adapters](../adr/0004-device-neutral-battery-and-inverter-boundaries.md)
+- [ADR-0005 — Beta-first release milestone](../adr/0005-beta-first-core-scope.md)
 
 Architectural decisions record context, alternatives, consequences and
 status. Existing decisions are retained as history; ADR-0004 clarifies
