@@ -311,7 +311,6 @@ async def test_options_select_forecast_solar_pair_without_reusing_solcast_timest
         "enabled": False,
         "feed_in": True,
         "grid_target_w": 20,
-        "pid_ki": 0.07,
         "pv_forecast": {
             "today": "sensor.old_today",
             "tomorrow": "sensor.old_tomorrow",
@@ -327,7 +326,7 @@ async def test_options_select_forecast_solar_pair_without_reusing_solcast_timest
     )
     assert result["type"] == "create_entry"
     assert entry.options["pv_forecast"] == selected
-    for key in ("enabled", "feed_in", "grid_target_w", "pid_ki"):
+    for key in ("enabled", "feed_in", "grid_target_w"):
         assert entry.options[key] == original[key]
 
 
@@ -366,7 +365,7 @@ async def test_options_reject_invalid_forecast_solar_binding_without_mutation(ha
             registry.async_update_entity(
                 source.entity_id, disabled_by=er.RegistryEntryDisabler.USER
             )
-    original = {"enabled": False, "feed_in": True, "grid_target_w": 20, "pid_ki": 0.07}
+    original = {"enabled": False, "feed_in": True, "grid_target_w": 20}
     entry = MockConfigEntry(domain=DOMAIN, data={"batteries": []}, options=original)
     entry.add_to_hass(hass)
     form = await _device_options_form(hass, entry)
@@ -387,7 +386,6 @@ async def test_options_reject_energy_as_pv_power_and_allow_explicit_removal(hass
         "enabled": False,
         "feed_in": False,
         "grid_target_w": 20,
-        "pid_ki": 0.07,
         "capacity_wh": {"bk1": 4300},
         "pv_input": {"bk1": "sensor.monthly_energy"},
     }
@@ -437,7 +435,7 @@ async def test_options_reject_energy_as_pv_power_and_allow_explicit_removal(hass
     )
     assert result["type"] == "create_entry"
     assert entry.options["pv_input"] == {}
-    for key in ("enabled", "feed_in", "grid_target_w", "pid_ki", "capacity_wh"):
+    for key in ("enabled", "feed_in", "grid_target_w", "capacity_wh"):
         assert entry.options[key] == original[key]
     form = await _device_options_form(hass, entry)
     assert "clear_pv_input_1" not in form["data_schema"].schema
@@ -657,20 +655,13 @@ async def test_setup_registers_real_integration_devices_and_controls(
             "grid_raw",
             "grid_effective",
             "grid_error",
-            "pid_proportional",
-            "pid_integral",
-            "pid_derivative",
+            "controller_correction",
             "controller_target",
         )
     } | {
         f"{entry.entry_id}_{key}"
         for key in (
             "start_hold_seconds",
-            "pid_kp_min",
-            "pid_kp_max",
-            "pid_kp_export",
-            "pid_ki",
-            "pid_kd",
         )
     }
     assert all(hass.states.get(entity.entity_id) is not None for entity in entities)
@@ -1200,7 +1191,7 @@ async def test_correction_form_preserves_limit_value_types(hass: HomeAssistant, 
 @pytest.mark.usefixtures("enable_custom_integrations")
 @pytest.mark.asyncio
 async def test_grid_loss_and_recovery_do_not_expose_old_error(hass: HomeAssistant, freezer) -> None:
-    """Recovering one meter report must not present an old PID sample as current."""
+    """Recovering one meter report must not present an old regulator sample as current."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
