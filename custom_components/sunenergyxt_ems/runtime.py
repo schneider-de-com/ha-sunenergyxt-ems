@@ -1194,11 +1194,9 @@ class EMSRuntime:
                     confirmed
                     and not self._pending
                     and not self._shutdown_obligations
-                    and self._startup_export_recovery_count
-                    >= STARTUP_EXPORT_RECOVERY_SAMPLES
+                    and self._startup_export_recovery_count >= STARTUP_EXPORT_RECOVERY_SAMPLES
                     and self._startup_export_started_at is not None
-                    and now - self._startup_export_started_at
-                    >= STARTUP_EXPORT_RECOVERY_SECONDS
+                    and now - self._startup_export_started_at >= STARTUP_EXPORT_RECOVERY_SECONDS
                 ):
                     self._startup_export_trip = False
                     self._startup_export_started_at = None
