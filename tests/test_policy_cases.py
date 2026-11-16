@@ -109,9 +109,7 @@ def test_pv_only_bypass_never_exceeds_verified_pv_input():
 def test_existing_bms_pv_bypass_closes_if_any_module_no_longer_full():
     engine = Controller()
     engine.feed_in = True
-    full = replace(
-        pack(soc=90), pv_input_w=300, pv_input_configured=True, bms_full_verified=True
-    )
+    full = replace(pack(soc=90), pv_input_w=300, pv_input_configured=True, bms_full_verified=True)
     assert engine.update((full,), 0, 1)["a_inv"] == 300
     assert engine.state.full == {"a"}
 
