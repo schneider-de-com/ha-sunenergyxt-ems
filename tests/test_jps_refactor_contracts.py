@@ -102,6 +102,6 @@ def test_ev3600_charging_clears_stale_full_charge_bypass_state() -> None:
 def test_signed_export_is_bounded_without_a_derivative_term() -> None:
     controller = logic.Controller(logic.ControllerState(outputs={"a_inverter": 400}))
     result = controller.update((pack("a"),), -200, 10, sequence=10)
-    # The single loop cuts 200 W, rather than an unrestricted AC step.
-    assert result["a_inverter"] == 200
+    # With a 20 W target, export of -200 W requests a bounded 220 W reduction.
+    assert result["a_inverter"] == 180
     assert not hasattr(controller.state, "pid_d_w")
