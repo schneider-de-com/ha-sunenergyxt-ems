@@ -10,13 +10,13 @@ from math import ceil, isfinite
 from statistics import median
 
 from .const import DEFAULT_TOWER_OUTPUT_LIMIT_W
+from .pid import PIDGains, bounded_pid
 
 # The legacy no-export deadband was 0..30 W around the 20 W default
 # import target. Preserve its asymmetric -20/+10 W tolerance when users
 # choose a different target; never include negative signed grid export.
 GRID_DEADBAND_BELOW_TARGET_W = 20.0
 GRID_DEADBAND_ABOVE_TARGET_W = 10.0
-from .pid import PIDGains, bounded_pid
 
 
 def weighted_battery_level(readings: list[tuple[float | None, float | None]]) -> float | None:
@@ -188,9 +188,17 @@ class GridMedianFilter:
         recent = list(self._samples)
         if sum(abs(watts - requested_w) <= 150 for watts in recent) < 3:
             return requested_w
-        noise = median(
-            abs(current - prior) for prior, current in zip(recent, recent[1:], strict=False)
-        )
+        # A single export pulse or appliance jump cannot inflate a quiet
+        # import reserve: only consecutive pairs near the requested goal
+        # provide evidence of ordinary steady-state meter noise.
+        near_deltas = [
+            abs(current - prior)
+            for prior, current in zip(recent, recent[1:], strict=False)
+            if abs(prior - requested_w) <= 150 and abs(current - requested_w) <= 150
+        ]
+        if len(near_deltas) < 2:
+            return requested_w
+        noise = median(near_deltas)
         margin = max(0.0, (noise - 30.0) * 0.25)
         return min(200.0, requested_w + margin)
 
