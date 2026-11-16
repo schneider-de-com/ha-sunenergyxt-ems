@@ -11,6 +11,11 @@ This is a curated human-readable changelog, not a dump of Git commit subjects.
 ### Added
 - Release policy covering SemVer, Conventional Commits, stable hardware acceptance and rollback.
 - Compact arc42 architecture reference and Architecture Decision Records (ADRs).
+- Device-neutral arc42 and ADR-0004 for BK215/BK215 Plus storage towers and vendor-specific inverter capabilities.
+- Compatibility matrix separating SunEnergyXT-approved electrical pairings from proven Home Assistant EMS hardware control.
+
+### Changed
+- Initial setup accepts up to four distinct inverter power-limit entities per storage tower instead of two; this does not claim untested inverter hardware support.
 
 ## Version history
 
