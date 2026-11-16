@@ -118,9 +118,7 @@ def test_pid_nondefault_target_does_not_freeze_at_20_w_import() -> None:
 
 def test_pid_custom_target_clears_integral_inside_shifted_deadband() -> None:
     b = Battery("bk", 70, 10, 90, (Inverter("m200", 2000),))
-    controller = Controller(
-        ControllerState(outputs={"m200": 200.0}, pid_i_w=120.0)
-    )
+    controller = Controller(ControllerState(outputs={"m200": 200.0}, pid_i_w=120.0))
     controller.adaptive_pid = True
     controller.grid_target_w = 80
 
