@@ -1167,11 +1167,25 @@ class EMSRuntime:
                 self._shutdown_failed_at.pop(entity_id, None)
             if (
                 not remaining
+                and not self._shutdown_pending
+                and not self._deferred_shutdown
                 and self.last_error
-                and self.last_error.startswith(
-                    ("Shutdown not acknowledged:", "Cannot persist inverter shutdown obligations:")
+                and (
+                    self.last_error.startswith(
+                        (
+                            "Shutdown not acknowledged:",
+                            "Cannot persist inverter shutdown obligations:",
+                            "Cannot stop unavailable inverters:",
+                        )
+                    )
+                    or any(
+                        self.last_error.startswith(f"{entity_id}:") for entity_id in acknowledged
+                    )
                 )
             ):
+                # A stale write/transport error belongs to a shutdown which
+                # every affected actuator has now independently acknowledged.
+                # Do not hide unrelated faults or unconfirmed safe-off duties.
                 self.last_error = None
         if self._deferred_shutdown:
             self.last_error = "Cannot stop unavailable inverters: " + ", ".join(
