@@ -1,4 +1,4 @@
-"""Check the packaged manifest and single-source beta release notes."""
+"""Check legacy and SemVer manifests against the changelog-based release process."""
 
 from json import loads
 from pathlib import Path
@@ -11,7 +11,7 @@ def test_release_metadata_uses_changelog_not_per_tag_files() -> None:
     manifest = loads((ROOT / "custom_components/sunenergyxt_ems/manifest.json").read_text())
     version = manifest["version"]
     assert isinstance(version, str) and fullmatch(
-        r"(?:\d+\.\d+\.\d+b\d+|\d+\.\d+\.\d+-(?:alpha|beta|rc)\.\d+)",
+        r"(?:\d+\.\d+\.\d+b\d+|\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?)",
         version,
     )
 
