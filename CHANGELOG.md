@@ -4,7 +4,11 @@ Human-readable changes follow [Keep a Changelog 1.1.0](https://keepachangelog.co
 
 ## [Unreleased]
 
-**Candidate milestone: `1.0.0-beta.1` (publication depends on full green CI/HACS/CodeQL).** This section consolidates the important features and fixes from the legacy `0.1.0b3–0.1.1b18` experimental releases and subsequent development. **Most features listed below already exist in published betas**; their inclusion here is the curated baseline for the 1.0.0 beta, not a claim of new implementation or stable physical acceptance.
+Changes for the next release are collected here.
+
+## [1.0.0-beta.1] - 2026-11-16
+
+**Experimental prerelease; actual device AC behaviour and unattended hardware operation remain unvalidated.** This section consolidates the important features and fixes from the legacy `0.1.0b3–0.1.1b18` experimental releases and subsequent development. **Most features listed below already exist in published betas**; their inclusion here is the curated baseline for the 1.0.0 beta, not a claim of new implementation or stable physical acceptance.
 
 ### Added
 
@@ -45,8 +49,9 @@ Forecast-based economic optimization and automatic tariff dispatch are **outside
 
 ## Historical prereleases
 
-The existing published `0.1.x` betas use the former Python-style suffix (for example `0.1.1b18`), which is **not valid SemVer prerelease syntax**. Historical tags are not renamed or rewritten. The next beta will use `v1.0.0-beta.1`; stable `v1.0.0` has **not** been published.
+The existing published `0.1.x` betas use the former Python-style suffix (for example `0.1.1b18`), which is **not valid SemVer prerelease syntax**. Historical tags are not renamed or rewritten. The published SemVer prerelease is [`v1.0.0-beta.1`](https://github.com/schneider-de-com/ha-sunenergyxt-ems/releases/tag/v1.0.0-beta.1); stable `v1.0.0` has **not** been published.
 
 Original release records, their exact commit references and downloadable packages remain in [GitHub Releases](https://github.com/schneider-de-com/ha-sunenergyxt-ems/releases).
 
-[Unreleased]: https://github.com/schneider-de-com/ha-sunenergyxt-ems/compare/v0.1.1b18...main
+[Unreleased]: https://github.com/schneider-de-com/ha-sunenergyxt-ems/compare/v1.0.0-beta.1...main
+[1.0.0-beta.1]: https://github.com/schneider-de-com/ha-sunenergyxt-ems/compare/v0.1.1b18...v1.0.0-beta.1
