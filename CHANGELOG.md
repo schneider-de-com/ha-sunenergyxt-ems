@@ -8,7 +8,7 @@ No additional changes have been accepted since `v1.0.0-beta.2`. Continue to docu
 
 ## [1.0.0-beta.2] - 2026-11-16
 
-**Experimental prerelease.** These changes were merged after `v1.0.0-beta.1` and included in the immutable beta.2 tag on commit `ca640d652a5b72bc67f3cb169b4a319862c853f5`. They do **not** certify Deye physical startup behavior, independent AC output, safe-off under load, 24-hour operation, or a tested HACS rollback.
+**Experimental prerelease.** These changes were merged after `v1.0.0-beta.1` and included in the immutable beta.2 tag on commit `ca640d652a5b72bc67f3cb169b4a319862c853f5`. They are **not installed automatically** on existing Home Assistant instances: users need a verified HACS update and integration restart. They do **not** certify Deye physical startup behavior, independent AC output, safe-off under load, 24-hour operation, or a tested HACS rollback.
 
 ### Added
 
