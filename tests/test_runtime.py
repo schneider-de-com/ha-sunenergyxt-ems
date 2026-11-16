@@ -456,17 +456,18 @@ async def test_pv_feed_in_mode_uses_only_fresh_measured_input_after_upper_soc() 
     hass, entry = configured(grid=100, soc=95)
     states = hass.states.get.__self__
     states["sensor.pv"] = sample(500, "W")
-    entry.options.update({
-        "feed_in": True, "feed_in_mode": "pv", "pv_input": {"battery-1": "sensor.pv"},
-    })
+    entry.options.update(
+        {
+            "feed_in": True,
+            "feed_in_mode": "pv",
+            "pv_input": {"battery-1": "sensor.pv"},
+        }
+    )
     runtime = EMSRuntime(hass, entry)
     runtime._running = True
     await runtime.async_update()
     assert hass.services.async_call.await_args.args[2]["value"] == 20
     assert runtime.controller.state.outputs["number.inverter"] == 500
-
-
-
 
 def _identified_bk_head(hass, entry, monkeypatch):
     """Supply registry identities from the actual SunEnergyXT-BK integration."""
@@ -542,7 +543,11 @@ def test_bms_uses_attached_extension_and_fails_closed_on_missing_data(monkeypatc
     assert runtime._batteries()[0].upper_soc is None
     states["sensor.extension_hw"] = sample(90, "%")
     states["sensor.extension_soc"] = sample(89, "%")
-    assert runtime._batteries()[0].upper_soc is None
+    battery = runtime._batteries()[0]
+    assert battery.upper_soc == 90
+    assert battery.bms_full_verified is False
+    runtime.controller.feed_in = True
+    assert runtime.controller.update((battery,), 0, 1)["number.inverter"] == 0
 
 
 def test_hardware_limit_unknown_despite_existing_optional_config_cannot_export(monkeypatch):
