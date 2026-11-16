@@ -240,9 +240,9 @@ their product-wide application instead of rewriting a site's test trace.
    A vendor adapter with an independently trustworthy ACK mechanism is
    required before claiming unattended support.
 2. Experimental `b18` still contains device-family-specific defaults
-   such as a 1,920 W output ceiling and a DC latch; these must be
-   replaced by **validated per-tower capabilities**, not a guessed higher
-   Plus rating. See [#53](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/53).
+   such as a conservative legacy 1,920 W AC command budget. The DC
+   telemetry latch is removed from the beta implementation; a higher
+   Plus/tower limit must be explicitly configured and hardware-validated. See [#53](https://github.com/schneider-de-com/ha-sunenergyxt-ems/issues/53).
 3. There are no completed live tests across every vendor or Plus topology.
    Automatic discovery of the official BK Plus head is plausible through
    matching integration-owned unique-ID roles, but not itself hardware
