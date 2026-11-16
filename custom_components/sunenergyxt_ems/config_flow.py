@@ -448,10 +448,28 @@ class SunEnergyXTEMSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class EMSEntryOptionsFlow(config_entries.OptionsFlow):
-    """Simple toggles without duplicate sensor configuration."""
+    """Keep daily settings separate from hardware assignments and tuning."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Keep operating settings editable without reinstalling the integration."""
+        """Choose a built-in Home Assistant options section."""
+        if user_input is not None:
+            # Compatibility for integrations/tests submitting the old one-page form.
+            return await self._async_step_edit(user_input, "basic")
+        return self.async_show_menu(step_id="init", menu_options=["basic", "devices", "expert"])
+
+    async def async_step_basic(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self._async_step_edit(user_input, "basic")
+
+    async def async_step_devices(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self._async_step_edit(user_input, "devices")
+
+    async def async_step_expert(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self._async_step_edit(user_input, "expert")
+
+    async def _async_step_edit(
+        self, user_input: dict[str, Any] | None, section: str
+    ) -> ConfigFlowResult:
+        """Validate one section without overwriting fields on the other pages."""
         existing = list(getattr(self.config_entry, "data", {}).get(CONF_BATTERIES, []))
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -809,8 +827,29 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     **({"default": upper} if isinstance(upper, (float, int)) else {}),
                 )
             ] = vol.All(vol.Coerce(float), vol.Range(min=70, max=100))
+        basic = {CONF_ENABLED, CONF_FEED_IN_MODE, "grid_target_w", "planning_enabled"}
+        expert = {
+            CONF_FEED_IN_HYSTERESIS,
+            "start_hold_seconds",
+            "adaptive_pid",
+            "pid_kp_min",
+            "pid_kp_max",
+            "pid_kp_export",
+            "pid_ki",
+            "pid_kd",
+        }
+
+        def in_section(marker: Any) -> bool:
+            key = getattr(marker, "schema", str(marker))
+            if section == "basic":
+                return key in basic
+            if section == "expert":
+                return key in expert
+            # All remaining options belong to the device/source page.
+            return key not in basic | expert
+
         return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(fields),
+            step_id=section,
+            data_schema=vol.Schema({key: value for key, value in fields.items() if in_section(key)}),
             errors=errors,
         )
