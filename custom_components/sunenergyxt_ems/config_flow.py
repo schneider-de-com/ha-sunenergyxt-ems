@@ -14,7 +14,6 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_BATTERIES,
-    CONF_OUTPUT_LIMITS,
     CONF_DEVICE,
     CONF_ENABLED,
     CONF_FEED_IN,
@@ -24,6 +23,7 @@ from .const import (
     CONF_GRID_INVERT,
     CONF_INVERTERS,
     CONF_LOWER,
+    CONF_OUTPUT_LIMITS,
     CONF_RATED_W,
     CONF_SOC,
     CONF_UPPER,
