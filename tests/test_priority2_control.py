@@ -54,9 +54,7 @@ def test_cooperation_weights_usable_soc_without_crossing_individual_reserve():
 
 
 def test_cooperative_allocation_does_not_force_second_head_to_zero_at_setpoint():
-    controller = Controller(
-        ControllerState(outputs={"a_inverter": 240, "b_inverter": 240})
-    )
+    controller = Controller(ControllerState(outputs={"a_inverter": 240, "b_inverter": 240}))
     controller.cooperative_dispatch = True
     controller.update((tower("a"), tower("b")), 550, 1)
     # Sustained import criterion may end, but a healthy allocation must not
