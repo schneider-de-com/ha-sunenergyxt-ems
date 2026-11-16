@@ -687,9 +687,7 @@ class EMSRuntime:
                         inverter.minimum_w,
                         min(inverter.rated_w, dispatched, reported),
                     )
-        headroom = {
-            key: max(0.0, value - minimums[key]) for key, value in commanded.items()
-        }
+        headroom = {key: max(0.0, value - minimums[key]) for key, value in commanded.items()}
         total = sum(headroom.values())
         correction = max(0.0, self.controller.grid_target_w - signed_grid_w)
         if total <= 0:
@@ -1237,9 +1235,7 @@ class EMSRuntime:
                     and sequence != self._startup_export_last_reduction_seq
                     and self._grid_raw_w < self.controller.grid_target_w
                 ):
-                    reduction = self._startup_export_reduction_targets(
-                        batteries, self._grid_raw_w
-                    )
+                    reduction = self._startup_export_reduction_targets(batteries, self._grid_raw_w)
                     self._startup_export_last_reduction_seq = sequence
                 else:
                     reduction = {}
