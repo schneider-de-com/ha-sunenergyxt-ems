@@ -1,6 +1,6 @@
 """User-visible JPS feature parity acceptance, not just code or options keys.
 
-These initially fail against v0.1.0b5: no PID control switch, no tuning number
+These document the user-visible HA controls and a single adaptive regulator
 platform, no dedicated per-tower EV/bypass or per-inverter diagnostics, and an
 existing BK215 upper SoC source cannot be edited via Configure.
 """
@@ -101,7 +101,7 @@ async def test_hidden_legacy_pid_does_not_offer_competing_strategy_switch():
 
 
 @pytest.mark.asyncio
-async def test_startup_hold_and_pid_gains_are_native_ha_number_entities():
+async def test_startup_hold_is_the_only_regulator_number_setting():
     from custom_components.sunenergyxt_ems import number  # noqa: PLC0415
 
     entry, runtime, _writes = entry_and_runtime()
@@ -109,7 +109,8 @@ async def test_startup_hold_and_pid_gains_are_native_ha_number_entities():
     await number.async_setup_entry(runtime.hass, entry, entities.extend)
     by_id = {e.unique_id: e for e in entities}
     assert f"{entry.entry_id}_start_hold_seconds" in by_id
-    assert f"{entry.entry_id}_pid_ki" in by_id
+    assert f"{entry.entry_id}_pid_ki" not in by_id
+    assert len(by_id) == 1
     assert by_id[f"{entry.entry_id}_start_hold_seconds"].native_value == 30
     hold = by_id[f"{entry.entry_id}_start_hold_seconds"]
     hold.async_write_ha_state = lambda: None
@@ -141,7 +142,9 @@ async def test_options_flow_groups_basic_device_and_expert_settings(monkeypatch)
     assert "pid_kp_min" not in forms["basic"]
     assert "capacity_wh_1" not in forms["basic"]
     assert "capacity_wh_1" in forms["devices"]
-    assert "pid_kp_min" in forms["expert"]
+    assert "start_hold_seconds" in forms["expert"]
+    assert "pid_kp_min" not in forms["expert"]
+    assert "migrate_legacy_pid" not in forms["expert"]
     assert "capacity_wh_1" not in forms["expert"]
 
 
@@ -221,7 +224,7 @@ async def test_one_sensor_each_for_bypass_ev_and_per_inverter_diagnostics(monkey
 
 
 @pytest.mark.asyncio
-async def test_legacy_pid_migration_is_visible_in_expert_options_only(monkeypatch):
+async def test_expert_options_have_no_legacy_algorithm_migration_or_tuning(monkeypatch):
     entry, runtime, _writes = entry_and_runtime()
     entry.options["adaptive_pid"] = True
     handler = config_flow.EMSEntryOptionsFlow()
@@ -230,28 +233,19 @@ async def test_legacy_pid_migration_is_visible_in_expert_options_only(monkeypatc
 
     form = await handler.async_step_expert()
     fields = {getattr(marker, "schema", str(marker)) for marker in form["data_schema"].schema}
-    assert "migrate_legacy_pid" in fields
-    assert "adaptive_pid" not in fields
+    assert "start_hold_seconds" in fields
+    for obsolete in (
+        "adaptive_pid",
+        "migrate_legacy_pid",
+        "pid_kp_min",
+        "pid_kp_max",
+        "pid_kp_export",
+        "pid_ki",
+        "pid_kd",
+    ):
+        assert obsolete not in fields
 
-    result = await handler.async_step_expert({"migrate_legacy_pid": False})
+    result = await handler.async_step_expert({"start_hold_seconds": 40})
     assert result["type"] == "create_entry"
-    assert result["data"]["adaptive_pid"] is True
-
-
-@pytest.mark.asyncio
-async def test_explicit_migration_converts_legacy_pid_once(monkeypatch):
-    entry, runtime, _writes = entry_and_runtime()
-    entry.options["adaptive_pid"] = True
-    handler = config_flow.EMSEntryOptionsFlow()
-    monkeypatch.setattr(config_flow.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
-    handler.hass = runtime.hass
-
-    result = await handler.async_step_expert({"migrate_legacy_pid": True})
-    assert result["type"] == "create_entry"
-    assert result["data"]["adaptive_pid"] is False
-    assert "migrate_legacy_pid" not in result["data"]
-
-    entry.options = result["data"]
-    next_form = await handler.async_step_expert()
-    fields = {getattr(marker, "schema", str(marker)) for marker in next_form["data_schema"].schema}
-    assert "migrate_legacy_pid" not in fields
+    assert result["data"]["start_hold_seconds"] == 40
+    assert "adaptive_pid" not in result["data"]

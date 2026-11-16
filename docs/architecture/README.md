@@ -1,8 +1,8 @@
 # SunEnergyXT EMS — software architecture (arc42)
 
 > **Architecture of a reusable Home Assistant integration, not an inventory of one household.**
-> Current release line: experimental `0.1.1b18`. Next core milestone:
-> `1.0.0-beta.1`; stable `1.0.0` is a separate hardware acceptance gate. A *designed extension point* is not an implemented or
+> Current release line: experimental `1.0.0-beta.2`; next validation candidate:
+> `1.0.0-beta.3`; stable `1.0.0` is a separate hardware acceptance gate. A *designed extension point* is not an implemented or
 > hardware-verified feature. Site-specific incidents and examples belong in
 > issues, tests and [the handover](../HANDOVER-2026-11-16.md), **not** in the
 > product architecture.
@@ -53,8 +53,9 @@ Quality goals, in priority order:
 - No generic Modbus address, percentage scaling, minimum setpoint, AC
   rating, response time or ACK semantics may be assumed for every
   manufacturer/model/firmware.
-- Do not rewrite existing user configuration during migration. Hardware
-  acceptance and installed-version compatibility must be explicit.
+- Preserve equipment mappings, output limits, reserve settings and EMS enable intent
+  during beta upgrades. Obsolete experimental algorithm flags may be ignored;
+  hardware acceptance and installed-version compatibility must be explicit.
 
 ## 03 — Context and scope
 
@@ -115,7 +116,7 @@ documentation footnote.
 | --- | --- | --- |
 | `discovery.py` / `registry.py` | Stable source-owned role discovery; tolerate user renames; expose candidates without claiming support | Registry roles vary by upstream provider |
 | `config_flow.py` | UI-first tower-to-inverter mapping, manual correction, ratings, mode and source selections | Device selection via HA entities, not model strings |
-| `logic.py` / `pid.py` | Pure signed-grid feedback, eligibility, reserve and fair allocation in watts | **No** |
+| `logic.py` | Single bounded adaptive proportional signed-grid feedback, eligibility, reserve and fair allocation in watts | **No** |
 | `runtime.py` | Serialized control ticks, freshness, emergency reductions, dispatch, pending ACK and persisted shutdown duties | **Currently mixes generic runtime with Deye-specific verification; extraction pending** |
 | **Actuator capability boundary (target)** | Normalize limits, min/max/step, connectivity, readback, startup semantics and truthful status | **Yes; distinct profile per validated model/firmware/provider** |
 | `sensor.py` / `switch.py` / `number.py` | User controls and independently labelled requested / acknowledged / measured diagnostics | **No**, except entity source selection |

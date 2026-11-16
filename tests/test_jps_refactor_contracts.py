@@ -17,22 +17,13 @@ def pack(name: str, soc: float = 80, **extras: object) -> logic.Battery:
     )
 
 
-def test_adaptive_pid_has_a_bounded_integral_and_inspectable_terms() -> None:
+def test_single_regulator_is_bounded_and_exposes_current_correction() -> None:
     controller = logic.Controller(logic.ControllerState(outputs={"a_inverter": 400}))
-    controller.adaptive_pid = True
     controller.update((pack("a"),), 180, 10, sequence=10)
-    assert controller.state.pid_p_w == 80
-    assert controller.state.pid_i_w == 0
-    controller.update((pack("a"),), 180, 15, sequence=15)
-    assert controller.state.pid_i_w > 0
-    assert controller.state.pid_error_w == 160
-    # Repeated identical timestamps must not accumulate integral repeatedly.
-    before = controller.state.pid_i_w
-    controller.update((pack("a"),), 180, 20, sequence=15)
-    assert controller.state.pid_i_w == before
-    for second in range(25, 1000, 5):
-        controller.update((pack("a"),), 3000, second, sequence=second)
-    assert abs(controller.state.pid_i_w) <= 240
+    assert controller.state.regulation_error_w == 160
+    assert controller.state.regulation_correction_w == 80
+    assert controller.state.outputs["a_inverter"] == 480
+    assert not hasattr(controller.state, "pid_i_w")
 
 
 def test_startup_hold_blocks_only_normal_changes_and_resets() -> None:
@@ -77,29 +68,25 @@ def test_ev3600_charging_blocks_only_its_bk215_and_recovers() -> None:
     assert "a" not in controller.state.ev3600_unknown
 
 
-def test_diagnostics_distinguish_pid_terms_from_measured_output() -> None:
+def test_diagnostics_distinguish_regulator_correction_from_measured_output() -> None:
     controller = logic.Controller()
     controller.update((pack("a"),), 450, 10, sequence=10)
     state = controller.state
     assert state.raw_grid_w == 450
-    assert state.pid_error_w == 430
+    assert state.regulation_error_w == 430
+    assert state.regulation_correction_w > 0
     assert state.target_w == controller.state.outputs["a_inverter"]
-    assert state.pid_p_w > 0
-    assert state.pid_i_w == 0
-    assert isinstance(state.pid_d_w, float)
+    assert not hasattr(state, "pid_d_w")
 
 
-def test_pid_does_not_integrate_while_an_inverter_is_starting() -> None:
-    """The 30-second startup hold must not silently build an integral backlog."""
+def test_controller_never_accumulates_an_integral_backlog_during_startup() -> None:
     controller = logic.Controller(logic.ControllerState(outputs={"a_inverter": 200}))
-    controller.adaptive_pid = True
-    controller.pid_hold = True
     for tick in range(10, 40, 5):
         controller.update((pack("a"),), 550, tick, sequence=tick)
-        assert controller.state.pid_i_w == 0
-    controller.pid_hold = False
-    controller.update((pack("a"),), 100, 45, sequence=45)
-    assert controller.state.pid_i_w > 0
+        assert not hasattr(controller.state, "pid_i_w")
+    previous = controller.state.outputs["a_inverter"]
+    output = controller.update((pack("a"),), -100, 45, sequence=45)
+    assert output["a_inverter"] < previous
 
 
 def test_ev3600_charging_clears_stale_full_charge_bypass_state() -> None:
@@ -112,17 +99,9 @@ def test_ev3600_charging_clears_stale_full_charge_bypass_state() -> None:
     assert "a" in controller.state.ev3600_active
 
 
-def test_derivative_is_damped_but_not_accidentally_clamped_to_fraction_of_a_watt() -> None:
-    """Real 5-second meter changes should produce a measurable bounded D term."""
-    from custom_components.sunenergyxt_ems.pid import PIDGains, bounded_pid
-
-    result = bounded_pid(
-        error=120.0,
-        previous_error=20.0,
-        dt=5.0,
-        integral=0.0,
-        current_w=400.0,
-        maximum_w=800.0,
-        gains=PIDGains(kd=0.12),
-    )
-    assert 1.0 <= result.derivative <= 120.0
+def test_signed_export_is_bounded_without_a_derivative_term() -> None:
+    controller = logic.Controller(logic.ControllerState(outputs={"a_inverter": 400}))
+    result = controller.update((pack("a"),), -200, 10, sequence=10)
+    # With a 20 W target, export of -200 W requests a bounded 220 W reduction.
+    assert result["a_inverter"] == 180
+    assert not hasattr(controller.state, "pid_d_w")

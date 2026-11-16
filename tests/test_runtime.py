@@ -617,16 +617,14 @@ async def test_legacy_dc_trip_option_does_not_lock_new_runtime() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pid_switch_options_update_is_visible_without_energizing_inverters():
-    """A switched-off EMS must reflect the selected controller mode immediately."""
+async def test_old_pid_options_are_ignored_without_energizing_inverters():
+    """A pre-stable beta flag must never reselect a removed controller."""
     hass, entry = configured()
-    entry.options["enabled"] = False
+    entry.options.update({"enabled": False, "adaptive_pid": True, "pid_ki": 0.02})
     runtime = EMSRuntime(hass, entry)
-    assert runtime.controller.adaptive_pid is False
-    entry.options["adaptive_pid"] = True
+    assert not hasattr(runtime.controller, "adaptive_pid")
     entry.options["start_hold_seconds"] = 40
     await runtime.async_change_options()
-    assert runtime.controller.adaptive_pid is True
     assert runtime._start_hold.seconds == 40
     hass.services.async_call.assert_not_awaited()
 
@@ -684,34 +682,26 @@ async def test_missing_dc_on_one_head_allows_other_after_confirmed_minimum() -> 
 
 
 @pytest.mark.asyncio
-async def test_existing_pid_mode_is_retained_during_upgrade_and_options_reload():
-    """A hidden legacy toggle must never silently swap the active controller."""
+async def test_old_pid_flags_cannot_reactivate_a_second_regulator():
+    """Even saved historical values cannot change the single live algorithm."""
     hass, entry = configured()
-    entry.options["enabled"] = False
-    entry.options["adaptive_pid"] = True
+    entry.options.update({"enabled": False, "adaptive_pid": True, "pid_kp_min": 2.0})
     runtime = EMSRuntime(hass, entry)
-    assert runtime.controller.adaptive_pid is True
-
+    assert not hasattr(runtime.controller, "adaptive_pid")
+    assert not hasattr(runtime.controller.state, "pid_i_w")
     entry.options["grid_target_w"] = 80
     await runtime.async_change_options()
-
-    assert runtime.controller.adaptive_pid is True
-    assert entry.options["adaptive_pid"] is True
+    assert not hasattr(runtime.controller, "pid_gains")
     hass.services.async_call.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_explicit_pid_migration_resets_integral_and_uses_unified_path():
-    """Only an explicitly persisted migration switches a legacy PID controller."""
+async def test_single_regulator_has_no_explicit_migration_state():
+    """No one-time migration toggle is needed before public stable 1.0."""
     hass, entry = configured()
-    entry.options["enabled"] = False
-    entry.options["adaptive_pid"] = True
+    entry.options.update({"enabled": False, "adaptive_pid": False})
     runtime = EMSRuntime(hass, entry)
-    runtime.controller.state.pid_i_w = 120.0
-
-    entry.options["adaptive_pid"] = False
     await runtime.async_change_options()
-
-    assert runtime.controller.adaptive_pid is False
-    assert runtime.controller.state.pid_i_w == 0.0
+    assert not hasattr(runtime.controller, "adaptive_pid")
+    assert not hasattr(runtime.controller, "pid_gains")
     hass.services.async_call.assert_not_awaited()

@@ -231,21 +231,14 @@
         "title": "Experteneinstellungen",
         "data": {
           "feed_in_hysteresis_pct": "PV-Modus: SoC-Hysterese (Prozentpunkte)",
-          "start_hold_seconds": "Anlaufhaltezeit (Sekunden)",
-          "pid_kp_min": "PID Kp klein",
-          "pid_kp_max": "PID Kp groß",
-          "pid_kp_export": "PID Kp bei Einspeisung",
-          "pid_ki": "PID Integralverstärkung",
-          "pid_kd": "PID Differentialverstärkung",
-          "migrate_legacy_pid": "Bisherigen PID-Regler auf vereinheitlichte Regelung umstellen (einmalig; Einstellungen bleiben für Rollback gespeichert)"
+          "start_hold_seconds": "Anlaufhaltezeit (Sekunden)"
         },
-        "description": "Erweiterte Reglerparameter nur bei Bedarf ändern. Bestehende Werte bleiben erhalten und sind für frühere Installationen weiterhin verfügbar."
+        "description": "Sicherheits- und Anlaufparameter der einzigen adaptiven Netzregelung."
       }
     },
     "error": {
       "missing_upper": "Bitte die obere SoC-Grenze für alle Speicher ohne entsprechende Entität eintragen.",
       "incomplete_ev3600": "EV3600-Schalter und Ladeleistungssensor gemeinsam auswählen.",
-      "invalid_pid_gains": "PID Kp-Maximum muss mindestens dem Minimum entsprechen.",
       "incomplete_forecast_mapping": "Passende Tagesquellen desselben Prognoseeintrags wählen oder die Gruppe leeren. Forecast.Solar benötigt heute und morgen; Solcast zusätzlich den Aktualisierungszeitpunkt.",
       "invalid_pv_power_source": "Eine vorhandene Leistungsquelle mit Einheit W oder kW auswählen oder die optionale PV-Quelle entfernen.",
       "invalid_export_mode": "Bitte genau einen gültigen Ausgabemodus wählen.",
@@ -291,15 +284,6 @@
       },
       "grid_error": {
         "name": "Regelabweichung (letzte Berechnung)"
-      },
-      "pid_proportional": {
-        "name": "PID P-Anteil (letzte Berechnung)"
-      },
-      "pid_integral": {
-        "name": "PID I-Anteil (letzte Berechnung)"
-      },
-      "pid_derivative": {
-        "name": "PID D-Anteil (letzte Berechnung)"
       },
       "controller_target": {
         "name": "Zuletzt an Home Assistant übergebene Limits (Summe)"
@@ -368,6 +352,9 @@
           "invalid_data": "Hauslastregelung: Planungsdaten ungültig",
           "evaluating": "Prognose wird geprüft; Hauslastregelung bleibt aktiv"
         }
+      },
+      "controller_correction": {
+        "name": "Reglerkorrektur (letzte Berechnung)"
       }
     },
     "switch": {
@@ -376,29 +363,11 @@
       },
       "feed_in": {
         "name": "Einspeisung nach Vollladung"
-      },
-      "adaptive_pid": {
-        "name": "Adaptiver PID-Regler"
       }
     },
     "number": {
       "start_hold_seconds": {
         "name": "Anlaufverzögerung"
-      },
-      "pid_kp_min": {
-        "name": "PID Kp bei geringer Netzabweichung"
-      },
-      "pid_kp_max": {
-        "name": "PID Kp bei großer Netzabweichung"
-      },
-      "pid_kp_export": {
-        "name": "PID Kp bei Einspeisung"
-      },
-      "pid_ki": {
-        "name": "PID Ki Integralverstärkung"
-      },
-      "pid_kd": {
-        "name": "PID Kd Differentialverstärkung"
       }
     }
   }

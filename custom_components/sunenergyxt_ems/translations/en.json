@@ -231,21 +231,14 @@
         "title": "Expert settings",
         "data": {
           "feed_in_hysteresis_pct": "PV mode: SoC hysteresis (percentage points)",
-          "start_hold_seconds": "Inverter startup hold (seconds)",
-          "pid_kp_min": "PID Kp small error",
-          "pid_kp_max": "PID Kp large error",
-          "pid_kp_export": "PID Kp on export",
-          "pid_ki": "PID integral Ki",
-          "pid_kd": "PID derivative Kd",
-          "migrate_legacy_pid": "Migrate legacy PID to unified regulator (one time; previous settings retained for rollback)"
+          "start_hold_seconds": "Inverter startup hold (seconds)"
         },
-        "description": "Adjust advanced control parameters only if their effects are understood. Every existing parameter remains available for legacy installations."
+        "description": "Safety and startup settings for the single adaptive grid regulator."
       }
     },
     "error": {
       "missing_upper": "Enter an upper SoC limit for each battery without a matching entity.",
       "incomplete_ev3600": "Select both EV3600 switch and charging-power sensor.",
-      "invalid_pid_gains": "PID maximum Kp must be at least its minimum.",
       "incomplete_forecast_mapping": "Choose matching daily sources from one forecast entry, or clear the group. Forecast.Solar needs today and tomorrow; Solcast also needs the update timestamp.",
       "invalid_pv_power_source": "Select an existing power source in W or kW, or remove the optional PV source.",
       "invalid_export_mode": "Select exactly one supported output mode.",
@@ -291,15 +284,6 @@
       },
       "grid_error": {
         "name": "Grid error (last calculation)"
-      },
-      "pid_proportional": {
-        "name": "PID proportional (last calculation)"
-      },
-      "pid_integral": {
-        "name": "PID integral (last calculation)"
-      },
-      "pid_derivative": {
-        "name": "PID derivative (last calculation)"
       },
       "controller_target": {
         "name": "Last limits dispatched to Home Assistant (total)"
@@ -368,6 +352,9 @@
           "invalid_data": "Household regulation: planning data invalid",
           "evaluating": "Evaluating forecast; household regulation continues"
         }
+      },
+      "controller_correction": {
+        "name": "Controller correction (last calculation)"
       }
     },
     "switch": {
@@ -376,29 +363,11 @@
       },
       "feed_in": {
         "name": "Feed-in after full charge"
-      },
-      "adaptive_pid": {
-        "name": "Adaptive PID controller"
       }
     },
     "number": {
       "start_hold_seconds": {
         "name": "Startup settling time"
-      },
-      "pid_kp_min": {
-        "name": "PID Kp at low grid error"
-      },
-      "pid_kp_max": {
-        "name": "PID Kp at high grid error"
-      },
-      "pid_kp_export": {
-        "name": "PID Kp during export"
-      },
-      "pid_ki": {
-        "name": "PID Ki integral gain"
-      },
-      "pid_kd": {
-        "name": "PID Kd derivative gain"
       }
     }
   }

@@ -1,4 +1,4 @@
-"""User-visible HA controls for the existing EMS PID and startup settings."""
+"""User-visible HA startup pacing setting."""
 
 from __future__ import annotations
 
@@ -20,11 +20,6 @@ from .runtime import EMSRuntime
 # These bounds are identical to the configuration options flow.
 NUMBER_SETTINGS: dict[str, tuple[float, float, float, float, str | None]] = {
     "start_hold_seconds": (30, 5, 60, 1, "s"),
-    "pid_kp_min": (0.5, 0, 2, 0.05, None),
-    "pid_kp_max": (0.9, 0, 2, 0.05, None),
-    "pid_kp_export": (1, 0, 2, 0.05, None),
-    "pid_ki": (0.02, 0, 0.5, 0.005, None),
-    "pid_kd": (0.12, 0, 1, 0.01, None),
 }
 
 
@@ -37,7 +32,7 @@ async def async_setup_entry(
 
 
 class EMSNumberSetting(NumberEntity):
-    """Persist an existing, validated PID/hold option as an HA number entity."""
+    """Persist the configured inverter startup hold time."""
 
     _attr_should_poll = False
     _attr_has_entity_name = True
@@ -73,8 +68,6 @@ class EMSNumberSetting(NumberEntity):
         if not isfinite(value) or not self.native_min_value <= value <= self.native_max_value:
             raise HomeAssistantError(f"Invalid EMS setting for {self._key}")
         opts = {**self._entry.options, self._key: value}
-        if float(opts.get("pid_kp_min", 0.5)) > float(opts.get("pid_kp_max", 0.9)):
-            raise HomeAssistantError("PID Kp minimum must not exceed maximum")
         self._runtime.hass.config_entries.async_update_entry(self._entry, options=opts)
         self.async_write_ha_state()
 

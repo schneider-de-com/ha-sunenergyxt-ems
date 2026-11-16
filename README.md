@@ -9,7 +9,7 @@
 - Follows one **signed, whole-site grid power** sensor: positive = grid import; negative = export. No specific meter brand is required.
 - Coordinates multiple independent BK215/BK215 Plus **head units**, respecting each storage tower's own discharge reserve. B215/B215 Plus extensions belong to a head unit, not to a separate controlled tower.
 - Maps up to **four configurable power-limit entities per head** (W or %), subject to real hardware limits and independently validated actuator support.
-- Offers demand-following, optional adaptive PID and mutually exclusive no-intentional-export / PV-only-after-verified-BMS-full settings. Intentional PV export requires verified BMS full and is limited to fresh, tower-attributed PV input and validated inverter limits; missing PV or BMS data revokes this override. **A Modbus limit acknowledgement is not independent proof of actual AC power or battery-free output.**
+- Offers one bounded, adaptive proportional demand-following regulator and mutually exclusive no-intentional-export / PV-only-after-verified-BMS-full settings. Intentional PV export requires verified BMS full and is limited to fresh, tower-attributed PV input and validated inverter limits; missing PV or BMS data revokes this override. **A Modbus limit acknowledgement is not independent proof of actual AC power or battery-free output.**
 - Shows status and diagnostics separately for requested limits, HA-reported limits, measured AC power (if available) and per-storage state. It attempts a safe minimum and records unresolved shutdown commands when disabled.
 
 Forecast planning, demand learning and economic comparison are **experimental**, not verified savings or stable control features.
@@ -33,7 +33,7 @@ The software has CI coverage on Home Assistant 2026.10.4 and 2026.11.1; that is 
 
 ## Operate and troubleshoot
 
-Under **Settings → Devices & services → SunEnergyXT EMS**, use the controller's **EMS switch** to enable or disable regulation. The device also offers PID controls, grid/limit diagnostics and storage-specific status; **Configure** contains optional measurement and strategy settings.
+Under **Settings → Devices & services → SunEnergyXT EMS**, use the controller's **EMS switch** to enable or disable regulation. The device also offers a startup-settling control, live grid/regulation diagnostics and storage-specific status; **Configure** contains optional measurement and strategy settings.
 
 A successful Home Assistant service call or a displayed 0% limit **does not prove zero physical AC output**. Missing meter/SoC values, unavailable inverters and unconfirmed shutdowns must be investigated rather than interpreted as safe operation. Some Deye devices show nonfatal fault states at their 0% limit.
 

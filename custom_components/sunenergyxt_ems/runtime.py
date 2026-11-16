@@ -45,7 +45,6 @@ from .inputs import ev3600_charging, fresh_power, observed_ac_power
 from .logic import Battery, Controller, GridMedianFilter, Inverter, StartHold
 from .observer import DemandObserver, HouseholdObservation
 from .operating_history import OperatingSample
-from .pid import PIDGains
 from .registry import (
     registered_ac_voltage,
     registered_bk_hardware_sources,
@@ -108,10 +107,6 @@ class EMSRuntime:
         self.hass = hass
         self.entry = entry
         self.controller = Controller()
-        # Preserve the existing user-selected PID policy on upgrades. The
-        # single-policy migration is an explicit Options-flow action, never
-        # a hidden algorithm swap while inverters are energized.
-        self.controller.adaptive_pid = bool(entry.options.get("adaptive_pid", False))
         self.controller.enabled = bool(entry.options.get(CONF_ENABLED, True))
         self.controller.feed_in = (
             bool(entry.options.get(CONF_FEED_IN, False))
@@ -1280,14 +1275,6 @@ class EMSRuntime:
                 bool(self.entry.options.get(CONF_FEED_IN, False))
                 and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
             )
-            self.controller.adaptive_pid = bool(self.entry.options.get("adaptive_pid", False))
-            self.controller.pid_gains = PIDGains(
-                kp_min=float(self.entry.options.get("pid_kp_min", 0.5)),
-                kp_max=float(self.entry.options.get("pid_kp_max", 0.9)),
-                kp_export=float(self.entry.options.get("pid_kp_export", 1.0)),
-                ki=float(self.entry.options.get("pid_ki", 0.02)),
-                kd=float(self.entry.options.get("pid_kd", 0.12)),
-            )
             self.controller.enabled = bool(self.entry.options.get(CONF_ENABLED, True))
             self.controller.full_hysteresis_pct = float(
                 self.entry.options.get(CONF_FEED_IN_HYSTERESIS, 2.0)
@@ -1463,7 +1450,7 @@ class EMSRuntime:
                     self._startup_export_last_reduction_seq = None
                     self._grid_filter.reset()
                     self._last_processed_grid = None
-                    self.controller._reset_pid()
+                    self.controller._reset_regulation()
                     self.status = "waiting"
                     self.last_error = None
                     _LOGGER.info("Startup export corrected; controlled regulation may resume")
@@ -1580,13 +1567,6 @@ class EMSRuntime:
             # The policy uses the reported, acknowledged actuator limits,
             # never speculative commands from earlier, rate-limited ticks.
             self.controller.state.outputs = self._reported_outputs(batteries)
-            # A held inverter must not silently accumulate PID integral
-            # while normal actuator writes are intentionally postponed.
-            self.controller.pid_hold = any(
-                inverter.online and self._start_hold.active(inverter.key, now)
-                for battery in batteries
-                for inverter in battery.inverters
-            )
             outputs = self.controller.update(batteries, grid, now, sequence=sequence)
             self._last_processed_grid = sequence
 
@@ -1623,7 +1603,6 @@ class EMSRuntime:
             self._startup_export_recovery_count = 0
             self._startup_export_last_reduction_seq = None
             self._last_raw_grid_sequence = None
-            self.controller.pid_hold = False
             self.last_error = None
             self._pending.clear()
             self._shutdown_pending.clear()
@@ -1684,10 +1663,6 @@ class EMSRuntime:
             bool(self.entry.options.get(CONF_FEED_IN, False))
             and self.entry.options.get(CONF_FEED_IN_MODE, FEED_IN_MODE_PV) == FEED_IN_MODE_PV
         )
-        adaptive = bool(self.entry.options.get("adaptive_pid", False))
-        if adaptive != self.controller.adaptive_pid:
-            self.controller.adaptive_pid = adaptive
-            self.controller._reset_pid()
         self._start_hold.seconds = float(self.entry.options.get("start_hold_seconds", 30.0))
         if not enabled and self.controller.enabled:
             await self.async_disable()
