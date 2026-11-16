@@ -29,22 +29,26 @@ def registered(entity_id, unique_id, device_id, platform, entry_id, domain="sens
 def setup_fake(monkeypatch, *, rated=2000, valid_head=True, expansion=True):
     items = {
         "number.inv": registered(
-            "number.inv", "solarman_a_active_power_regulation_number",
-            "inverter-a", "solarman", "solarman_a", "number"
+            "number.inv",
+            "solarman_a_active_power_regulation_number",
+            "inverter-a",
+            "solarman",
+            "solarman_a",
+            "number",
         ),
         "sensor.device": registered(
-            "sensor.device", "solarman_a_device_sensor",
-            "inverter-a", "solarman", "solarman_a"
+            "sensor.device", "solarman_a_device_sensor", "inverter-a", "solarman", "solarman_a"
         ),
-        "sensor.bk": registered(
-            "sensor.bk", "bk_a_wifi_soc", "bk-a", "sunenergyxt_bk", "bk_a"
-        ),
+        "sensor.bk": registered("sensor.bk", "bk_a_wifi_soc", "bk-a", "sunenergyxt_bk", "bk_a"),
         "sensor.head": registered(
             "sensor.head", "bk_a_wifi_b_actual_soc", "bk-a", "sunenergyxt_bk", "bk_a"
         ),
         "sensor.head_limit": registered(
-            "sensor.head_limit", "bk_a_wifi_mbms_hw_limited_chg_soc_max",
-            "bk-a", "sunenergyxt_bk", "bk_a"
+            "sensor.head_limit",
+            "bk_a_wifi_mbms_hw_limited_chg_soc_max",
+            "bk-a",
+            "sunenergyxt_bk",
+            "bk_a",
         ),
     }
     if expansion:
@@ -52,38 +56,43 @@ def setup_fake(monkeypatch, *, rated=2000, valid_head=True, expansion=True):
             "sensor.ext", "bk_a_wifi_b1_actual_soc", "bk-a", "sunenergyxt_bk", "bk_a"
         )
         items["sensor.ext_limit"] = registered(
-            "sensor.ext_limit", "bk_a_wifi_sbms1_hw_limited_chg_soc_max",
-            "bk-a", "sunenergyxt_bk", "bk_a"
+            "sensor.ext_limit",
+            "bk_a_wifi_sbms1_hw_limited_chg_soc_max",
+            "bk-a",
+            "sunenergyxt_bk",
+            "bk_a",
         )
     stamp = datetime.now(UTC)
     states = {
-        "number.inv": SimpleNamespace(
-            state="0", attributes={"unit_of_measurement": "%"}
-        ),
-        "sensor.device": SimpleNamespace(
-            state="Microinverter", attributes={"Rated Power": rated}
-        ),
+        "number.inv": SimpleNamespace(state="0", attributes={"unit_of_measurement": "%"}),
+        "sensor.device": SimpleNamespace(state="Microinverter", attributes={"Rated Power": rated}),
         "sensor.head": SimpleNamespace(
             state="80" if valid_head else "unavailable",
             attributes={"unit_of_measurement": "%"},
-            last_reported=stamp, last_updated=stamp
+            last_reported=stamp,
+            last_updated=stamp,
         ),
         "sensor.head_limit": SimpleNamespace(
-            state="90", attributes={"unit_of_measurement": "%"},
-            last_reported=stamp, last_updated=stamp
+            state="90",
+            attributes={"unit_of_measurement": "%"},
+            last_reported=stamp,
+            last_updated=stamp,
         ),
         "sensor.ext": SimpleNamespace(
-            state="75", attributes={"unit_of_measurement": "%"},
-            last_reported=stamp, last_updated=stamp
+            state="75",
+            attributes={"unit_of_measurement": "%"},
+            last_reported=stamp,
+            last_updated=stamp,
         ),
         "sensor.ext_limit": SimpleNamespace(
-            state="90", attributes={"unit_of_measurement": "%"},
-            last_reported=stamp, last_updated=stamp
+            state="90",
+            attributes={"unit_of_measurement": "%"},
+            last_reported=stamp,
+            last_updated=stamp,
         ),
     }
     monkeypatch.setattr(
-        module.er, "async_get",
-        lambda _: SimpleNamespace(entities=items, async_get=items.get)
+        module.er, "async_get", lambda _: SimpleNamespace(entities=items, async_get=items.get)
     )
     return SimpleNamespace(states=SimpleNamespace(get=states.get)), items, states
 
@@ -120,7 +129,12 @@ def test_head_only_bk_has_2150_while_other_vendors_remain_manual(monkeypatch):
 
 
 def test_legacy_export_mode_maps_without_accidentally_enabling_feed_in():
-    assert configured_export_mode({"feed_in": False, "feed_in_mode": "pv"}) == FEED_IN_MODE_HOUSEHOLD
-    assert configured_export_mode({"feed_in": True, "feed_in_mode": "household"}) == FEED_IN_MODE_HOUSEHOLD
+    assert (
+        configured_export_mode({"feed_in": False, "feed_in_mode": "pv"}) == FEED_IN_MODE_HOUSEHOLD
+    )
+    assert (
+        configured_export_mode({"feed_in": True, "feed_in_mode": "household"})
+        == FEED_IN_MODE_HOUSEHOLD
+    )
     assert configured_export_mode({"feed_in": True}) == FEED_IN_MODE_PV
     assert configured_export_mode({}) == FEED_IN_MODE_HOUSEHOLD
