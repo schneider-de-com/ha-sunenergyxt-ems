@@ -491,77 +491,55 @@ async def test_planning_options_preserve_controller_tuning_and_source_maps(monke
 
 
 @pytest.mark.asyncio
-async def test_tripped_dc_output_cannot_be_reset_while_enabled(monkeypatch):
+async def test_tower_output_limit_can_be_configured_without_changing_dc_protection(monkeypatch):
+    """The AC setpoint budget belongs to the configured head, not the DC sensor."""
     options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
     entry = SimpleNamespace(
-        data={"batteries": [{"device_id": "bk1", "dc_output": "sensor.dc"}]},
-        options={"enabled": False, "dc_tripped_batteries": ["bk1"]},
+        data={"batteries": [
+            {"device_id": "plus", "inverters": [
+                {"entity_id": "number.inv1", "rated_w": 2000},
+                {"entity_id": "number.inv2", "rated_w": 2000},
+            ]}
+        ]},
+        options={"enabled": False},
     )
     monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
     result = await options.async_step_init(
-        {"enabled": True, "feed_in": False, "reset_dc_trip": True}
-    )
-    assert result["errors"]["base"] == "disable_before_trip_reset"
-
-
-@pytest.mark.asyncio
-async def test_tripped_dc_output_reset_requires_fresh_zero_watts(monkeypatch):
-    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
-    entry = SimpleNamespace(
-        data={"batteries": [{"device_id": "bk1", "dc_output": "sensor.dc"}]},
-        options={"enabled": False, "dc_tripped_batteries": ["bk1"]},
-    )
-    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
-    state = SimpleNamespace(
-        state="0",
-        attributes={"unit_of_measurement": "W"},
-        last_reported=datetime.now(UTC) - timedelta(minutes=5),
-    )
-    monkeypatch.setattr(
-        flow_module.EMSEntryOptionsFlow,
-        "hass",
-        property(lambda _: SimpleNamespace(states=SimpleNamespace(get=lambda entity: state))),
-    )
-    result = await options.async_step_init(
-        {"enabled": False, "feed_in": False, "reset_dc_trip": True}
-    )
-    assert result["errors"]["base"] == "trip_reset_unconfirmed"
-
-    state.last_reported = datetime.now(UTC)
-    saved = await options.async_step_init(
-        {"enabled": False, "feed_in": False, "reset_dc_trip": True}
-    )
-    assert saved["type"] == "create_entry"
-    assert saved["data"]["dc_tripped_batteries"] == []
-
-
-@pytest.mark.asyncio
-async def test_legacy_entry_can_reset_dc_trip_with_registered_sensor(monkeypatch):
-    """A migrated entry has no dc_output field but the official device still does."""
-    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
-    entry = SimpleNamespace(
-        data={"batteries": [{"device_id": "bk1"}]},
-        options={"enabled": False, "dc_tripped_batteries": ["bk1"]},
-    )
-    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
-    state = SimpleNamespace(
-        state="0",
-        attributes={"unit_of_measurement": "W"},
-        last_reported=datetime.now(UTC),
-    )
-    monkeypatch.setattr(
-        flow_module.EMSEntryOptionsFlow,
-        "hass",
-        property(lambda _: SimpleNamespace(states=SimpleNamespace(get=lambda key: state))),
-    )
-    monkeypatch.setattr(
-        flow_module, "battery_suggestions", lambda hass: {"bk1": {"dc_output": "sensor.dc"}}
-    )
-    result = await options.async_step_init(
-        {"enabled": False, "feed_in": False, "reset_dc_trip": True}
+        {"enabled": False, "feed_in": False, "output_limit_1": 2500}
     )
     assert result["type"] == "create_entry"
-    assert result["data"]["dc_tripped_batteries"] == []
+    assert result["data"]["output_limit_w"] == {"plus": 2500}
+
+
+@pytest.mark.asyncio
+async def test_tower_output_limit_rejects_more_than_inverter_ratings(monkeypatch):
+    """A user's manual budget cannot exceed the total selected inverter rating."""
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    entry = SimpleNamespace(
+        data={"batteries": [
+            {"device_id": "plus", "inverters": [
+                {"entity_id": "number.inv1", "rated_w": 2000}
+            ]}
+        ]},
+        options={"enabled": False},
+    )
+    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
+    result = await options.async_step_init(
+        {"enabled": False, "feed_in": False, "output_limit_1": 2500}
+    )
+    assert result["errors"]["output_limit_1"] == "invalid_output_limit"
+
+
+@pytest.mark.asyncio
+async def test_legacy_dc_trip_option_is_dropped_when_saving_options(monkeypatch):
+    options = flow_module.SunEnergyXTEMSConfigFlow.async_get_options_flow(None)
+    entry = SimpleNamespace(data={"batteries": []}, options={
+        "enabled": False, "dc_tripped_batteries": ["bk1"],
+    })
+    monkeypatch.setattr(flow_module.EMSEntryOptionsFlow, "config_entry", property(lambda _: entry))
+    result = await options.async_step_init({"enabled": False, "feed_in": False})
+    assert result["type"] == "create_entry"
+    assert "dc_tripped_batteries" not in result["data"]
 
 
 @pytest.mark.asyncio
