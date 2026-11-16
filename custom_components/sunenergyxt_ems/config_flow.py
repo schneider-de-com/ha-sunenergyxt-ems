@@ -506,7 +506,7 @@ class EMSEntryOptionsFlow(config_entries.OptionsFlow):
                     )
                     try:
                         limit_w = float(selected_limit)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         limit_w = float("nan")
                     if not isfinite(limit_w) or not 0 < limit_w <= rating_sum:
                         errors[key] = "invalid_output_limit"
