@@ -74,7 +74,7 @@ async def test_positive_setup_uses_device_instead_of_three_manual_entities(flow,
         }
     )
     assert result["type"] == "create_entry"
-    assert result["options"]["enabled"] is True
+    assert result["options"]["enabled"] is False
     assert result["options"]["feed_in"] is False
 
 

@@ -32,6 +32,7 @@ Human-readable changes follow [Keep a Changelog 1.1.0](https://keepachangelog.co
 - Device and source identity checks for the supported Deye AC-voltage guard, including owner-config-entry verification after registry changes. Missing or stale voltage inhibits new positive power requests for that profile.
 - Removed the unapproved automatic permanent software shutdown on a BK DC telemetry sample above 1,920 W. Manufacturer/BMS protection remains external; old stored DC-trip options no longer lock the controller.
 - Reconfiguration preservation of existing SoC/limit mappings, clearer optional PV power-source validation/removal, and forecast source binding/receipt handling across late loads and restarts.
+- Newly configured EMS instances now start disabled and require explicit activation; existing enabled/disabled intent is preserved through upgrades.
 
 ### Removed
 
